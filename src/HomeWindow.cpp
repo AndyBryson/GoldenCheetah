@@ -26,8 +26,8 @@
 
 #include <QGraphicsDropShadowEffect>
 
-static const int tileMargin = 20;
-static const int tileSpacing = 10;
+static const int tileMargin = 2;
+static const int tileSpacing = 2;
 
 HomeWindow::HomeWindow(Context *context, QString name, QString /* windowtitle */) :
     GcWindow(context), context(context), name(name), active(false),
@@ -84,7 +84,7 @@ HomeWindow::HomeWindow(Context *context, QString name, QString /* windowtitle */
 
     // each style has its own container widget
     QWidget *tabArea = new QWidget(this);
-    tabArea->setContentsMargins(20,20,20,20);
+    tabArea->setContentsMargins(2,2,2,2);
     QVBoxLayout *tabLayout = new QVBoxLayout(tabArea);
     tabLayout->setContentsMargins(0,0,0,0);
     tabLayout->setSpacing(0);
@@ -104,7 +104,7 @@ HomeWindow::HomeWindow(Context *context, QString name, QString /* windowtitle */
     tb->setShape(QTabBar::RoundedSouth);
     tb->setDrawBase(false);
     tabbed->setStyleSheet("QTabWidget::tab-bar { alignment: center; }"
-                          "QTabWidget::pane { top: 20px; }");
+                          "QTabWidget::pane { top: 2px; }");
 
     tabLayout->addWidget(tabbed);
     style->addWidget(tabArea);
