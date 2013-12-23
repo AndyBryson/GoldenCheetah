@@ -128,22 +128,13 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     showBySeries->setCheckState(Qt::Unchecked);
     cl1->addRow(new QLabel("", this), showBySeries);
 
-    stackWidth = 15;
-    stackZoomUp = new QwtArrowButton(1, Qt::UpArrow,this);
-    stackZoomUp->setFixedHeight(15);
-    stackZoomUp->setFixedWidth(15);
-    stackZoomUp->setEnabled(false);
-    stackZoomUp->setContentsMargins(0,0,0,0);
-    stackZoomUp->setFlat(true);
-    cl1->addRow(new QLabel(""),stackZoomUp);
-
-    stackZoomDown = new QwtArrowButton(1, Qt::DownArrow,this);
-    stackZoomDown->setFixedHeight(15);
-    stackZoomDown->setFixedWidth(15);
-    stackZoomDown->setEnabled(false);
-    stackZoomDown->setContentsMargins(0,0,0,0);
-    stackZoomDown->setFlat(true);
-    cl1->addRow(new QLabel(""), stackZoomDown);
+    stackWidth = 20;
+    stackZoomSlider = new QSlider(Qt::Horizontal,this);
+    stackZoomSlider->setMinimum(0);
+    stackZoomSlider->setMaximum(6);
+    stackZoomSlider->setTickInterval(1);
+    stackZoomSlider->setValue(3);
+    cl1->addRow(new QLabel("Stack Zoom"), stackZoomSlider); 
 
     showFull = new QCheckBox(tr("Full plot"), this);
     showFull->setCheckState(Qt::Checked);
@@ -485,10 +476,9 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     connect(spanSlider, SIGNAL(upperPositionChanged(int)), this, SLOT(zoomChanged()));
 
     // stacked view
-    connect(stackZoomUp, SIGNAL(clicked()), this, SLOT(setStackZoomUp()));
-    connect(stackZoomDown, SIGNAL(clicked()), this, SLOT(setStackZoomDown()));
     connect(scrollLeft, SIGNAL(clicked()), this, SLOT(moveLeft()));
     connect(scrollRight, SIGNAL(clicked()), this, SLOT(moveRight()));
+    connect(stackZoomSlider, SIGNAL(valueChanged(int)), this, SLOT(stackZoomSliderChanged()));
 
     // GC signals
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
@@ -995,17 +985,11 @@ AllPlotWindow::setAllPlotWidgets(RideItem *ride)
         scrollLeft->hide();
         scrollRight->hide();
 
-        stackZoomUp->setEnabled(stackZoomUpShouldEnable(stackWidth));
-        stackZoomDown->setEnabled(stackZoomDownShouldEnable(stackWidth));
-
         // show stacked view
         stackFrame->show();
 
     } else {
 
-        // hide stack view
-        stackZoomDown->setEnabled(false);
-        stackZoomUp->setEnabled(false);
         stackFrame->hide();
 
         // show normal view
@@ -1030,9 +1014,6 @@ AllPlotWindow::setAllPlotWidgets(RideItem *ride)
             scrollLeft->hide();
             scrollRight->hide();
         }
-
-        stackZoomUp->setEnabled(false);
-        stackZoomDown->setEnabled(false);
     }
 }
 
@@ -1092,7 +1073,7 @@ AllPlotWindow::plotPickerMoved(const QPoint &pos)
     if (showStack->isChecked()) {
 
         // need to highlight across stacked plots
-        foreach (AllPlot *_plot, allPlots) {
+        foreach (AllPlot *_plot, (showBySeries->isChecked() ? seriesPlots : allPlots)) {
 
             // mark the start of selection on every plot
             _plot->allMarker1->setValue(plot->allMarker1->value());
@@ -1342,6 +1323,9 @@ AllPlotWindow::setShowPower(int value)
             plot->replot();
         stackFrame->setUpdatesEnabled(true); // don't repaint whilst we do this...
     }
+
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1355,6 +1339,8 @@ AllPlotWindow::setShowHr(int value)
     allPlot->setShowHr(checked);
     foreach (AllPlot *plot, allPlots)
         plot->setShowHr(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1371,6 +1357,8 @@ AllPlotWindow::setShowNP(int value)
     allPlot->setShowNP(checked);
     foreach (AllPlot *plot, allPlots)
         plot->setShowNP(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1387,6 +1375,8 @@ AllPlotWindow::setShowXP(int value)
     allPlot->setShowXP(checked);
     foreach (AllPlot *plot, allPlots)
         plot->setShowXP(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1403,6 +1393,8 @@ AllPlotWindow::setShowAP(int value)
     allPlot->setShowAP(checked);
     foreach (AllPlot *plot, allPlots)
         plot->setShowAP(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1416,6 +1408,8 @@ AllPlotWindow::setShowSpeed(int value)
     allPlot->setShowSpeed(checked);
     foreach (AllPlot *plot, allPlots)
         plot->setShowSpeed(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1429,6 +1423,8 @@ AllPlotWindow::setShowCad(int value)
     allPlot->setShowCad(checked);
     foreach (AllPlot *plot, allPlots)
         plot->setShowCad(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1442,6 +1438,8 @@ AllPlotWindow::setShowAlt(int value)
     allPlot->setShowAlt(checked);
     foreach (AllPlot *plot, allPlots)
         plot->setShowAlt(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1455,6 +1453,8 @@ AllPlotWindow::setShowTemp(int value)
     allPlot->setShowTemp(checked);
     foreach (AllPlot *plot, allPlots)
         plot->setShowTemp(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1468,6 +1468,9 @@ AllPlotWindow::setShowWind(int value)
     allPlot->setShowWind(checked);
     foreach (AllPlot *plot, allPlots)
         plot->setShowWind(checked);
+
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1492,6 +1495,8 @@ AllPlotWindow::setShowW(int value)
         redrawStackPlot();
     }
 
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1505,6 +1510,8 @@ AllPlotWindow::setShowTorque(int value)
     allPlot->setShowTorque(checked);
     foreach (AllPlot *plot, allPlots)
         plot->setShowTorque(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1517,6 +1524,8 @@ AllPlotWindow::setShowBalance(int value)
     allPlot->setShowBalance(checked);
     foreach (AllPlot *plot, allPlots)
         plot->setShowBalance(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1550,6 +1559,8 @@ AllPlotWindow::setShowGrid(int value)
     allPlot->setShowGrid(value);
     foreach (AllPlot *plot, allPlots)
         plot->setShowGrid(value);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1567,6 +1578,8 @@ AllPlotWindow::setPaintBrush(int value)
         plot->setPaintBrush(value);
 
     active = false;
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
 }
 
 void
@@ -1613,10 +1626,8 @@ AllPlotWindow::resetSeriesStackedDatas()
     if (!current) return;
 
     // just reset from AllPlot
-    bool first = true;
     foreach(AllPlot *p, seriesPlots) {
-        p->setDataFromPlot(allPlot, first);
-        first = false;
+        p->setDataFromPlot(allPlot);
     }
 }
 //
@@ -1652,59 +1663,39 @@ AllPlotWindow::resetStackedDatas()
 
 }
 
-bool
-AllPlotWindow::stackZoomUpShouldEnable(int sw)
+void
+AllPlotWindow::stackZoomSliderChanged()
 {
-    if (!current) return false;
-
-    if (sw >= 200  || sw >= current->ride()->dataPoints().last()->secs/60) {
-        return false;
-    }
-    else {
-        return true;
-    }
-}
-
-bool
-AllPlotWindow::stackZoomDownShouldEnable(int sw)
-{
-    if (sw <= 4) {
-        return false;
-    }
-    else {
-        return true;
-    }
-
+    // slider moved!
+    setStackWidth(stackZoomWidth[stackZoomSlider->value()]);
 }
 
 void
-AllPlotWindow::setStackZoomUp()
+AllPlotWindow::setStackWidth(int width)
 {
-    if (!current) return;
+    // derive width from allowed values -- this is for backward 
+    // compatibility to ensure we always use a size that we are
+    // expecting and set the slider to the appropriate value
+    int i=0;
+    for (; i<7; i++) // there are 7 pre-set sizes
+        if (width <= stackZoomWidth[i]) break;
 
-    if (stackWidth<200 && stackWidth<current->ride()->dataPoints().last()->secs/60) {
+    // we never found it
+    if (i == 7) i=6;
 
-        stackWidth = ceil(stackWidth * 1.25);
-        setupStackPlots();
-        setupSeriesStackPlots();
-        stackZoomUp->setEnabled(stackZoomUpShouldEnable(stackWidth));
-        stackZoomDown->setEnabled(stackZoomDownShouldEnable(stackWidth));
-    }
-}
+    // did anything actually change?
+    if (stackZoomWidth[i] == stackWidth) return;
 
-void
-AllPlotWindow::setStackZoomDown()
-{
-    if (!current) return;
+    // set the value and the slider
+    stackWidth = stackZoomWidth[i];
+    stackZoomSlider->setValue(i);
 
-    if (stackWidth>4) {
+    resizeSeriesPlots(); // its only the size that needs to change
+                         // no need to replot
 
-        stackWidth = floor(stackWidth / 1.25);
-        setupStackPlots();
-        setupSeriesStackPlots();
-        stackZoomUp->setEnabled(stackZoomUpShouldEnable(stackWidth));
-        stackZoomDown->setEnabled(stackZoomDownShouldEnable(stackWidth));
-    }
+    // now lets do the plots...
+    setupStack = false; // force resize
+    setupStackPlots();
 }
 
 void
@@ -1786,6 +1777,20 @@ AllPlotWindow::showBySeriesChanged(int value)
 }
 
 void
+AllPlotWindow::forceSetupSeriesStackPlots()
+{
+    setupSeriesStack = false;
+    setupSeriesStackPlots();
+}
+
+void
+AllPlotWindow::resizeSeriesPlots()
+{
+    foreach (AllPlot *plot, seriesPlots)
+        plot->setFixedHeight(100 + (stackWidth *3));
+}
+
+void
 AllPlotWindow::setupSeriesStackPlots()
 {
     if (!showStack->isChecked() || !showBySeries->isChecked() || setupSeriesStack) return;
@@ -1803,29 +1808,29 @@ AllPlotWindow::setupSeriesStackPlots()
 
     QList<RideFile::SeriesType> serieslist;
 
-    // lets get a list of what we need to plot
+    // lets get a list of what we need to plot -- plot is same order as options in settings
     if (showPower->currentIndex() < 2 && rideItem->ride()->areDataPresent()->watts) serieslist << RideFile::watts;
     if (showHr->isChecked() && rideItem->ride()->areDataPresent()->hr) serieslist << RideFile::hr;
-    if (showCad->isChecked() && rideItem->ride()->areDataPresent()->cad) serieslist << RideFile::cad;
     if (showSpeed->isChecked() && rideItem->ride()->areDataPresent()->kph) serieslist << RideFile::kph;
-    if (showTorque->isChecked() && rideItem->ride()->areDataPresent()->nm) serieslist << RideFile::nm;
+    if (showCad->isChecked() && rideItem->ride()->areDataPresent()->cad) serieslist << RideFile::cad;
     if (showAlt->isChecked() && rideItem->ride()->areDataPresent()->alt) serieslist << RideFile::alt;
     if (showTemp->isChecked() && rideItem->ride()->areDataPresent()->temp) serieslist << RideFile::temp;
     if (showWind->isChecked() && rideItem->ride()->areDataPresent()->headwind) serieslist << RideFile::headwind;
-    if (showBalance->isChecked() && rideItem->ride()->areDataPresent()->lrbalance) serieslist << RideFile::lrbalance;
+    if (showTorque->isChecked() && rideItem->ride()->areDataPresent()->nm) serieslist << RideFile::nm;
     if (showNP->isChecked() && rideItem->ride()->areDataPresent()->watts) serieslist << RideFile::NP;
     if (showXP->isChecked() && rideItem->ride()->areDataPresent()->watts) serieslist << RideFile::xPower;
     if (showAP->isChecked() && rideItem->ride()->areDataPresent()->watts) serieslist << RideFile::aPower;
-    //if (showW->isChecked() && rideItem->ride()->areDataPresent()->watts) serieslist << RideFile::bpm;
+    if (showW->isChecked() && rideItem->ride()->areDataPresent()->watts) serieslist << RideFile::wprime;
+    if (showBalance->isChecked() && rideItem->ride()->areDataPresent()->lrbalance) serieslist << RideFile::lrbalance;
 
     bool first = true;
     foreach(RideFile::SeriesType x, serieslist) {
 
         // create that plot
-        AllPlot *_allPlot = new AllPlot(this, context, x);
+        AllPlot *_allPlot = new AllPlot(this, context, x, first);
         _allPlot->setAutoFillBackground(false);
         _allPlot->setPalette(palette);
-        _allPlot->setDataFromPlot(allPlot, first); // will clone all settings and data for the series
+        _allPlot->setDataFromPlot(allPlot); // will clone all settings and data for the series
                                                    // being plotted, only works for one series plotting
 
         first = false;
@@ -1834,7 +1839,7 @@ AllPlotWindow::setupSeriesStackPlots()
         seriesPlots.append(_allPlot);
         addPickers(_allPlot);
         newLayout->addWidget(_allPlot);
-        _allPlot->setFixedHeight(120);
+        _allPlot->setFixedHeight(120+(stackWidth*3));
 
         // No x axis titles
         _allPlot->setAxisVisible(QwtPlot::xBottom, true);
@@ -1961,7 +1966,7 @@ AllPlotWindow::setupStackPlots()
         _allPlot->setDataFromPlot(fullPlot, startIndex, stopIndex);
         _allPlot->setAxisScale(QwtPlot::xBottom, _stackWidth*i, _stackWidth*(i+1), 15/stackWidth);
 
-        _allPlot->setFixedHeight(120+stackWidth*2);
+        _allPlot->setFixedHeight(120+stackWidth*3);
 
         // No x axis titles
         _allPlot->setAxisVisible(QwtPlot::xBottom, true);
