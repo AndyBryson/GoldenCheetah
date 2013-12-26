@@ -454,13 +454,16 @@ MainWindow::MainWindow(const QDir &home)
      * Central Widget
      *--------------------------------------------------------------------*/
 
-    QPalette tabbarPalette;
-    tabbarPalette.setBrush(backgroundRole(), QColor("#B3B4B6"));
     tabbar = new QTabBar(this);
-    tabbar->setPalette(tabbarPalette);
     tabbar->setAutoFillBackground(true);
     tabbar->setShape(QTabBar::RoundedSouth);
     tabbar->setDrawBase(false);
+    QPalette tabbarPalette;
+    tabbarPalette.setBrush(backgroundRole(), QColor("#B3B4B6"));
+    tabbar->setPalette(tabbarPalette);
+#ifdef Q_OS_MAC
+    tabbar->setDocumentMode(true);
+#endif
 
     tabStack = new QStackedWidget(this);
     currentTab = new Tab(context);
@@ -658,6 +661,7 @@ MainWindow::MainWindow(const QDir &home)
      * Lets go, choose latest ride and get GUI up and running
      *--------------------------------------------------------------------*/
 
+    showTabbar(appsettings->value(NULL, GC_TABBAR, "0").toBool());
 
     //XXX!!! We really do need a mechanism for showing if a ride needs saving...
     //connect(this, SIGNAL(rideDirty()), this, SLOT(enableSaveButton()));
@@ -884,6 +888,9 @@ MainWindow::closeEvent(QCloseEvent* event)
         // now remove from the list
         if(mainwindows.removeOne(this) == false)
             qDebug()<<"closeEvent: mainwindows list error";
+
+        // save global mainwindow settings
+        appsettings->setValue(GC_TABBAR, showhideTabbar->isChecked());
     }
 }
 
@@ -1301,6 +1308,9 @@ MainWindow::openTab(QString name)
 
     setUpdatesEnabled(false);
 
+    // show the tabbar if we're gonna open tabs!
+    showTabbar(true);
+
     // bootstrap
     Context *context = new Context(this);
     context->athlete = new Athlete(context, home);
@@ -1339,8 +1349,9 @@ MainWindow::closeTab()
     // if its the last tab we close the window
     if (tabList.count() == 1)
         closeWindow();
-    else 
+    else {
         removeTab(currentTab);
+    }
 
     // we did it
     return true;
@@ -1351,6 +1362,8 @@ void
 MainWindow::removeTab(Tab *tab)
 {
     setUpdatesEnabled(false);
+
+    if (tabList.count() == 2) showTabbar(false); // don't need it for one!
 
 #ifdef GC_HAVE_LUCENE
     // save the named searches
@@ -1473,9 +1486,11 @@ MainWindow::saveState(Context *context)
 {
     // save all the current state to the supplied context
     context->showSidebar = showhideSidebar->isChecked();
-    context->showTabbar = showhideTabbar->isChecked();
+    //context->showTabbar = showhideTabbar->isChecked();
     context->showLowbar = showhideLowbar->isChecked();
+#ifndef Q_OS_MAC // not on a Mac
     context->showToolbar = showhideToolbar->isChecked();
+#endif
 #ifdef GC_HAVE_LUCENE
     context->searchText = searchBox->text();
 #endif
@@ -1489,8 +1504,10 @@ MainWindow::restoreState(Context *context)
 {
     // restore window state from the supplied context
     showSidebar(context->showSidebar);
+#ifndef Q_OS_MAC // not on a Mac
     showToolbar(context->showToolbar);
-    showTabbar(context->showToolbar);
+#endif
+    //showTabbar(context->showTabbar);
     showLowbar(context->showLowbar);
     scopebar->setSelected(context->viewIndex);
     scopebar->setContext(context);
