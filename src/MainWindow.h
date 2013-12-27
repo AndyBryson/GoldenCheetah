@@ -101,6 +101,7 @@ class MainWindow : public QMainWindow
         void setOpenTabMenu(); // set the Open Tab menu
         void newCyclistTab();  // create a new Cyclist
         void openTab(QString name);
+        void closeTabClicked(int index); // user clicked to close tab
         bool closeTab();       // close current, might not if the user 
                                // changes mind if there are unsaved changes.
         void removeTab(Tab*);  // remove without question
@@ -157,8 +158,8 @@ class MainWindow : public QMainWindow
 
         // Activity Collection
         void addIntervals(); // pass thru to tab
-        bool saveRideSingleDialog(RideItem *);
-        void saveSilent(RideItem *);
+        bool saveRideSingleDialog(Context *, RideItem *);
+        void saveSilent(Context *, RideItem *);
         void downloadRide();
         void manualRide();
         void exportRide();
@@ -180,7 +181,7 @@ class MainWindow : public QMainWindow
         void deleteRide();
         void saveRide();                        // save current ride menu item
         void revertRide();
-        bool saveRideExitDialog();              // save dirty rides on exit dialog
+        bool saveRideExitDialog(Context *);              // save dirty rides on exit dialog
 
         // save and restore state to context
         void saveState(Context *);

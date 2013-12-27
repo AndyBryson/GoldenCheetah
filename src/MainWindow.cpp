@@ -109,6 +109,9 @@ MainWindow::MainWindow(const QDir &home)
      *--------------------------------------------------------------------*/
     setAttribute(Qt::WA_DeleteOnClose);
     mainwindows.append(this);  // add us to the list of open windows
+#ifdef Q_OS_MAC
+    head = NULL; // early resize event causes a crash
+#endif
 
     // bootstrap
     Context *context = new Context(this);
@@ -458,12 +461,10 @@ MainWindow::MainWindow(const QDir &home)
     tabbar->setAutoFillBackground(true);
     tabbar->setShape(QTabBar::RoundedSouth);
     tabbar->setDrawBase(false);
+    tabbar->setTabsClosable(true);
     QPalette tabbarPalette;
     tabbarPalette.setBrush(backgroundRole(), QColor("#B3B4B6"));
     tabbar->setPalette(tabbarPalette);
-#ifdef Q_OS_MAC
-    tabbar->setDocumentMode(true);
-#endif
 
     tabStack = new QStackedWidget(this);
     currentTab = new Tab(context);
@@ -478,6 +479,7 @@ MainWindow::MainWindow(const QDir &home)
     tabStack->setCurrentIndex(0);
 
     connect(tabbar, SIGNAL(currentChanged(int)), this, SLOT(switchTab(int)));
+    connect(tabbar, SIGNAL(tabCloseRequested(int)), this, SLOT(closeTabClicked(int)));
 
     /*----------------------------------------------------------------------
      * Central Widget
@@ -837,10 +839,12 @@ MainWindow::toggleFullScreen()
 void
 MainWindow::resizeEvent(QResizeEvent*)
 {
-    appsettings->setValue(GC_SETTINGS_MAIN_GEOM, geometry());
 #ifdef Q_OS_MAC
-    head->updateGeometry();
-    repaint();
+    if (head) {
+        appsettings->setValue(GC_SETTINGS_MAIN_GEOM, geometry());
+        head->updateGeometry();
+        repaint();
+    }
 #endif
 }
 
@@ -871,7 +875,7 @@ MainWindow::closeEvent(QCloseEvent* event)
     foreach(Tab *tab, closing) {
 
         // do we need to save?
-        if (tab->context->mainWindow->saveRideExitDialog() == true)
+        if (tab->context->mainWindow->saveRideExitDialog(tab->context) == true)
             removeTab(tab);
         else
             needtosave = true;
@@ -1177,7 +1181,7 @@ void
 MainWindow::saveRide()
 {
     if (currentTab->context->ride)
-        saveRideSingleDialog(currentTab->context->ride); // will signal save to everyone
+        saveRideSingleDialog(currentTab->context, currentTab->context->ride); // will signal save to everyone
     else {
         QMessageBox oops(QMessageBox::Critical, tr("No Activity To Save"),
                          tr("There is no currently selected ride to save."));
@@ -1308,9 +1312,6 @@ MainWindow::openTab(QString name)
 
     setUpdatesEnabled(false);
 
-    // show the tabbar if we're gonna open tabs!
-    showTabbar(true);
-
     // bootstrap
     Context *context = new Context(this);
     context->athlete = new Athlete(context, home);
@@ -1337,14 +1338,28 @@ MainWindow::openTab(QString name)
     saveState(currentTab->context);
     restoreState(currentTab->context);
 
+    // show the tabbar if we're gonna open tabs -- but wait till the last second
+    // to show it to avoid crappy paint artefacts
+    showTabbar(true);
+
     setUpdatesEnabled(true);
+}
+
+void
+MainWindow::closeTabClicked(int index)
+{
+    Tab *tab = tabList[index];
+    if (saveRideExitDialog(tab->context) == false) return;
+
+    // lets wipe it
+    removeTab(tab);
 }
 
 bool
 MainWindow::closeTab()
 {
     // wipe it down ...
-    if (saveRideExitDialog() == false) return false;
+    if (saveRideExitDialog(currentTab->context) == false) return false;
 
     // if its the last tab we close the window
     if (tabList.count() == 1)
@@ -1523,6 +1538,18 @@ MainWindow::switchTab(int index)
 {
     if (index < 0) return;
 
+    setUpdatesEnabled(false);
+
+#ifdef Q_OS_MAC // close buttons on the left on Mac
+    // Only have close button on current tab (prettier)
+    for(int i=0; i<tabbar->count(); i++) tabbar->tabButton(i, QTabBar::LeftSide)->hide();
+    tabbar->tabButton(index, QTabBar::LeftSide)->show();
+#else
+    // Only have close button on current tab (prettier)
+    for(int i=0; i<tabbar->count(); i++) tabbar->tabButton(i, QTabBar::RightSide)->hide();
+    tabbar->tabButton(index, QTabBar::RightSide)->show();
+#endif
+
     // save how we are
     saveState(currentTab->context);
 
@@ -1534,6 +1561,7 @@ MainWindow::switchTab(int index)
 
     setWindowTitle(currentTab->context->athlete->home.dirName());
 
+    setUpdatesEnabled(true);
 }
 
 
