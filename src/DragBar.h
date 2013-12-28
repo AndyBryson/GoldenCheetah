@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Mark Liversedge (liversedge@gmail.com)
+ * Copyright (c) 2014 Mark Liversedge (liversedge@gmail.com)
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -16,49 +16,29 @@
  * Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#ifndef _GC_ComparePane_h
-#define _GC_ComparePane_h 1
+#ifndef _GC_DragBar_h
+#define _GC_DragBar_h
 
-#include <QWidget>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QTableWidget>
-#include <QScrollArea>
+#include <QTabBar>
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 
-#include "GcSideBarItem.h"
-#include "Context.h"
-#include "Athlete.h"
-#include "CompareInterval.h"
-
-class ComparePane : public QWidget
+class DragBar : public QTabBar
 {
     Q_OBJECT;
 
     public:
-        enum mode { season, interval };
-        typedef enum mode CompareMode;
+        DragBar(QWidget*parent);
 
-        ComparePane(Context *context, QWidget *parent, CompareMode mode=interval);
-
-    protected:
         void dragEnterEvent(QDragEnterEvent*);
         void dragLeaveEvent(QDragLeaveEvent*);
+        void dragMoveEvent(QDragMoveEvent*);
         void dropEvent(QDropEvent *);
 
     signals:
-
-    public slots:
-        void configChanged();
-        void intervalButtonsChanged();
-
-    protected:
-        void refreshTable();
-
-    private:
-        Context *context;
-        CompareMode mode_; // remember the mode we were created as...
-        QTableWidget *table;
-        QScrollArea *scrollArea;
+        void dragTab(int index); // let them know we dragged onto a tab
 };
 
-#endif // _GC_ComparePane_h
+#endif
