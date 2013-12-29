@@ -18,6 +18,8 @@
 
 #include "Season.h"
 #include "MainWindow.h"
+#include "Context.h"
+#include "Athlete.h"
 #include <QString>
 #include <QFile>
 #include <QXmlInputSource>
@@ -406,11 +408,15 @@ SeasonTreeView::dropEvent(QDropEvent* event)
     int idx1 = invisibleRootItem()->indexOfChild(item);
     int idx2 = indexAt(event->pos()).row();
 
-    // finalise drop event
-    QTreeWidget::dropEvent(event);
+    // don't move temp 'system generated' date ranges!
+    if (context->athlete->seasons->seasons[idx1].type != Season::temporary) {
 
-    // emit the itemMoved signal
-    Q_EMIT itemMoved(item, idx1, idx2);
+        // finalise drop event
+        QTreeWidget::dropEvent(event);
+
+        // emit the itemMoved signal
+        Q_EMIT itemMoved(item, idx1, idx2);
+    }
 }
 
 QStringList 
@@ -437,8 +443,14 @@ SeasonTreeView::mimeData (const QList<QTreeWidgetItem *> items) const
     stream << items.count();
     foreach (QTreeWidgetItem *p, items) {
 
-        // serialize
-        stream << p->text(0); // name
+        // get the season this is for
+        int index = p->treeWidget()->invisibleRootItem()->indexOfChild(p);
+
+        // season[index] ...
+        stream << context->athlete->seasons->seasons[index].name; // name
+        stream << context->athlete->seasons->seasons[index].start;
+        stream << context->athlete->seasons->seasons[index].end;
+        stream << (quint64)context->athlete->seasons->seasons[index]._days;
 
     }
 
