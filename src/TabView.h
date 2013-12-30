@@ -71,6 +71,8 @@ class TabView : public QWidget
         bool isShowBottom() { if (bottom_) return bottom_->isVisible(); return false; }
         bool hasBottom() { return (bottom_!=NULL); }
 
+        ViewSplitter *bottomSplitter() { return mainSplitter; }
+
         // select / deselect view
         void setSelected(bool x) { _selected=x; selectionChanged(); }
         bool isSelected() const { return _selected; }
@@ -140,14 +142,24 @@ public:
         QSplitter(orientation, parent), orientation(orientation), name(name), tabView(parent), showForDrag(false) {
         setAcceptDrops(true);
         qRegisterMetaType<ViewSplitter*>("hpos");
+
     }
 
 protected:
     QSplitterHandle *createHandle() {
-        return new GcSplitterHandle(name, orientation, this);
+        return new GcSplitterHandle(name, orientation, NULL, NULL, newtoggle(), this);
     }
     int handleWidth() { return 23; };
 
+    QPushButton *newtoggle() {
+        toggle = new QPushButton("OFF", this);
+        toggle->setCheckable(true);
+        toggle->setChecked(false);
+        toggle->setFixedWidth(40);
+        connect(toggle, SIGNAL(clicked()), this, SLOT(toggled()));
+
+        return toggle;
+    }
     virtual void dragEnterEvent(QDragEnterEvent *event) {
 
         // we handle intervals or seasons
@@ -202,11 +214,23 @@ public:
         return tot - 1;
     }
 
+signals:
+    void compareChanged(bool);
+
+public slots:
+    void toggled() {
+        if (toggle->isChecked()) toggle->setText("ON");
+        else toggle->setText("OFF");
+
+        // we started compare mode
+        emit compareChanged(toggle->isChecked());
+    }
 private:
     Qt::Orientation orientation;
     QString name;
     TabView *tabView;
     bool showForDrag;
+    QPushButton *toggle;
 };
 
 #endif // _GC_TabView_h
