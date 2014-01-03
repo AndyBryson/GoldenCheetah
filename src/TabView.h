@@ -21,6 +21,7 @@
 
 #include <QWidget>
 #include <QSplitter>
+#include <QFont>
 #include <QMetaObject>
 #include <QStackedWidget>
 
@@ -142,7 +143,7 @@ public:
         QSplitter(orientation, parent), orientation(orientation), name(name), tabView(parent), showForDrag(false) {
         setAcceptDrops(true);
         qRegisterMetaType<ViewSplitter*>("hpos");
-
+        toggle=NULL;
     }
 
 protected:
@@ -152,10 +153,12 @@ protected:
     int handleWidth() { return 23; };
 
     QPushButton *newtoggle() {
+        if (toggle) delete toggle; // we only need one!
         toggle = new QPushButton("OFF", this);
         toggle->setCheckable(true);
         toggle->setChecked(false);
         toggle->setFixedWidth(40);
+        toggle->setFocusPolicy(Qt::NoFocus);
         connect(toggle, SIGNAL(clicked()), this, SLOT(toggled()));
 
         return toggle;
@@ -219,9 +222,18 @@ signals:
 
 public slots:
     void toggled() {
-        if (toggle->isChecked()) toggle->setText("ON");
-        else toggle->setText("OFF");
-
+        QFont font;
+        if (toggle->isChecked()) {
+            font.setWeight(QFont::Bold);
+            toggle->setFont(font);
+            toggle->setStyleSheet("color: red");
+            toggle->setText("ON");
+        } else {
+            font.setWeight(QFont::Normal);
+            toggle->setFont(font);
+            toggle->setStyleSheet("");
+            toggle->setText("OFF");
+        }
         // we started compare mode
         emit compareChanged(toggle->isChecked());
     }
