@@ -45,9 +45,10 @@
 
 #include "LTMCanvasPicker.h" // for tooltip
 
-PowerHist::PowerHist(Context *context):
+PowerHist::PowerHist(Context *context, bool rangemode) :
     minX(0),
     maxX(0),
+    rangemode(rangemode),
     rideItem(NULL),
     context(context),
     series(RideFile::watts),
@@ -102,7 +103,7 @@ PowerHist::PowerHist(Context *context):
     connect(canvasPicker, SIGNAL(pointHover(QwtPlotCurve*, int)), this, SLOT(pointHover(QwtPlotCurve*, int)));
 
     // usually hidden, but shown for compare mode
-    insertLegend(new QwtLegend(), QwtPlot::BottomLegend);
+    //XXX insertLegend(new QwtLegend(), QwtPlot::BottomLegend);
 
     setAxisMaxMinor(xBottom, 0);
     setAxisMaxMinor(yLeft, 0);
@@ -303,13 +304,14 @@ PowerHist::recalcCompareIntervals()
     // Set curves .. they will always have been created 
     //               in setDataFromCompareIntervals, but no samples set
 
-    if (!isVisible() && !context->isCompareIntervals) return;
+    if (!isVisible() && (rangemode || !context->isCompareIntervals)) return;
 
     double ncols = 0;
     foreach(CompareInterval x, context->compareIntervals) {
         if (x.isChecked()) ncols++;
     }
     int acol = 0;
+    int maxX = 0;
     for (int intervalNumber=0; intervalNumber < context->compareIntervals.count(); intervalNumber++) {
 
         HistData &cid = compareData[intervalNumber];
@@ -361,7 +363,7 @@ PowerHist::recalcCompareIntervals()
             arrayLength = cid.cadArray.size();
         }
 
-        RideFile::SeriesType baseSeries = (series == RideFile::wattsKg) ? RideFile::watts : series;
+        // UNUSEDRideFile::SeriesType baseSeries = (series == RideFile::wattsKg) ? RideFile::watts : series;
 
         // null curve please -- we have no data!
         if (!array || arrayLength == 0) {
@@ -424,7 +426,15 @@ PowerHist::recalcCompareIntervals()
                     }
                 }
             }
-            setAxisScale(xBottom, minX, parameterValue[count + 1]);
+
+            // only set X-axis to largest value with significant value
+            int truncate = count;
+            while (truncate > 0) {
+                if (!absolutetime && totalTime[truncate] >= 0.1) break;
+                if (absolutetime && totalTime[truncate] >= 0.1) break;
+                truncate--;
+            }
+            if (parameterValue[truncate] > maxX) maxX = parameterValue[truncate];
 
             // we only do zone labels when using absolute values
             refreshZoneLabels();
@@ -432,13 +442,11 @@ PowerHist::recalcCompareIntervals()
     
         } else { // ZONED
 
-            // 0.9 is used for the columns, so each column when comparing
-            // will have 0.9 / ncols available to it, but needs to leave
-            // 10% space between it and its neighbour too, that col needs
-            // to only be 0.9 / ncols * 0.9 wide
+            // 0.625 = golden ratio for gaps betwen group of cols
+            // 0.9 = 10% space between each col in group
 
-            double width = (0.90f / ncols) * 0.90f;
-            double jump = acol * (0.90f / ncols);
+            double width = (0.625 / ncols) * 0.90f;
+            double jump = acol * (0.625 / ncols);
             
             // we're not binning instead we are prettyfing the columnar
             // display in much the same way as the weekly summary workds
@@ -449,7 +457,7 @@ PowerHist::recalcCompareIntervals()
             // samples to time
             for (int i=0, offset=0; i<array->size(); i++) {
 
-                double x = (double) i - 0.5;
+                double x = double(i) - (0.625f * 0.90f / 2.0f);
                 double y = dt * (double)(*array)[i];
 
                 xaxis[offset] = x +jump;
@@ -474,39 +482,44 @@ PowerHist::recalcCompareIntervals()
             curve->setPen(QPen(Qt::NoPen));
             curve->setSamples(xaxis.data(), yaxis.data(), xaxis.size());
 
-            // zone scale draw
-            if ((series == RideFile::watts || series == RideFile::wattsKg) && zoned && rideItem && rideItem->zones) {
-                setAxisScaleDraw(QwtPlot::xBottom, new ZoneScaleDraw(rideItem->zones, rideItem->zoneRange()));
-                if (rideItem->zoneRange() >= 0)
-                    setAxisScale(QwtPlot::xBottom, -0.99, rideItem->zones->numZones(rideItem->zoneRange()), 1);
-                else
-                    setAxisScale(QwtPlot::xBottom, -0.99, 0, 1);
+            //
+            // POWER ZONES
+            //
+            const Zones *zones;
+            int zone_range = -1;
+            zones = context->athlete->zones();
+
+            if (zones) {
+                if (context->compareIntervals.count())
+                    zone_range = zones->whichRange(context->compareIntervals[0].data->startTime().date());
+                if (zone_range == -1) zone_range = zones->whichRange(QDate::currentDate());
+
+            }
+            if (zones && zone_range != -1) {
+                if ((series == RideFile::watts || series == RideFile::wattsKg)) {
+                    setAxisScaleDraw(QwtPlot::xBottom, new ZoneScaleDraw(zones, zone_range));
+                    setAxisScale(QwtPlot::xBottom, -0.99, zones->numZones(zone_range), 1);
+                }
             }
 
-            // hr scale draw
-            int hrRange;
-            if (series == RideFile::hr && zoned && rideItem && context->athlete->hrZones() &&
-                (hrRange=context->athlete->hrZones()->whichRange(rideItem->dateTime.date())) != -1) {
-                setAxisScaleDraw(QwtPlot::xBottom, new HrZoneScaleDraw(context->athlete->hrZones(), hrRange));
+            //
+            // HR ZONES
+            //
+            const HrZones *hrzones;
+            int hrzone_range = -1;
+            hrzones = context->athlete->hrZones();
 
-                if (hrRange >= 0)
-                    setAxisScale(QwtPlot::xBottom, -0.99, context->athlete->hrZones()->numZones(hrRange), 1);
-                else
-                    setAxisScale(QwtPlot::xBottom, -0.99, 0, 1);
-            }
+            if (hrzones) {
+                if (context->compareIntervals.count())
+                    hrzone_range = hrzones->whichRange(context->compareIntervals[0].data->startTime().date());
+                if (hrzone_range == -1) hrzone_range = hrzones->whichRange(QDate::currentDate());
 
-            // watts zoned for a time range
-            if (source == Cache && zoned && (series == RideFile::watts || series == RideFile::wattsKg) && context->athlete->zones()) {
-                setAxisScaleDraw(QwtPlot::xBottom, new ZoneScaleDraw(context->athlete->zones(), 0));
-                if (context->athlete->zones()->getRangeSize())
-                    setAxisScale(QwtPlot::xBottom, -0.99, context->athlete->zones()->numZones(0), 1); // use zones from first defined range
             }
-    
-            // hr zoned for a time range
-            if (source == Cache && zoned && series == RideFile::hr && context->athlete->hrZones()) {
-                setAxisScaleDraw(QwtPlot::xBottom, new HrZoneScaleDraw(context->athlete->hrZones(), 0));
-                if (context->athlete->hrZones()->getRangeSize())
-                    setAxisScale(QwtPlot::xBottom, -0.99, context->athlete->hrZones()->numZones(0), 1); // use zones from first defined range
+            if (hrzones && hrzone_range != -1) {
+                if (series == RideFile::hr) {
+                    setAxisScaleDraw(QwtPlot::xBottom, new HrZoneScaleDraw(hrzones, hrzone_range));
+                    setAxisScale(QwtPlot::xBottom, -0.99, hrzones->numZones(hrzone_range), 1);
+                }
             }
 
             setAxisMaxMinor(QwtPlot::xBottom, 0);
@@ -516,6 +529,14 @@ PowerHist::recalcCompareIntervals()
         }
     }
 
+    // set axis etc
+    if (zoned == false || (zoned == true && (series != RideFile::watts && series != RideFile::wattsKg 
+                                                                           && series != RideFile::hr))) {
+        //normal
+        setAxisScale(xBottom, minX, maxX);
+    } else {
+        // zoned
+    }
     setYMax(); 
     updatePlot();
 }
@@ -523,7 +544,7 @@ PowerHist::recalcCompareIntervals()
 void
 PowerHist::recalc(bool force)
 {
-    if (context->isCompareIntervals) { //XXX bodge for now
+    if (!rangemode && context->isCompareIntervals) {
         recalcCompareIntervals();
         return;
     }
@@ -814,11 +835,16 @@ PowerHist::setYMax()
 {
     double MaxY=0;
 
-    if (context->isCompareIntervals) {
-
+    if (!rangemode && context->isCompareIntervals) {
+        int i=0;
         foreach (QwtPlotCurve *p, compareCurves) {
-            double my = p->maxYValue();
-            if (my > MaxY) MaxY = my;
+
+            // if its not visible don't set for it
+            if (context->compareIntervals[i].isChecked()) {
+                double my = p->maxYValue();
+                if (my > MaxY) MaxY = my;
+            }
+            i++;
         }
 
     } else {
@@ -997,22 +1023,22 @@ PowerHist::setDataFromCompareIntervals()
         newCurve->attach(this);
 
         // we do want a legend in compare mode
-        newCurve->setItemAttribute(QwtPlotItem::Legend, true);
+        //XXX newCurve->setItemAttribute(QwtPlotItem::Legend, true);
 
         // add to our collection
         compareCurves << newCurve;
     }
 
     // show legend in compare mode
-    legend()->show();
-    updateLegend();
+    //XXX legend()->show();
+    //XXX updateLegend();
 }
 
 void
 PowerHist::setComparePens()
 {
     // no compare? don't bother
-    if (!context->isCompareIntervals) return;
+    if (rangemode || !context->isCompareIntervals) return;
 
     double width = appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble();
     for (int i=0; i<context->compareIntervals.count(); i++) {
@@ -1172,8 +1198,8 @@ PowerHist::setData(QList<SummaryMetrics>&results, QString totalMetric, QString d
         setAxisTitle(xBottom, QString(tr("%1 of Ride")).arg(m->name()));
 
     // dont show legend in metric mode
-    legend()->hide();
-    updateLegend();
+    //XXX legend()->hide();
+    //XXX updateLegend();
 }
 
 void
@@ -1394,8 +1420,8 @@ PowerHist::setData(RideItem *_rideItem, bool force)
     zoomer->setZoomBase();
 
     // dont show legend in metric mode
-    legend()->hide();
-    updateLegend();
+    //XXX legend()->hide();
+    //XXX updateLegend();
 }
 
 void
