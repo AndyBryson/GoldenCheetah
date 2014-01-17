@@ -164,6 +164,7 @@ ComparePane::refreshTable()
         QString s = appsettings->value(this, GC_SETTINGS_INTERVAL_METRICS, GC_SETTINGS_INTERVAL_METRICS_DEFAULT).toString();
         if (s == "") s = GC_SETTINGS_INTERVAL_METRICS_DEFAULT;
         QStringList metricColumns = always + s.split(","); // always showm metrics plus user defined summary metrics
+        metricColumns.removeDuplicates(); // where user has already added workout_time, total_distance
 
         // called after config is updated typically
         QStringList list;
@@ -330,6 +331,7 @@ ComparePane::refreshTable()
         QString s = appsettings->value(this, GC_SETTINGS_SUMMARY_METRICS, GC_SETTINGS_SUMMARY_METRICS_DEFAULT).toString();
         if (s == "") s = GC_SETTINGS_SUMMARY_METRICS_DEFAULT;
         QStringList metricColumns = always + s.split(","); // always showm metrics plus user defined summary metrics
+        metricColumns.removeDuplicates(); // where user has already added workout_time, total_distance
 
         // called after config is updated typically
         QStringList list;
@@ -682,9 +684,6 @@ ComparePane::dropEvent(QDropEvent *event)
                 }
             }
             add.data->recalculateDerivedSeries();
-
-            // force the cache to be computed when added -- may optimise this out later
-            add.rideFileCache()->meanMaxArray(RideFile::watts).size(); // force the cache to be computed straight away.
 
             // just use standard colors and cycle round
             // we will of course repeat, but the user can
