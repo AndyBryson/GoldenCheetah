@@ -299,27 +299,44 @@ PowerHist::refreshHRZoneLabels()
 }
 
 void
-PowerHist::recalcCompareIntervals()
+PowerHist::recalcCompare()
 {
     // Set curves .. they will always have been created 
     //               in setDataFromCompareIntervals, but no samples set
 
-    if (!isVisible() && (rangemode || !context->isCompareIntervals)) return;
+    // don't bother if not comparing for our mode or we're not visible
+    if (!isVisible() ||
+        ((rangemode && !context->isCompareDateRanges)
+        || (!rangemode && !context->isCompareIntervals))) return;
 
+    // loop through intervals or dateranges, depending upon mode
+    // counting columns
     double ncols = 0;
-    foreach(CompareInterval x, context->compareIntervals) {
-        if (x.isChecked()) ncols++;
+    for(int i=0; (rangemode && i < context->compareDateRanges.count()) ||
+                 (!rangemode && i < context->compareIntervals.count()) ; i++) {
+
+        if (rangemode && context->compareDateRanges[i].isChecked()) ncols++;
+        if (!rangemode && context->compareIntervals[i].isChecked()) ncols++;
     }
     int acol = 0;
     int maxX = 0;
-    for (int intervalNumber=0; intervalNumber < context->compareIntervals.count(); intervalNumber++) {
+
+    // loop again but now setting up data
+    for(int intervalNumber=0; (rangemode && intervalNumber < context->compareDateRanges.count()) ||
+                 (!rangemode && intervalNumber < context->compareIntervals.count()) ; intervalNumber++) {
 
         HistData &cid = compareData[intervalNumber];
         QwtPlotCurve *curve = compareCurves[intervalNumber];
         QVector<unsigned int> *array = NULL;
         int arrayLength = 0;
 
-        if (series == RideFile::watts && zoned == false) {
+        if (source == Metric) {
+
+            // we use the metricArray
+            array = &cid.metricArray;
+            arrayLength = cid.metricArray.size();
+
+        } else if (series == RideFile::watts && zoned == false) {
 
             array = &cid.wattsArray;
             arrayLength = cid.wattsArray.size();
@@ -357,6 +374,7 @@ PowerHist::recalcCompareIntervals()
         } else if (series == RideFile::kph) {
 
             array = &cid.kphArray;
+            arrayLength = cid.kphArray.size();
 
         } else if (series == RideFile::cad) {
             array = &cid.cadArray;
@@ -377,7 +395,6 @@ PowerHist::recalcCompareIntervals()
                                                                            && series != RideFile::hr))) {
 
             // NOT ZONED
-
             // we add a bin on the end since the last "incomplete" bin
             // will be dropped otherwise
             int count = int(ceil((arrayLength - 1) / (binw)))+1;
@@ -524,8 +541,9 @@ PowerHist::recalcCompareIntervals()
 
             setAxisMaxMinor(QwtPlot::xBottom, 0);
 
-            // keep track of columns visible
-            if (context->compareIntervals[intervalNumber].isChecked()) acol++;
+            // keep track of columns visible -- depending upon mode
+            if (!rangemode && context->compareIntervals[intervalNumber].isChecked()) acol++;
+            if (rangemode && context->compareDateRanges[intervalNumber].isChecked()) acol++;
         }
     }
 
@@ -544,8 +562,9 @@ PowerHist::recalcCompareIntervals()
 void
 PowerHist::recalc(bool force)
 {
-    if (!rangemode && context->isCompareIntervals) {
-        recalcCompareIntervals();
+    if ((!rangemode && context->isCompareIntervals) ||
+       (rangemode && context->isCompareDateRanges)) {
+        recalcCompare();
         return;
     }
 
@@ -743,19 +762,19 @@ PowerHist::recalc(bool force)
         // samples to time
         for (int i=0, offset=0; i<array->size(); i++) {
 
-            double x = (double) i - 0.5;
+            double x = (double) i - (0.625f / 2.0f);
             double y = dt * (double)(*array)[i];
 
-            xaxis[offset] = x +0.05;
+            xaxis[offset] = x;
             yaxis[offset] = 0;
             offset++;
-            xaxis[offset] = x+0.05;
+            xaxis[offset] = x;
             yaxis[offset] = y;
             offset++;
-            xaxis[offset] = x+0.95;
+            xaxis[offset] = x+0.625;
             yaxis[offset] = y;
             offset++;
-            xaxis[offset] = x +0.95;
+            xaxis[offset] = x +0.625;
             yaxis[offset] = 0;
             offset++;
         }
@@ -841,6 +860,19 @@ PowerHist::setYMax()
 
             // if its not visible don't set for it
             if (context->compareIntervals[i].isChecked()) {
+                double my = p->maxYValue();
+                if (my > MaxY) MaxY = my;
+            }
+            i++;
+        }
+
+    } else if (rangemode && context->isCompareDateRanges) {
+
+        int i=0;
+        foreach (QwtPlotCurve *p, compareCurves) {
+
+            // if its not visible don't set for it
+            if (context->compareDateRanges[i].isChecked()) {
                 double my = p->maxYValue();
                 if (my > MaxY) MaxY = my;
             }
@@ -937,8 +969,11 @@ PowerHist::setData(RideFileCache *cache)
 }
 
 void
-PowerHist::setDataFromCompareIntervals()
+PowerHist::setDataFromCompare()
 {
+    // not for metric plots sonny
+    if (source == Metric) return;
+
     double width = appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble();
 
     // set all the curves based upon whats in the compare intervals array
@@ -953,7 +988,18 @@ PowerHist::setDataFromCompareIntervals()
     compareCurves.clear();
 
     // now lets setup a HistData for each CompareInterval
-    foreach(CompareInterval ci, context->compareIntervals) {
+    for(int intervalNumber=0; (rangemode && intervalNumber < context->compareDateRanges.count()) ||
+                 (!rangemode && intervalNumber < context->compareIntervals.count()) ; intervalNumber++) {
+
+        // get the bits we need from either the interval or daterange compare object
+        RideFileCache *s = rangemode ? context->compareDateRanges[intervalNumber].rideFileCache() :
+                                       context->compareIntervals[intervalNumber].rideFileCache();
+
+        QColor color = rangemode ? context->compareDateRanges[intervalNumber].color :
+                                       context->compareIntervals[intervalNumber].color;
+
+        bool ischecked = rangemode ? context->compareDateRanges[intervalNumber].isChecked() :
+                                       context->compareIntervals[intervalNumber].isChecked();
 
         // set the data even if not checked
         HistData add;
@@ -970,13 +1016,13 @@ PowerHist::setDataFromCompareIntervals()
         add.kphArray.resize(0);
         add.cadArray.resize(0);
 
-        longFromDouble(add.wattsArray, ci.rideFileCache()->distributionArray(RideFile::watts));
-        longFromDouble(add.wattsKgArray, ci.rideFileCache()->distributionArray(RideFile::wattsKg));
-        longFromDouble(add.aPowerArray, ci.rideFileCache()->distributionArray(RideFile::aPower));
-        longFromDouble(add.hrArray, ci.rideFileCache()->distributionArray(RideFile::hr));
-        longFromDouble(add.nmArray, ci.rideFileCache()->distributionArray(RideFile::nm));
-        longFromDouble(add.cadArray, ci.rideFileCache()->distributionArray(RideFile::cad));
-        longFromDouble(add.kphArray, ci.rideFileCache()->distributionArray(RideFile::kph));
+        longFromDouble(add.wattsArray, s->distributionArray(RideFile::watts));
+        longFromDouble(add.wattsKgArray, s->distributionArray(RideFile::wattsKg));
+        longFromDouble(add.aPowerArray, s->distributionArray(RideFile::aPower));
+        longFromDouble(add.hrArray, s->distributionArray(RideFile::hr));
+        longFromDouble(add.nmArray, s->distributionArray(RideFile::nm));
+        longFromDouble(add.cadArray, s->distributionArray(RideFile::cad));
+        longFromDouble(add.kphArray, s->distributionArray(RideFile::kph));
 
         // convert for metric imperial types
         if (!context->athlete->useMetricUnits) {
@@ -989,15 +1035,15 @@ PowerHist::setDataFromCompareIntervals()
 
         // zone array
         for (int i=0; i<10; i++) {
-            add.wattsZoneArray[i] = ci.rideFileCache()->wattsZoneArray()[i];
-            add.hrZoneArray[i] = ci.rideFileCache()->hrZoneArray()[i];
+            add.wattsZoneArray[i] = s->wattsZoneArray()[i];
+            add.hrZoneArray[i] = s->hrZoneArray()[i];
         }
 
         // add to the list
         compareData << add;
 
         // now add a curve for recalc to play with
-        QwtPlotCurve *newCurve = new QwtPlotCurve(ci.name);
+        QwtPlotCurve *newCurve = new QwtPlotCurve("");
         newCurve->setStyle(QwtPlotCurve::Steps);
 
         if (appsettings->value(this, GC_ANTIALIAS, false).toBool()==true)
@@ -1005,11 +1051,11 @@ PowerHist::setDataFromCompareIntervals()
 
         // curve has no brush .. too confusing...
         QPen pen;
-        pen.setColor(ci.color);
+        pen.setColor(color);
         pen.setWidth(width);
         newCurve->setPen(pen);
 
-        QColor brush_color = ci.color;
+        QColor brush_color = color;
         brush_color.setAlpha(GColor(CPLOTBACKGROUND) == QColor(Qt::white) ? 120 : 200);
         QColor brush_color1 = brush_color.darker();
         //QLinearGradient linearGradient(0, 0, 0, height());
@@ -1019,7 +1065,7 @@ PowerHist::setDataFromCompareIntervals()
         newCurve->setBrush(brush_color1);   // fill below the line
 
         // hide and show, but always attach
-        newCurve->setVisible(ci.isChecked());
+        newCurve->setVisible(ischecked);
         newCurve->attach(this);
 
         // we do want a legend in compare mode
@@ -1038,10 +1084,12 @@ void
 PowerHist::setComparePens()
 {
     // no compare? don't bother
-    if (rangemode || !context->isCompareIntervals) return;
+    if ((!rangemode && !context->isCompareIntervals) ||
+        (rangemode && !context->isCompareDateRanges)) return;
 
     double width = appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble();
-    for (int i=0; i<context->compareIntervals.count(); i++) {
+    for (int i=0; (!rangemode && i<context->compareIntervals.count()) ||
+                  (rangemode && i<context->compareDateRanges.count()); i++) {
 
         if (zoned == false || (zoned == true && (series != RideFile::watts && series != RideFile::wattsKg 
                                                                            && series != RideFile::hr))) {
@@ -1051,7 +1099,8 @@ PowerHist::setComparePens()
 
                 // set pen back
                 QPen pen;
-                pen.setColor(context->compareIntervals[i].color);
+                pen.setColor(rangemode ? context->compareDateRanges[i].color :
+                                         context->compareIntervals[i].color);
                 pen.setWidth(width);
                 compareCurves[i]->setPen(pen);
             }
@@ -1067,9 +1116,74 @@ PowerHist::setComparePens()
     }
 }
 
+// set the metric arrays up for each date range using the
+// summary metrics in the Context::CompareDateRange array
+void
+PowerHist::setDataFromCompare(QString totalMetric, QString distMetric)
+{
+
+    // set the data for each compare date range using
+    // the metric results in the compare data range
+    // and create the HistData and curves associated
+    double width = appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble();
+
+    // remove old data and curves
+    compareData.clear();
+    foreach(QwtPlotCurve *x, compareCurves) {
+        x->detach();
+        delete x;
+    }
+    compareCurves.clear();
+
+    // now lets setup a HistData for each CompareDate Range
+    foreach(CompareDateRange cd, context->compareDateRanges) {
+
+        // set the data even if not checked
+        HistData add;
+
+        // set it from the metric
+        setData(cd.metrics,  totalMetric, distMetric, false, QStringList(), &add);
+
+        // add to the list
+        compareData << add;
+
+        // now add a curve for recalc to play with
+        QwtPlotCurve *newCurve = new QwtPlotCurve("");
+        newCurve->setStyle(QwtPlotCurve::Steps);
+
+        if (appsettings->value(this, GC_ANTIALIAS, false).toBool()==true)
+            newCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
+
+        // curve has no brush .. too confusing...
+        QPen pen;
+        pen.setColor(cd.color);
+        pen.setWidth(width);
+        newCurve->setPen(pen);
+
+        QColor brush_color = cd.color;
+        brush_color.setAlpha(GColor(CPLOTBACKGROUND) == QColor(Qt::white) ? 120 : 200);
+        QColor brush_color1 = brush_color.darker();
+        //QLinearGradient linearGradient(0, 0, 0, height());
+        //linearGradient.setColorAt(0.0, brush_color);
+        //linearGradient.setColorAt(1.0, brush_color1);
+        //linearGradient.setSpread(QGradient::PadSpread);
+        newCurve->setBrush(brush_color1);   // fill below the line
+
+        // hide and show, but always attach
+        newCurve->setVisible(cd.isChecked());
+        newCurve->attach(this);
+
+        // we do want a legend in compare mode
+        //XXX newCurve->setItemAttribute(QwtPlotItem::Legend, true);
+
+        // add to our collection
+        compareCurves << newCurve;
+    }
+}
+
 void 
 PowerHist::setData(QList<SummaryMetrics>&results, QString totalMetric, QString distMetric,
-                     bool isFiltered, QStringList files)
+                     bool isFiltered, QStringList files, HistData *data)
 {
     // what metrics are we plotting?
     source = Metric;
@@ -1123,8 +1237,8 @@ PowerHist::setData(QList<SummaryMetrics>&results, QString totalMetric, QString d
     // now run thru the data again, but this time
     // populate the metricArray
     // we add 1 to account for possible rounding up
-    standard.metricArray.resize(1 + (int)(max)-(int)(min));
-    standard.metricArray.fill(0);
+    data->metricArray.resize(1 + (int)(max)-(int)(min));
+    data->metricArray.fill(0);
 
     // LOOP THRU VALUES -- REPEATED WITH CUT AND PASTE ABOVE
     // SO PLEASE MAKE SAME CHANGES TWICE (SORRY)
@@ -1164,7 +1278,7 @@ PowerHist::setData(QList<SummaryMetrics>&results, QString totalMetric, QString d
         if (tm->units(context->athlete->useMetricUnits) == tr("seconds")) t /= 60;
 
         // sum up
-        standard.metricArray[(int)(v)-min] += t;
+        data->metricArray[(int)(v)-min] += t;
     }
 
     // we certainly don't want the interval curve when plotting
