@@ -73,8 +73,11 @@
 // 52  05  Nov 2013 Mark Liversedge    Added EOA - Effect of Altitude
 // 53  18  Dec 2013 Mark Liversedge    Added Fatigue Index (for power)
 // 54  07  Jan 2014 Mark Liversedge    Revised Estimated VO2MAX metric formula
+// 55  20  Jan 2014 Mark Liversedge    Added back Minimum W'bal metric and MaxMatch
+// 56  20  Jan 2014 Mark Liversedge    Added W' TAU to be able to track it
+// 57  20  Jan 2014 Mark Liversedge    Added W' Expenditure for total energy spent above CP
 
-int DBSchemaVersion = 54;
+int DBSchemaVersion = 57;
 
 DBAccess::DBAccess(Context* context) : context(context), db(NULL)
 {
