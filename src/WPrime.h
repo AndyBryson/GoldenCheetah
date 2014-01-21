@@ -52,8 +52,9 @@ class WPrime {
         QVector<double> &mydata() { return mvalues; }
         QVector<double> &mxdata() { return mxvalues; }
 
+        double maxMatch();
         double minY, maxY;
-        double TAU, CP, WPRIME;
+        double TAU, CP, WPRIME, EXP;
 
         QList<Match> matches;       // matches burned with associated cost
 

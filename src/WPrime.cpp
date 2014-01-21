@@ -61,8 +61,8 @@ WPrime::setRide(RideFile *input)
     values.resize(0); // the memory is kept for next time so this is efficient
     xvalues.resize(0);
 
-    minY = maxY = 0;
-    CP = WPRIME = TAU=0;
+    EXP = CP = WPRIME = TAU=0;
+    minY = maxY = WPRIME;
         
     // no data or no power data then forget it.
     if (!input || input->dataPoints().count() == 0 || input->areDataPresent()->watts == false) {
@@ -125,6 +125,7 @@ WPrime::setRide(RideFile *input)
     double totalBelowCP=0;
     double countBelowCP=0;
     QVector<int> inputArray(last+1);
+    EXP = 0;
     for (int i=0; i<last; i++) {
 
         int value = smoothed.value(i);
@@ -133,7 +134,7 @@ WPrime::setRide(RideFile *input)
         if (value < CP) {
             totalBelowCP += value;
             countBelowCP++;
-        }
+        } else EXP += value; // total expenditure above CP
     }
 
     TAU = 546.00f * pow(E,-0.01*(CP - (totalBelowCP/countBelowCP))) + 316.00f;
@@ -143,30 +144,42 @@ WPrime::setRide(RideFile *input)
 
     // STEP 2: ITERATE OVER DATA TO CREATE W' DATA SERIES
 
-    // wipe away whatever is there
-    minY = maxY = 0;
+    // initialise with Wbal equal to W' and therefore 0 expenditure
+    double Wbal = WPRIME;
+    double Wexp = 0;
+    int u = 0;
+
+    // lets run forward from 0s to end of ride
+    minY = WPRIME;
+    maxY = WPRIME;
     values.resize(last+1);
     xvalues.resize(last+1);
-    for(int i=last; i>=0; i--) {
 
-        // used by AllPlot to plot the curve, we might as well
-        // create it here whilst we're iterating. But bear in mind
-        // that its in minutes, a bit of a legacy that one.
-        xvalues[i] = double(i)/60.00f;
+    for (int t=0; t<=last; t++) {
 
-        // W' is a SUMPRODUCT of the previous 1200 samples
-        // of power over CP * the associated decay factor * the mult factor
-        // it will be zero for first 20 minutes
+        // because we work with watts per second
+        // joules = watts * 1 i.e. joules = watts
+        double watts = smoothed.value(t);
+        if (watts > CP) {
 
-        double sumproduct = 0;
-        for (int j=0; j<1200 && (i-j) > 0; j++) {
-            sumproduct += inputArray.at(i-j) * pow(E, -(double(j)/TAU)); 
+            Wbal -= (watts-CP); // expending
+            Wexp = WPRIME-Wbal;
+            u = t; 
+
+        } else {
+
+            // calculate bal
+            Wbal = WPRIME - (Wexp * pow(E, -(double(t-u)/TAU)));
         }
-        values[i] = WPRIME - (sumproduct * WprimeMultConst);
+
+        // update arrays
+        xvalues[t] = double(t)/60.00f;
+        values[t] = Wbal;
 
         // min / max
-        if (values[i] < minY) minY = values[i];
-        if (values[i] > maxY) maxY = values[i];
+        if (Wbal < minY) minY = Wbal;
+        if (Wbal > maxY) maxY = Wbal;
+        
     }
 
     // STEP 3: FIND MATCHES
@@ -247,22 +260,32 @@ WPrime::setRide(RideFile *input)
     }
 }
 
+double
+WPrime::maxMatch()
+{
+    double max=0;
+    foreach(struct Match match, matches) 
+        if (match.cost > max) max = match.cost;
+
+    return max;
+}
+
 //
 // Associated Metrics
 //
 
 class MinWPrime : public RideMetric {
-    Q_DECLARE_TR_FUNCTIONS(WPrimeMin)
+    Q_DECLARE_TR_FUNCTIONS(MinWPrime);
 
     public:
 
     MinWPrime()
     {
         setSymbol("skiba_wprime_low");
-        setInternalName("Minimum W'");
+        setInternalName("Minimum W'bal");
     }
     void initialize() {
-        setName(tr("Minimum W'"));
+        setName(tr("Minimum W' bal"));
         setType(RideMetric::Low);
         setMetricUnits(tr("Kj"));
         setImperialUnits(tr("Kj"));
@@ -282,12 +305,106 @@ class MinWPrime : public RideMetric {
     RideMetric *clone() const { return new MinWPrime(*this); }
 };
 
-#if 0 // NEEDS OPTIMISING -- DISABLED UNTIL ISSUE RESOLVED
+class MaxMatch : public RideMetric {
+    Q_DECLARE_TR_FUNCTIONS(MaxMatch);
+
+    public:
+
+    MaxMatch()
+    {
+        setSymbol("skiba_wprime_maxmatch");
+        setInternalName("Maximum W'bal Match");
+    }
+    void initialize() {
+        setName(tr("Maximum W'bal Match"));
+        setType(RideMetric::Peak);
+        setMetricUnits(tr("Kj"));
+        setImperialUnits(tr("Kj"));
+        setPrecision(1);
+    }
+    void compute(const RideFile *r, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        WPrime w;
+        w.setRide((RideFile*)r);
+        setValue(w.maxMatch()/1000.00f);
+    }
+
+    bool canAggregate() { return false; }
+    RideMetric *clone() const { return new MaxMatch(*this); }
+};
+
+class WPrimeTau : public RideMetric {
+    Q_DECLARE_TR_FUNCTIONS(WPrimeTau);
+
+    public:
+
+    WPrimeTau()
+    {
+        setSymbol("skiba_wprime_tau");
+        setInternalName("W'bal TAU");
+    }
+    void initialize() {
+        setName(tr("W'bal TAU"));
+        setType(RideMetric::Low);
+        setMetricUnits(tr(""));
+        setImperialUnits(tr(""));
+        setPrecision(0);
+    }
+    void compute(const RideFile *r, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        WPrime w;
+        w.setRide((RideFile*)r);
+        setValue(w.TAU);
+    }
+
+    bool canAggregate() { return false; }
+    RideMetric *clone() const { return new WPrimeTau(*this); }
+};
+
+class WPrimeExp : public RideMetric {
+    Q_DECLARE_TR_FUNCTIONS(WPrimeExp);
+
+    public:
+
+    WPrimeExp()
+    {
+        setSymbol("skiba_wprime_exp");
+        setInternalName("W' expenditure");
+    }
+    void initialize() {
+        setName(tr("W' expenditure"));
+        setType(RideMetric::Total);
+        setMetricUnits(tr("Kj"));
+        setImperialUnits(tr("Kj"));
+        setPrecision(1);
+    }
+    void compute(const RideFile *r, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        WPrime w;
+        w.setRide((RideFile*)r);
+        setValue(w.EXP/1000);
+    }
+
+    bool canAggregate() { return false; }
+    RideMetric *clone() const { return new WPrimeExp(*this); }
+};
+
 // add to catalogue
 static bool addMetrics() {
     RideMetricFactory::instance().addMetric(MinWPrime());
+    RideMetricFactory::instance().addMetric(MaxMatch());
+    RideMetricFactory::instance().addMetric(WPrimeTau());
+    RideMetricFactory::instance().addMetric(WPrimeExp());
     return true;
 }
 
 static bool added = addMetrics();
-#endif
