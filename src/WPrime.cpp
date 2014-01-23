@@ -61,9 +61,8 @@ WPrime::setRide(RideFile *input)
     values.resize(0); // the memory is kept for next time so this is efficient
     xvalues.resize(0);
 
-    EXP = CP = WPRIME = TAU=0;
-    minY = maxY = WPRIME;
-        
+    EXP = PCP_ = CP = WPRIME = TAU=0;
+
     // no data or no power data then forget it.
     if (!input || input->dataPoints().count() == 0 || input->areDataPresent()->watts == false) {
         return;
@@ -73,37 +72,47 @@ WPrime::setRide(RideFile *input)
     // create a raw time series in the format QwtSpline wants
     QVector<QPointF> points;
 
-    int last=0;
-
+    last=0;
+    int offset = 0; // always start from zero seconds (e.g. intervals start at and offset in ride)
+    bool first = true;
     if (input->recIntSecs() >= 1) {
         RideFilePoint *lp=NULL;
         foreach(RideFilePoint *p, input->dataPoints()) {
+
+            if (first) {
+                offset = p->secs;
+                first = false;
+            }
 
             // fill gaps in recording with zeroes
             if (lp)
                 for(int t=lp->secs+input->recIntSecs();
                     t < p->secs;
                     t += input->recIntSecs())
-                    points << QPointF(t, 0);
+                    points << QPointF(t-offset, 0);
 
             // lets not go backwards -- or two sampls at the same time
             if ((lp && p->secs > lp->secs) || !lp)
-                points << QPointF(p->secs, p->watts);
+                points << QPointF(p->secs - offset, p->watts);
 
             // update state
-            last = p->secs;
+            last = p->secs - offset;
             lp = p;
         }
     } else {
 
         foreach(RideFilePoint *p, input->dataPoints()) {
-            points << QPointF(p->secs, p->watts);
-            last = p->secs;
+
+            if (first) {
+                offset = p->secs;
+                first = false;
+            }
+            points << QPointF(p->secs - offset, p->watts);
+            last = p->secs - offset;
         }
     }
 
     // Create a spline
-    QwtSpline smoothed;
     smoothed.setSplineType(QwtSpline::Natural);
     smoothed.setPoints(QPolygonF(points));
 
@@ -118,10 +127,10 @@ WPrime::setRide(RideFile *input)
         int oCP = input->getTag("CP","0").toInt();
         if (oCP) CP=oCP;
     }
+    minY = maxY = WPRIME;
 
-    // since we will be running up and down the data series multiple times
-    // as we iterate and run a SUMPRODUCT it is best to extract the data
-    // into a vector of ints for the watts above CP
+    // input array contains the actual W' expenditure
+    // and will also contain non-zero values
     double totalBelowCP=0;
     double countBelowCP=0;
     QVector<int> inputArray(last+1);
@@ -137,7 +146,11 @@ WPrime::setRide(RideFile *input)
         } else EXP += value; // total expenditure above CP
     }
 
-    TAU = 546.00f * pow(E,-0.01*(CP - (totalBelowCP/countBelowCP))) + 316.00f;
+    if (countBelowCP > 0)
+        TAU = 546.00f * pow(E,-0.01*(CP - (totalBelowCP/countBelowCP))) + 316.00f;
+    else
+        TAU = 546.00f * pow(E,-0.01*(CP)) + 316.00f;
+
     TAU = int(TAU); // round it down
 
     //qDebug()<<"data preparation took"<<time.elapsed();
@@ -157,29 +170,33 @@ WPrime::setRide(RideFile *input)
 
     for (int t=0; t<=last; t++) {
 
-        // because we work with watts per second
-        // joules = watts * 1 i.e. joules = watts
-        double watts = smoothed.value(t);
-        if (watts > CP) {
-
-            Wbal -= (watts-CP); // expending
-            Wexp = WPRIME-Wbal;
-            u = t; 
-
-        } else {
-
-            // calculate bal
-            Wbal = WPRIME - (Wexp * pow(E, -(double(t-u)/TAU)));
-        }
-
-        // update arrays
+        // for each value in the input array apply the decay
+        // and integrate across the target output, but lets
+        // bound it;
+        // input is 0 then don't bother adding lots of zeroes
+        // only integrate 1200s into the future, as per the spreadsheet
+        // stop integrating when it has decayed to less than 0.1 watts (exponential sum)
         xvalues[t] = double(t)/60.00f;
-        values[t] = Wbal;
 
-        // min / max
-        if (Wbal < minY) minY = Wbal;
-        if (Wbal > maxY) maxY = Wbal;
-        
+        if (inputArray[t] <= 0) continue;
+
+        for (int i=0; i<1200 && t+i <= last; i++) {
+
+            double value = inputArray[t] * pow(E, -(double(i)/TAU));
+            if (value < 0.1) break;
+ 
+            // integrate
+            values[t+i] += value;
+        }
+    }
+
+    // now subtract WPRIME and work out minimum etc
+    for(int t=0; t <= last; t++) {
+        double value = WPRIME - values[t];
+        values[t] = value;
+
+        if (value > maxY) maxY = value;
+        if (value < minY) minY = value;
     }
 
     // STEP 3: FIND MATCHES
@@ -261,6 +278,90 @@ WPrime::setRide(RideFile *input)
 }
 
 double
+WPrime::PCP()
+{
+    if (PCP_) return PCP_;
+
+    int cp = CP;
+    do {
+    
+        if (minForCP(cp) > 0) return PCP_=cp;
+        else cp++;
+
+    } while (cp < 500);
+
+    PCP_ = cp;
+}
+
+int 
+WPrime::minForCP(int cp)
+{
+    // input array contains the actual W' expenditure
+    // and will also contain non-zero values
+    double tau;
+    double totalBelowCP=0;
+    double countBelowCP=0;
+    QVector<int> inputArray(last+1);
+    for (int i=0; i<last; i++) {
+
+        int value = smoothed.value(i);
+        inputArray[i] = value > cp ? value-cp : 0;
+
+        if (value < cp) {
+            totalBelowCP += value;
+            countBelowCP++;
+        }
+    }
+
+    if (countBelowCP > 0)
+        tau = 546.00f * pow(E,-0.01*(CP - (totalBelowCP/countBelowCP))) + 316.00f;
+    else
+        tau = 546.00f * pow(E,-0.01*(CP)) + 316.00f;
+
+    tau = int(tau); // round it down
+
+    //qDebug()<<"data preparation took"<<time.elapsed();
+
+    // STEP 2: ITERATE OVER DATA TO CREATE W' DATA SERIES
+
+    // initialise with Wbal equal to W' and therefore 0 expenditure
+    double Wbal = WPRIME;
+    double Wexp = 0;
+    int u = 0;
+
+    // lets run forward from 0s to end of ride
+    int min = WPRIME;
+    QVector<double> myvalues(last+1);
+
+    for (int t=0; t<=last; t++) {
+
+        // for each value in the input array apply the decay
+        // and integrate across the target output, but lets
+        // bound it;
+        // input is 0 then don't bother adding lots of zeroes
+        // only integrate 1200s into the future, as per the spreadsheet
+        // stop integrating when it has decayed to less than 0.1 watts (exponential sum)
+        if (inputArray[t] <= 0) continue;
+
+        for (int i=0; i<1200 && t+i <= last; i++) {
+
+            double value = inputArray[t] * pow(E, -(double(i)/tau));
+            if (value < 0.1) break;
+ 
+            // integrate
+            myvalues[t+i] += value;
+        }
+    }
+
+    // now subtract WPRIME and work out minimum etc
+    for(int t=0; t <= last; t++) {
+        double value = WPRIME - myvalues[t];
+        if (value < min) min = value;
+    }
+qDebug()<<"min="<<min<<"CP="<<cp;
+    return min;
+}
+double
 WPrime::maxMatch()
 {
     double max=0;
@@ -287,8 +388,8 @@ class MinWPrime : public RideMetric {
     void initialize() {
         setName(tr("Minimum W' bal"));
         setType(RideMetric::Low);
-        setMetricUnits(tr("Kj"));
-        setImperialUnits(tr("Kj"));
+        setMetricUnits(tr("kJ"));
+        setImperialUnits(tr("kJ"));
         setPrecision(1);
     }
     void compute(const RideFile *r, const Zones *, int,
@@ -318,8 +419,8 @@ class MaxMatch : public RideMetric {
     void initialize() {
         setName(tr("Maximum W'bal Match"));
         setType(RideMetric::Peak);
-        setMetricUnits(tr("Kj"));
-        setImperialUnits(tr("Kj"));
+        setMetricUnits(tr("kJ"));
+        setImperialUnits(tr("kJ"));
         setPrecision(1);
     }
     void compute(const RideFile *r, const Zones *, int,
@@ -327,9 +428,7 @@ class MaxMatch : public RideMetric {
                  const QHash<QString,RideMetric*> &,
                  const Context *) {
 
-        WPrime w;
-        w.setRide((RideFile*)r);
-        setValue(w.maxMatch()/1000.00f);
+        setValue(const_cast<RideFile*>(r)->wprimeData()->maxMatch()/1000.00f);
     }
 
     bool canAggregate() { return false; }
@@ -358,9 +457,7 @@ class WPrimeTau : public RideMetric {
                  const QHash<QString,RideMetric*> &,
                  const Context *) {
 
-        WPrime w;
-        w.setRide((RideFile*)r);
-        setValue(w.TAU);
+        setValue(const_cast<RideFile*>(r)->wprimeData()->TAU);
     }
 
     bool canAggregate() { return false; }
@@ -380,8 +477,8 @@ class WPrimeExp : public RideMetric {
     void initialize() {
         setName(tr("W' expenditure"));
         setType(RideMetric::Total);
-        setMetricUnits(tr("Kj"));
-        setImperialUnits(tr("Kj"));
+        setMetricUnits(tr("kJ"));
+        setImperialUnits(tr("kJ"));
         setPrecision(1);
     }
     void compute(const RideFile *r, const Zones *, int,
@@ -389,9 +486,7 @@ class WPrimeExp : public RideMetric {
                  const QHash<QString,RideMetric*> &,
                  const Context *) {
 
-        WPrime w;
-        w.setRide((RideFile*)r);
-        setValue(w.EXP/1000);
+        setValue(const_cast<RideFile*>(r)->wprimeData()->EXP/1000);
     }
 
     bool canAggregate() { return false; }
