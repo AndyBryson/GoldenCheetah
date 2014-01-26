@@ -633,14 +633,20 @@ struct FitFileReaderState
                     case 4: v = read_uint16(def.is_big_endian, &count); size = 2;  break;
                     case 5: v = read_int32(def.is_big_endian, &count); size = 4;  break;
                     case 6: v = read_uint32(def.is_big_endian, &count); size = 4;  break;
+                    //case 7: // String
+                    //case 8: // FLOAT32
+                    //case 9: // FLOAT64
                     case 10: v = read_uint8z(&count); size = 1; break;
                     case 11: v = read_uint16z(def.is_big_endian, &count); size = 2; break;
                     case 12: v = read_uint32z(def.is_big_endian, &count); size = 4; break;
+                    //case 13: // BYTE
+
                     // we may need to add support for float, string + byte base types here
                     default:
                         read_unknown( field.size, &count );
                         v = NA_VALUE;
                         unknown_base_type.insert(field.num);
+                        size = field.size;
                 }
                 // Quick fix : we need to support multivalues
                 if (size < field.size)

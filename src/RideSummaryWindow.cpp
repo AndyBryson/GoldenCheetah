@@ -298,12 +298,14 @@ RideSummaryWindow::htmlSummary() const
         << "time_riding"
         << "total_distance"
         << "total_work"
+        << "skiba_wprime_exp"
         << "elevation_gain";
 
     static const QStringList rtotalColumn = QStringList()
         << "workout_time"
         << "total_distance"
         << "total_work"
+        << "skiba_wprime_exp"
         << "elevation_gain";
 
     QStringList averageColumn = QStringList() // not const as modified below..
@@ -316,7 +318,8 @@ RideSummaryWindow::htmlSummary() const
         << "max_speed"
         << "max_power"
         << "max_heartrate"
-        << "max_cadence";
+        << "max_cadence"
+        << "skiba_wprime_max";
 
     // show average and max temp if it is available (in ride summary mode)
     if (ridesummary && (ride->areDataPresent()->temp || ride->getTag("Temperature", "-") != "-")) {
@@ -478,9 +481,17 @@ RideSummaryWindow::htmlSummary() const
                  } else {
 
                     // get the value - from metrics or from data array
-                    if (ridesummary) s = s.arg(metrics.getForSymbol(symbol) * (useMetricUnits ? 1 : m->conversion())
-                                               + (useMetricUnits ? 0 : m->conversionSum()), 0, 'f', m->precision());
-                    else {
+                    if (ridesummary) {
+                            QString v = QString("%1").arg(metrics.getForSymbol(symbol) * (useMetricUnits ? 1 : m->conversion())
+                                + (useMetricUnits ? 0 : m->conversionSum()), 0, 'f', m->precision());
+
+                            // W' over 100% is not a good thing!
+                            if (symbol == "skiba_wprime_max" && metrics.getForSymbol(symbol) > 100) {
+                                v = QString("<font color=\"red\">%1<font color=\"black\">").arg(v);
+                            }
+                            s = s.arg(v);
+        
+                    } else {
                       QStringList filterList = filters;
                       if (context->ishomefiltered) {
                           if (filtered) {
@@ -894,6 +905,7 @@ RideSummaryWindow::htmlCompareSummary() const
         << "time_riding"
         << "total_distance"
         << "total_work"
+        << "skiba_wprime_exp"
         << "elevation_gain";
 
     static const QStringList rtotalColumn = QStringList()
@@ -912,7 +924,8 @@ RideSummaryWindow::htmlCompareSummary() const
         << "max_speed"
         << "max_power"
         << "max_heartrate"
-        << "max_cadence";
+        << "max_cadence"
+        << "skiba_wprime_max";
 
 #if 0 // XXX do /any/ of them have temperature -or- do they /all/ need to ???
     // show average and max temp if it is available (in ride summary mode)
