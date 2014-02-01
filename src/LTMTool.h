@@ -84,6 +84,7 @@ class LTMTool : public QWidget
         QComboBox *groupBy;
         QCheckBox *shadeZones;
         QCheckBox *showLegend;
+        QCheckBox *showData;
         QCheckBox *showEvents;
         QPushButton *saveButton;
         QPushButton *applyButton;
@@ -188,6 +189,7 @@ class EditMetricDetailDialog : public QDialog
         QCheckBox *stack;
         QPushButton *curveColor;
         QCheckBox *fillCurve;
+        QCheckBox *labels;
         QDoubleSpinBox *showBest,
                        *showOut,
                        *baseLine;
