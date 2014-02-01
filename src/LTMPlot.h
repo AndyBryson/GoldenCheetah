@@ -60,12 +60,14 @@ class LTMPlot : public QwtPlot
     protected:
         friend class ::LTMPlotBackground;
         friend class ::LTMPlotZoneLabel;
+        friend class ::LTMWindow;
 
         LTMPlotBackground *bg;
         QList <LTMPlotZoneLabel *> zoneLabels;
 
         LTMWindow *parent;
         double minY[10], maxY[10], maxX;      // for all possible 10 curves
+        void createPMCCurveData(LTMSettings *, MetricDetail, QList<SummaryMetrics> &);
 
     private:
         Context *context;
@@ -79,6 +81,7 @@ class LTMPlot : public QwtPlot
 
         QHash<QString, QwtPlotCurve*> curves; // metric symbol with curve object
         QHash<QString, QwtAxisId> axes;             // units and associated axis
+        QList<QwtPlotMarker*> labels;                // labels
         LTMScaleDraw *scale;
         QwtPlotGrid *grid;
         QDate firstDate,
@@ -94,7 +97,6 @@ class LTMPlot : public QwtPlot
                              QVector<double>&, QVector<double>&, int&);
         void createTODCurveData(LTMSettings *, MetricDetail,
                              QVector<double>&, QVector<double>&, int&);
-        void createPMCCurveData(LTMSettings *, MetricDetail, QList<SummaryMetrics> &);
         void aggregateCurves(QVector<double> &a, QVector<double>&w); // aggregate a with w, updates a
         QwtAxisId chooseYAxis(QString);
         void refreshZoneLabels(QwtAxisId);
