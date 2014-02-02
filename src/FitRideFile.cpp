@@ -691,12 +691,10 @@ struct FitFileReaderState
             return NULL;
         }
 
-        //
-        // read header
-        //
+        int data_size = 0;
         try {
 
-            // lets read the header
+            // read the header
             int header_size = read_uint8();
             if (header_size != 12 && header_size != 14) {
                 errors << QString("bad header size: %1").arg(header_size);
@@ -712,7 +710,7 @@ struct FitFileReaderState
             int profile_version = read_uint16(false); // always littleEndian
             (void) profile_version; // not sure what to do with this
 
-            read_uint32(false); // always littleEndian
+            data_size = read_uint32(false); // always littleEndian
             char fit_str[5];
             if (file.read(fit_str, 4) != 4) {
                 errors << "truncated header";
@@ -732,15 +730,11 @@ struct FitFileReaderState
             if (header_size == 14) read_uint16(false);
 
         } catch (TruncatedRead &e) {
-            errors << "invalid file or header";
+            errors << "truncated file body";
             return NULL;
         }
 
-        //
-        // Read data
-        //
         int bytes_read = 0;
-        int data_size = 0;
         bool stop = false;
         bool truncated = false;
         try {
@@ -749,6 +743,9 @@ struct FitFileReaderState
         }
         catch (TruncatedRead &e) {
             errors << "truncated file body";
+            //file.close();
+            //delete rideFile;
+            //return NULL;
             truncated = true;
         }
         if (stop) {
