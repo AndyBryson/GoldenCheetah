@@ -111,13 +111,15 @@ class LTMWindow : public GcChartWindow
 
         LTMWindow(Context *);
         ~LTMWindow();
-        LTMToolTip *toolTip() { return picker; }
 
         // reveal / filters
         bool hasReveal() { return true; }
 #ifdef GC_HAVE_LUCENE
         bool isFiltered() const { return (ltmTool->isFiltered() || context->ishomefiltered || context->isfiltered); }
 #endif
+
+        // comparing things
+        bool isCompare() const { return context->isCompareDateRanges; }
 
         // used by children
         Context *context;
@@ -179,12 +181,15 @@ class LTMWindow : public GcChartWindow
         void rideSelected();        // notification to refresh
 
         void refreshPlot();         // normal mode
+        void refreshCompare();      // compare mode
         void refreshStackPlots();   // stacked plots
         void refreshDataTable();    // data table
 
+        void compareChanged();
         void dateRangeChanged(DateRange);
         void filterChanged();
         void groupBySelected(int);
+        void showEventsClicked(int);
         void rGroupBySelected(int);
         void shadeZonesClicked(int);
         void showDataClicked(int);
@@ -215,9 +220,6 @@ class LTMWindow : public GcChartWindow
         // summary view
         QWebView *dataSummary;
 
-        // qwt picker
-        LTMToolTip *picker;
-        LTMCanvasPicker *_canvasPicker; // allow point selection/hover
 
         // popup - the GcPane to display within
         //         and the LTMPopup contents widdget
@@ -227,6 +229,7 @@ class LTMWindow : public GcChartWindow
         // local state
         bool dirty;
         bool stackDirty;
+        bool compareDirty;
 
         LTMSettings settings; // all the plot settings
         QList<SummaryMetrics> results;
@@ -239,6 +242,14 @@ class LTMWindow : public GcChartWindow
         QVBoxLayout *plotsLayout;
         QList<LTMSettings> plotSettings;
         QList<LTMPlot *> plots;
+
+        // when comparing things we have a plot for each data series
+        // with a curve for each date range on the plot
+        QScrollArea *compareplotArea;
+        QWidget *compareplotsWidget;
+        QVBoxLayout *compareplotsLayout;
+        QList<LTMSettings> compareplotSettings;
+        QList<LTMPlot *> compareplots;
 
         // Widgets
         LTMPlot *ltmPlot;
