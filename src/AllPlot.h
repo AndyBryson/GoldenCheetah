@@ -19,14 +19,17 @@
 #ifndef _GC_AllPlot_h
 #define _GC_AllPlot_h 1
 #include "GoldenCheetah.h"
+#include "Colors.h"
 
 #include <qwt_plot.h>
 #include <qwt_axis_id.h>
 #include <qwt_series_data.h>
 #include <qwt_plot_zoomer.h>
 #include <qwt_plot_curve.h>
+#include <qwt_plot_dict.h>
 #include <qwt_plot_marker.h>
 #include <qwt_point_3d.h>
+#include <qwt_scale_widget.h>
 #include <qwt_compat.h>
 #include <QtGui>
 
@@ -51,6 +54,130 @@ class IntervalPlotData;
 class Context;
 class LTMToolTip;
 class LTMCanvasPicker;
+class QwtAxisId;
+
+class CurveColors
+{
+    public:
+        CurveColors(QwtPlot *plot) : isolated(false), plot(plot) {
+            saveState();
+        }
+
+        void restoreState() {
+
+            // make all the curves visible (that should be)
+            QHashIterator<QwtPlotSeriesItem *, bool> c(state);
+            while (c.hasNext()) {
+                c.next();
+                c.key()->setVisible(c.value());
+            }
+
+            // make all the axes have the right color
+            QHashIterator<QwtScaleWidget *, QPalette> s(colors);
+            while (s.hasNext()) {
+                s.next();
+                s.key()->setPalette(s.value());
+            }
+
+            isolated = false;
+        }
+
+        void saveState() {
+
+            // don't save in this state!!
+            if (isolated) restoreState();
+
+            state.clear();
+            colors.clear();
+
+            // get a list of plot curves and state
+            foreach(QwtPlotItem *item, plot->itemList(QwtPlotItem::Rtti_PlotCurve)) {
+
+                state.insert(static_cast<QwtPlotSeriesItem*>(item), 
+                             static_cast<QwtPlotSeriesItem*>(item)->isVisible());
+
+                QwtScaleWidget *x = plot->axisWidget(static_cast<QwtPlotSeriesItem*>(item)->yAxis());
+                colors.insert(x, x->palette());
+            }
+            foreach(QwtPlotItem *item, plot->itemList(QwtPlotItem::Rtti_PlotIntervalCurve)) {
+
+                state.insert(static_cast<QwtPlotSeriesItem*>(item), 
+                             static_cast<QwtPlotSeriesItem*>(item)->isVisible());
+
+                QwtScaleWidget *x = plot->axisWidget(static_cast<QwtPlotSeriesItem*>(item)->yAxis());
+                colors.insert(x, x->palette());
+            }
+        }
+
+        // remove curve if being zapped (e.g. reference line)
+        void remove(QwtPlotSeriesItem *remove) {
+            state.remove(remove);
+        }
+
+        void insert(QwtPlotSeriesItem *add) {
+            state.insert(add, add->isVisible());
+        }
+
+        void isolate(QwtPlotSeriesItem *curve) {
+
+            // make the curve colored but all others go dull
+            QHashIterator<QwtPlotSeriesItem *, bool> c(state);
+            while (c.hasNext()) {
+                c.next();
+                if (c.key() == curve) {
+                    c.key()->setVisible(c.value());
+                } else {
+
+                    // hide others
+                    c.key()->setVisible(false);
+                }
+            }
+
+            isolated = true;
+        }
+
+        void isolateAxis(QwtAxisId id) {
+
+            // hide curves that are not ours
+            QHashIterator<QwtPlotSeriesItem *, bool> c(state);
+            while (c.hasNext()) {
+                c.next();
+
+                // isolate on axis hover
+                if (c.key()->yAxis() == id) {
+                    c.key()->setVisible(c.value());
+                } else {
+                    // hide others
+                    c.key()->setVisible(false);
+                }
+            }
+
+            QwtScaleWidget *ours = plot->axisWidget(id);
+
+            // dull axis that are not ours
+            QHashIterator<QwtScaleWidget *, QPalette> s(colors);
+            while (s.hasNext()) {
+                s.next();
+
+                // isolate on axis hover
+                if (s.key() != ours) {
+                    QPalette pal = s.value();
+                    pal.setColor(QPalette::WindowText, QColor(Qt::gray));
+                    pal.setColor(QPalette::Text, QColor(Qt::gray));
+                    s.key()->setPalette(pal);
+                }
+            }
+
+            isolated = true;
+        }
+
+        bool isolated;
+
+    private:
+        QwtPlot *plot;
+        QHash<QwtPlotSeriesItem *, bool> state;
+        QHash<QwtScaleWidget*, QPalette> colors;
+};
 
 class AllPlot;
 class AllPlotObject : public QObject
@@ -189,6 +316,9 @@ class AllPlot : public QwtPlot
         void confirmTmpReference(double value, int axis, bool allowDelete);
         QwtPlotCurve* plotReferenceLine(const RideFilePoint *referencePoint);
 
+        // remembering state etc
+        CurveColors *curveColors;
+
     public slots:
 
         void setShowPower(int id);
@@ -266,6 +396,7 @@ class AllPlot : public QwtPlot
         AllPlot *referencePlot;
         AllPlotWindow *parent;
         bool wanttext, wantaxis;
+        bool isolation;
         LTMToolTip *tooltip;
         LTMCanvasPicker *_canvasPicker; // allow point selection/hover
 
