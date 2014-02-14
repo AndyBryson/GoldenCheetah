@@ -258,7 +258,7 @@ class TimeScaleDraw: public QwtScaleDraw
         if (*bydist) {
             return QString("%1").arg(v);
         } else {
-            QTime t = QTime().addSecs(v*60.00);
+            QTime t = QTime(0,0,0,0).addSecs(v*60.00);
             if (scaleMap().sDist() > 5)
                 return t.toString("hh:mm");
             return t.toString("hh:mm:ss");
@@ -1683,7 +1683,11 @@ AllPlot::setDataFromPlot(AllPlot *plot, int startidx, int stopidx)
 
         QString warn;
         if (rideItem->ride()->wprimeData()->minY < 0) {
-            warn = QString("Minimum CP=%1").arg(rideItem->ride()->wprimeData()->PCP());
+            int minCP = rideItem->ride()->wprimeData()->PCP();
+            if (minCP)
+                warn = QString("** Minimum CP=%1 **").arg(rideItem->ride()->wprimeData()->PCP());
+            else
+                warn = QString("** Check W' is set correctly **");
         }
 
         QwtText text(QString("Tau=%1, CP=%2, W'=%3, %4 matches >2kJ (%5 kJ) %6").arg(rideItem->ride()->wprimeData()->TAU)

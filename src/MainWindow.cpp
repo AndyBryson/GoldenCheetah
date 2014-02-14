@@ -232,6 +232,9 @@ MainWindow::MainWindow(const QDir &home)
      *--------------------------------------------------------------------*/
 #ifdef Q_OS_MAC 
 #if QT_VERSION > 0x50000
+#if QT_VERSION >= 0x50201
+    setUnifiedTitleAndToolBarOnMac(true);
+#endif
     head = addToolBar(context->athlete->cyclist);
     head->setContentsMargins(20,0,20,0);
     head->setFloatable(false);
@@ -239,8 +242,14 @@ MainWindow::MainWindow(const QDir &home)
 
     // make the normal toolbar in QT5 have same colors as the tabs and when inactive
     // make it the same 'light' colour as the other widgets do.
+#if QT_VERSION < 0x50201
     head->setStyleSheet(" QToolBar:active { border: 0px; background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #C6C6C6, stop: 1 #A5A5A5 ); } "
                         " QToolBar:!active { border: 0px; background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #D9D9D9, stop: 1 #D6D6D6 ); } "); 
+#else
+    head->setStyleSheet(" QToolBar:!active { border: 0px; background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #F0F0F0, stop: 1 #E8E8E8 ); } "
+                        " QToolBar:active { border: 0px; background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #D9D9D9, stop: 1 #A5A5A5 ); } "); 
+#endif
+
     // widgets
     QWidget *macAnalButtons = new QWidget(this);
     macAnalButtons->setContentsMargins(20,5,20,0);
@@ -526,6 +535,16 @@ MainWindow::MainWindow(const QDir &home)
     mainLayout->addWidget(head);
 #endif
     mainLayout->addWidget(tabbar);
+#if (defined Q_OS_MAC) && (QT_VERSION >= 0x50201)
+    blackline = new QWidget(this);
+    blackline->setContentsMargins(0,0,0,0);
+    blackline->setFixedHeight(1);
+    QPalette linePalette;
+    linePalette.setBrush(backgroundRole(), Qt::darkGray);
+    blackline->setPalette(linePalette);
+    blackline->setAutoFillBackground(true);
+    mainLayout->addWidget(blackline);
+#endif
     mainLayout->addWidget(tabStack);
     setCentralWidget(central);
 
@@ -653,7 +672,7 @@ MainWindow::MainWindow(const QDir &home)
     showhideLowbar = viewMenu->addAction(tr("Show Compare Pane"), this, SLOT(showLowbar(bool)));
     showhideLowbar->setCheckable(true);
     showhideLowbar->setChecked(false);
-#ifndef Q_OS_MAC // not on a Mac
+#if (!defined Q_OS_MAC) || (QT_VERSION >= 0x50201) // not on a Mac
     showhideToolbar = viewMenu->addAction(tr("Show Toolbar"), this, SLOT(showToolbar(bool)));
     showhideToolbar->setCheckable(true);
     showhideToolbar->setChecked(true);
@@ -701,6 +720,9 @@ MainWindow::MainWindow(const QDir &home)
 
     saveState(currentTab->context); // set to whatever we started with
     selectAnalysis();
+
+    //grab focus
+    currentTab->setFocus();
 }
 
 /*----------------------------------------------------------------------
@@ -740,11 +762,15 @@ MainWindow::showLowbar(bool want)
 void
 MainWindow::showTabbar(bool want)
 {
+    setUpdatesEnabled(false);
     showhideTabbar->setChecked(want);
     if (want) {
 #ifdef Q_OS_MAC
     setDocumentMode(true);
     tabbar->setDocumentMode(true);
+#if QT_VERSION >= 0x50201
+    blackline->hide();
+#endif
 #endif
         tabbar->show();
     }
@@ -752,15 +778,20 @@ MainWindow::showTabbar(bool want)
 #ifdef Q_OS_MAC
     setDocumentMode(false);
     tabbar->setDocumentMode(false);
+#if QT_VERSION >= 0x50201
+    blackline->show();
+#endif
 #endif
         tabbar->hide();
     }
+    setUpdatesEnabled(true);
 }
 
 void
 MainWindow::showToolbar(bool want)
 {
-#ifndef Q_OS_MAC
+#if (!defined Q_OS_MAC) || (QT_VERSION >= 0x50201)
+    setUpdatesEnabled(false);
     showhideToolbar->setChecked(want);
     if (want) {
         head->show();
@@ -768,6 +799,7 @@ MainWindow::showToolbar(bool want)
     else {
         head->hide();
     }
+    setUpdatesEnabled(true);
 #endif
 }
 
