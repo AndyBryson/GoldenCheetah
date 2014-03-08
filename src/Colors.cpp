@@ -42,6 +42,7 @@ void GCColor::setupColors()
     Colors init[CNUMOFCFGCOLORS+1] = {
         { tr("Plot Background"), "COLORPLOTBACKGROUND", Qt::white },
         { tr("Ride Plot Background"), "COLORRIDEPLOTBACKGROUND", Qt::black },
+        { tr("Train Plot Background"), "COLORTRAINPLOTBACKGROUND", Qt::black },
         { tr("Plot Symbols"), "COLORRIDEPLOTSYMBOLS", Qt::gray },
         { tr("Ride Plot X Axis"), "COLORRIDEPLOTXAXIS", Qt::blue },
         { tr("Ride Plot Y Axis"), "COLORRIDEPLOTYAXIS", Qt::red },
@@ -54,6 +55,7 @@ void GCColor::setupColors()
         { tr("Interval Highlighter"), "COLORINTERVALHIGHLIGHTER", Qt::blue },
         { tr("Heart Rate"), "COLORHEARTRATE", Qt::blue },
         { tr("Speed"), "COLORSPEED", Qt::green },
+        { tr("Acceleration"), "COLORACCEL", Qt::cyan },
         { tr("Power"), "COLORPOWER", Qt::red },
         { tr("Normalised Power"), "CNPOWER", Qt::magenta },
         { tr("Skiba xPower"), "CXPOWER", Qt::magenta },

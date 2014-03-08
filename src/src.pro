@@ -33,6 +33,8 @@ lessThan(QT_MAJOR_VERSION, 5) {
     QT += webkitwidgets widgets
     macx {
         QT += macextras
+    } else {
+        QT += multimedia multimediawidgets
     }
 }
 
@@ -272,6 +274,7 @@ HEADERS += \
         BingMap.h \
         BlankState.h \
         CalendarDownload.h \
+        ChartBar.h \
         ChartSettings.h \
         ChooseCyclistDialog.h \
         Colors.h \
@@ -463,6 +466,7 @@ SOURCES += \
         BingMap.cpp \
         BlankState.cpp \
         CalendarDownload.cpp \
+        ChartBar.cpp \
         ChartSettings.cpp \
         ChooseCyclistDialog.cpp \
         Coggan.cpp \

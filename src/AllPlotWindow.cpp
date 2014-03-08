@@ -118,15 +118,16 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     //revealControls->hide();
 
     // setup the controls
-    QLabel *showLabel = new QLabel(tr("Show"), c);
+    QLabel *showLabel = new QLabel(tr("View"), c);
 
-    showStack = new QCheckBox(tr("Stacked view"), this);
+    showStack = new QCheckBox(tr("Stack"), this);
     showStack->setCheckState(Qt::Unchecked);
     cl1->addRow(showLabel, showStack);
 
     showBySeries = new QCheckBox(tr("By Series"), this);
     showBySeries->setCheckState(Qt::Unchecked);
     cl1->addRow(new QLabel("", this), showBySeries);
+    cl1->addRow(new QLabel("", this), new QLabel("",this)); // spacer
 
     stackWidth = 20;
     stackZoomSlider = new QSlider(Qt::Horizontal,this);
@@ -147,6 +148,21 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     showGrid = new QCheckBox(tr("Grid"), this);
     showGrid->setCheckState(Qt::Checked);
     cl1->addRow(new QLabel(""), showGrid);
+    cl1->addRow(new QLabel(""), new QLabel(""));
+    cl1->addRow(new QLabel("Delta Series"), new QLabel(""));
+
+    showPowerD = new QCheckBox(QString(tr("Power %1").arg(deltaChar)), this);
+    showPowerD->setCheckState(Qt::Unchecked);
+    cl1->addRow(new QLabel(""), showPowerD);
+    showCadD = new QCheckBox(QString(tr("Cadence %1").arg(deltaChar)), this);
+    showCadD->setCheckState(Qt::Unchecked);
+    cl1->addRow(new QLabel(""), showCadD);
+    showTorqueD = new QCheckBox(QString(tr("Torque %1").arg(deltaChar)), this);
+    showTorqueD->setCheckState(Qt::Unchecked);
+    cl1->addRow(new QLabel(""), showTorqueD);
+    showHrD = new QCheckBox(QString(tr("Heartrate %1").arg(deltaChar)), this);
+    showHrD->setCheckState(Qt::Unchecked);
+    cl1->addRow(new QLabel(""), showHrD);
 
     showHr = new QCheckBox(tr("Heart Rate"), this);
     showHr->setCheckState(Qt::Checked);
@@ -155,6 +171,10 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     showSpeed = new QCheckBox(tr("Speed"), this);
     showSpeed->setCheckState(Qt::Checked);
     cl2->addRow(new QLabel(""), showSpeed);
+
+    showAccel = new QCheckBox(tr("Acceleration"), this);
+    showAccel->setCheckState(Qt::Checked);
+    cl2->addRow(new QLabel(""), showAccel);
 
     showCad = new QCheckBox(tr("Cadence"), this);
     showCad->setCheckState(Qt::Checked);
@@ -375,6 +395,7 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     allPlotFrame->setPalette(palette);
 
     spanSlider = new QxtSpanSlider(Qt::Horizontal);
+    spanSlider->setFocusPolicy(Qt::NoFocus);
     spanSlider->setHandleMovementMode(QxtSpanSlider::NoOverlapping);
     spanSlider->setLowerValue(0);
     spanSlider->setUpperValue(15);
@@ -466,17 +487,22 @@ AllPlotWindow::AllPlotWindow(Context *context) :
 
     // common controls
     connect(showPower, SIGNAL(currentIndexChanged(int)), this, SLOT(setShowPower(int)));
+    connect(showCad, SIGNAL(stateChanged(int)), this, SLOT(setShowCad(int)));
+    connect(showTorque, SIGNAL(stateChanged(int)), this, SLOT(setShowTorque(int)));
+    connect(showHr, SIGNAL(stateChanged(int)), this, SLOT(setShowHr(int)));
+    connect(showPowerD, SIGNAL(stateChanged(int)), this, SLOT(setShowPowerD(int)));
+    connect(showCadD, SIGNAL(stateChanged(int)), this, SLOT(setShowCadD(int)));
+    connect(showTorqueD, SIGNAL(stateChanged(int)), this, SLOT(setShowTorqueD(int)));
+    connect(showHrD, SIGNAL(stateChanged(int)), this, SLOT(setShowHrD(int)));
     connect(showNP, SIGNAL(stateChanged(int)), this, SLOT(setShowNP(int)));
     connect(showXP, SIGNAL(stateChanged(int)), this, SLOT(setShowXP(int)));
     connect(showAP, SIGNAL(stateChanged(int)), this, SLOT(setShowAP(int)));
-    connect(showHr, SIGNAL(stateChanged(int)), this, SLOT(setShowHr(int)));
     connect(showSpeed, SIGNAL(stateChanged(int)), this, SLOT(setShowSpeed(int)));
-    connect(showCad, SIGNAL(stateChanged(int)), this, SLOT(setShowCad(int)));
+    connect(showAccel, SIGNAL(stateChanged(int)), this, SLOT(setShowAccel(int)));
     connect(showAlt, SIGNAL(stateChanged(int)), this, SLOT(setShowAlt(int)));
     connect(showTemp, SIGNAL(stateChanged(int)), this, SLOT(setShowTemp(int)));
     connect(showWind, SIGNAL(stateChanged(int)), this, SLOT(setShowWind(int)));
     connect(showW, SIGNAL(stateChanged(int)), this, SLOT(setShowW(int)));
-    connect(showTorque, SIGNAL(stateChanged(int)), this, SLOT(setShowTorque(int)));
     connect(showBalance, SIGNAL(stateChanged(int)), this, SLOT(setShowBalance(int)));
     connect(showGrid, SIGNAL(stateChanged(int)), this, SLOT(setShowGrid(int)));
     connect(showFull, SIGNAL(stateChanged(int)), this, SLOT(setShowFull(int)));
@@ -697,13 +723,18 @@ AllPlotWindow::compareChanged()
         // work out what we want to see
         QList<RideFile::SeriesType> wanted;
         if (showPower->currentIndex() < 2) wanted << RideFile::watts;
+        if (showPowerD->isChecked()) wanted << RideFile::wattsd;
         if (showHr->isChecked()) wanted << RideFile::hr;
+        if (showHrD->isChecked()) wanted << RideFile::hrd;
         if (showSpeed->isChecked()) wanted << RideFile::kph;
+        if (showAccel->isChecked()) wanted << RideFile::kphd;
         if (showCad->isChecked()) wanted << RideFile::cad;
+        if (showCadD->isChecked()) wanted << RideFile::cadd;
+        if (showTorque->isChecked()) wanted << RideFile::nm;
+        if (showTorqueD->isChecked()) wanted << RideFile::nmd;
         if (showAlt->isChecked()) wanted << RideFile::alt;
         if (showTemp->isChecked()) wanted << RideFile::temp;
         if (showWind->isChecked()) wanted << RideFile::headwind;
-        if (showTorque->isChecked()) wanted << RideFile::nm;
         if (showNP->isChecked()) wanted << RideFile::NP;
         if (showXP->isChecked()) wanted << RideFile::xPower;
         if (showAP->isChecked()) wanted << RideFile::aPower;
@@ -1245,16 +1276,26 @@ AllPlotWindow::setAllPlotWidgets(RideItem *ride)
 	    const RideFileDataPresent *dataPresent = ride->ride()->areDataPresent();
         if (ride->ride() && ride->ride()->deviceType() != QString("Manual CSV")) {
 
+	        showPowerD->setEnabled(dataPresent->watts);
+	        showCadD->setEnabled(dataPresent->cad);
+            showTorqueD->setEnabled(dataPresent->nm);
+	        showHrD->setEnabled(dataPresent->hr);
 	        showPower->setEnabled(dataPresent->watts);
+	        showCad->setEnabled(dataPresent->cad);
+            showTorque->setEnabled(dataPresent->nm);
 	        showHr->setEnabled(dataPresent->hr);
 	        showSpeed->setEnabled(dataPresent->kph);
-	        showCad->setEnabled(dataPresent->cad);
+	        showAccel->setEnabled(dataPresent->kph);
 	        showAlt->setEnabled(dataPresent->alt);
             showTemp->setEnabled(dataPresent->temp);
             showWind->setEnabled(dataPresent->headwind);
-            showTorque->setEnabled(dataPresent->nm);
             showBalance->setEnabled(dataPresent->lrbalance);
         } else {
+	        showAccel->setEnabled(false);
+	        showPowerD->setEnabled(false);
+	        showCadD->setEnabled(false);
+            showTorqueD->setEnabled(false);
+	        showHrD->setEnabled(false);
             showPower->setEnabled(false);
             showHr->setEnabled(false);
             showSpeed->setEnabled(false);
@@ -1818,6 +1859,106 @@ AllPlotWindow::setShowSpeed(int value)
 }
 
 void
+AllPlotWindow::setShowAccel(int value)
+{
+    showAccel->setChecked(value);
+
+    // compare mode selfcontained update
+    if (isCompare()) {
+        compareChanged();
+        return;
+    }
+
+    bool checked = ( ( value == Qt::Checked ) && showAccel->isEnabled()) ? true : false;
+
+    allPlot->setShowAccel(checked);
+    foreach (AllPlot *plot, allPlots)
+        plot->setShowAccel(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
+}
+
+void
+AllPlotWindow::setShowPowerD(int value)
+{
+    showPowerD->setChecked(value);
+
+    // compare mode selfcontained update
+    if (isCompare()) {
+        compareChanged();
+        return;
+    }
+
+    bool checked = ( ( value == Qt::Checked ) && showPowerD->isEnabled()) ? true : false;
+
+    allPlot->setShowPowerD(checked);
+    foreach (AllPlot *plot, allPlots)
+        plot->setShowPowerD(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
+}
+
+void
+AllPlotWindow::setShowCadD(int value)
+{
+    showCadD->setChecked(value);
+
+    // compare mode selfcontained update
+    if (isCompare()) {
+        compareChanged();
+        return;
+    }
+
+    bool checked = ( ( value == Qt::Checked ) && showCadD->isEnabled()) ? true : false;
+
+    allPlot->setShowCadD(checked);
+    foreach (AllPlot *plot, allPlots)
+        plot->setShowCadD(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
+}
+
+void
+AllPlotWindow::setShowTorqueD(int value)
+{
+    showTorqueD->setChecked(value);
+
+    // compare mode selfcontained update
+    if (isCompare()) {
+        compareChanged();
+        return;
+    }
+
+    bool checked = ( ( value == Qt::Checked ) && showTorqueD->isEnabled()) ? true : false;
+
+    allPlot->setShowTorqueD(checked);
+    foreach (AllPlot *plot, allPlots)
+        plot->setShowTorqueD(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
+}
+
+void
+AllPlotWindow::setShowHrD(int value)
+{
+    showHrD->setChecked(value);
+
+    // compare mode selfcontained update
+    if (isCompare()) {
+        compareChanged();
+        return;
+    }
+
+    bool checked = ( ( value == Qt::Checked ) && showHrD->isEnabled()) ? true : false;
+
+    allPlot->setShowHrD(checked);
+    foreach (AllPlot *plot, allPlots)
+        plot->setShowHrD(checked);
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
+}
+
+void
 AllPlotWindow::setShowCad(int value)
 {
     showCad->setChecked(value);
@@ -2332,13 +2473,18 @@ AllPlotWindow::setupSeriesStackPlots()
 
     // lets get a list of what we need to plot -- plot is same order as options in settings
     if (showPower->currentIndex() < 2 && rideItem->ride()->areDataPresent()->watts) serieslist << RideFile::watts;
+    if (showPowerD->isChecked() && rideItem->ride()->areDataPresent()->watts) serieslist << RideFile::wattsd;
     if (showHr->isChecked() && rideItem->ride()->areDataPresent()->hr) serieslist << RideFile::hr;
+    if (showHrD->isChecked() && rideItem->ride()->areDataPresent()->hr) serieslist << RideFile::hrd;
     if (showSpeed->isChecked() && rideItem->ride()->areDataPresent()->kph) serieslist << RideFile::kph;
+    if (showAccel->isChecked() && rideItem->ride()->areDataPresent()->kph) serieslist << RideFile::kphd;
     if (showCad->isChecked() && rideItem->ride()->areDataPresent()->cad) serieslist << RideFile::cad;
+    if (showCadD->isChecked() && rideItem->ride()->areDataPresent()->cad) serieslist << RideFile::cadd;
+    if (showTorque->isChecked() && rideItem->ride()->areDataPresent()->nm) serieslist << RideFile::nm;
+    if (showTorqueD->isChecked() && rideItem->ride()->areDataPresent()->nm) serieslist << RideFile::nmd;
     if (showAlt->isChecked() && rideItem->ride()->areDataPresent()->alt) serieslist << RideFile::alt;
     if (showTemp->isChecked() && rideItem->ride()->areDataPresent()->temp) serieslist << RideFile::temp;
     if (showWind->isChecked() && rideItem->ride()->areDataPresent()->headwind) addHeadwind=true; //serieslist << RideFile::headwind;
-    if (showTorque->isChecked() && rideItem->ride()->areDataPresent()->nm) serieslist << RideFile::nm;
     if (showNP->isChecked() && rideItem->ride()->areDataPresent()->watts) serieslist << RideFile::NP;
     if (showXP->isChecked() && rideItem->ride()->areDataPresent()->watts) serieslist << RideFile::xPower;
     if (showAP->isChecked() && rideItem->ride()->areDataPresent()->watts) serieslist << RideFile::aPower;
@@ -2508,6 +2654,11 @@ AllPlotWindow::setupStackPlots()
         _allPlot->setShowPower(showPower->currentIndex());
         _allPlot->setShowHr( (showHr->isEnabled()) ? ( showHr->checkState() == Qt::Checked ) : false );
         _allPlot->setShowSpeed((showSpeed->isEnabled()) ? ( showSpeed->checkState() == Qt::Checked ) : false );
+        _allPlot->setShowAccel((showAccel->isEnabled()) ? ( showAccel->checkState() == Qt::Checked ) : false );
+        _allPlot->setShowPowerD((showPowerD->isEnabled()) ? ( showPowerD->checkState() == Qt::Checked ) : false );
+        _allPlot->setShowCadD((showCadD->isEnabled()) ? ( showCadD->checkState() == Qt::Checked ) : false );
+        _allPlot->setShowTorqueD((showTorqueD->isEnabled()) ? ( showTorqueD->checkState() == Qt::Checked ) : false );
+        _allPlot->setShowHrD((showHrD->isEnabled()) ? ( showHrD->checkState() == Qt::Checked ) : false );
         _allPlot->setShowCad((showCad->isEnabled()) ? ( showCad->checkState() == Qt::Checked ) : false );
         _allPlot->setShowAlt((showAlt->isEnabled()) ? ( showAlt->checkState() == Qt::Checked ) : false );
         _allPlot->setShowTemp((showTemp->isEnabled()) ? ( showTemp->checkState() == Qt::Checked ) : false );
