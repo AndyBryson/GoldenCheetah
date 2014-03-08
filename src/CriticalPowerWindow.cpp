@@ -371,10 +371,6 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
 void
 CriticalPowerWindow::configChanged()
 {
-    QPalette palette;
-    palette.setBrush(QPalette::Background, QBrush(GColor(CRIDEPLOTBACKGROUND)));
-    setPalette(palette);
-
     rideSelected();
 }
 
@@ -672,26 +668,26 @@ CriticalPowerWindow::showIntervalCurve(IntervalItem *current, int index)
                        p->watts, p->alt, p->lon, p->lat, p->headwind,
                        p->slope, p->temp, p->lrbalance, 0);
        }
-
-        // for xpower et al
-       f.recalculateDerivedSeries();
     }
+    // for xpower and acceleration et al
+    f.recalculateDerivedSeries();
 
     // compute the mean max, this is BLAZINGLY fast, thanks to Mark Rages'
     // mean-max computer. Does a 11hr ride in 150ms
     QVector<float>vector;
-    MeanMaxComputer thread1(&f, vector, series()); thread1.run();
+    MeanMaxComputer thread1(&f, vector, getRideSeries(series())); thread1.run();
     thread1.wait();
 
     // no data!
     if (vector.count() == 0) return;
 
     // create curve data arrays
-    QVector<double>x;
     QVector<double>y;
-    for (int i=1; i<vector.count(); i++) {
+    RideFileCache::doubleArray(y, vector, getRideSeries(series()));
+
+    QVector<double>x;
+    for (int i=0; i<vector.count(); i++) {
         x << double(i)/60.00f;
-        y << vector[i];
     }
 
     // create a curve!
@@ -712,7 +708,7 @@ CriticalPowerWindow::showIntervalCurve(IntervalItem *current, int index)
     if (shadeIntervalsCheck->isChecked()) curve->setBrush(brush);
     else curve->setBrush(Qt::NoBrush);
     curve->setPen(pen);
-    curve->setSamples(x.data(), y.data(), x.count()-1);
+    curve->setSamples(x.data()+1, y.data()+1, x.count()-2); // ignore he first 0,0 point
 
     // attach and register
     curve->attach(cpintPlot);
@@ -792,7 +788,7 @@ CriticalPowerWindow::setSeries(int index)
 
         if (rangemode) {
 
-            cpintPlot->setSeries(static_cast<RideFile::SeriesType>(seriesCombo->itemData(index).toInt()));
+            cpintPlot->setSeries(static_cast<CriticalSeriesType>(seriesCombo->itemData(index).toInt()));
             cpintPlot->calculate(currentRide);
 
         } else {
@@ -809,7 +805,7 @@ CriticalPowerWindow::setSeries(int index)
             intervalCurves.clear();
             for (int i=0; i<= context->athlete->allIntervalItems()->childCount(); i++) intervalCurves << NULL;
 
-            cpintPlot->setSeries(static_cast<RideFile::SeriesType>(seriesCombo->itemData(index).toInt()));
+            cpintPlot->setSeries(static_cast<CriticalSeriesType>(seriesCombo->itemData(index).toInt()));
             cpintPlot->calculate(currentRide);
 
             // refresh intervals
@@ -818,8 +814,8 @@ CriticalPowerWindow::setSeries(int index)
     }
 }
 
-static double
-curve_to_point(double x, const QwtPlotCurve *curve, RideFile::SeriesType serie)
+double
+CriticalPowerWindow::curve_to_point(double x, const QwtPlotCurve *curve, CriticalSeriesType serie)
 {
     double result = 0;
     if (curve) {
@@ -832,7 +828,7 @@ curve_to_point(double x, const QwtPlotCurve *curve, RideFile::SeriesType serie)
             while (min < max - 1) {
                 mid = (max - min) / 2 + min;
                 if (x < data->sample(mid).x()) {
-                    double a = pow(10,RideFileCache::decimalsFor(serie));
+                    double a = pow(10,RideFileCache::decimalsFor(getRideSeries(serie)));
 
                     result = ((int)((0.5/a + data->sample(mid).y()) * a))/a;
                     //result = (unsigned) round(data->sample(mid).y());
@@ -854,37 +850,57 @@ CriticalPowerWindow::updateCpint(double minutes)
 
     switch (series()) {
 
-        case RideFile::none:
+        case work:
             units = "kJ";
             break;
 
-        case RideFile::cad:
+        case cad:
             units = "rpm";
             break;
 
-        case RideFile::kph:
+        case kphd:
+            units = "metres/s/s";
+            break;
+
+        case wattsd:
+            units = "watts/s";
+            break;
+
+        case cadd:
+            units = "rpm/s";
+            break;
+
+        case hrd:
+            units = "bpm/s";
+            break;
+
+        case nmd:
+            units = "nm/s";
+            break;
+
+        case kph:
             units = "kph";
             break;
 
-        case RideFile::hr:
+        case hr:
             units = "bpm";
             break;
 
-        case RideFile::nm:
+        case nm:
             units = "nm";
             break;
 
-        case RideFile::vam:
+        case vam:
             units = "metres/hour";
             break;
 
-        case RideFile::wattsKg:
+        case wattsKg:
             units = "Watts/kg";
             break;
 
         default:
-        case RideFile::aPower:
-        case RideFile::watts:
+        case aPower:
+        case watts:
             units = "Watts";
             break;
 
@@ -920,7 +936,7 @@ CriticalPowerWindow::updateCpint(double minutes)
           QDate date = cpintPlot->getBestDates()[index];
           double value = cpintPlot->getBests()[index];
 
-          double a = pow(10,RideFileCache::decimalsFor(series()));
+          double a = pow(10,RideFileCache::decimalsFor(getRideSeries(series())));
           value = ((int)((0.5/a + value) * a))/a;
 
               label = QString("%1 %2 (%3)").arg(value).arg(units)
@@ -947,28 +963,86 @@ CriticalPowerWindow::pickerMoved(const QPoint &pos)
     cpintTimeValue->setText(interval_to_str(60.0*minutes));
     updateCpint(minutes);
 }
-void CriticalPowerWindow::addSeries()
+
+QString
+CriticalPowerWindow::seriesName(CriticalSeriesType series)
+{
+    switch (series) {
+        case watts: return QString(tr("Power"));
+        case wattsKg: return QString(tr("Watts per Kilogram"));
+        case xPower: return QString(tr("xPower"));
+        case NP: return QString(tr("Normalized Power"));
+        case hr: return QString(tr("Heartrate"));
+        case kph: return QString(tr("Speed"));
+        case kphd: return QString(tr("Acceleration"));
+        case wattsd: return QString(tr("Power %1").arg(deltaChar));
+        case cadd: return QString(tr("Cadence %1").arg(deltaChar));
+        case nmd: return QString(tr("Torque %1").arg(deltaChar));
+        case hrd: return QString(tr("Heartrate %1").arg(deltaChar));
+        case cad: return QString(tr("Cadence"));
+        case nm: return QString(tr("Torque"));
+        case vam: return QString(tr("VAM"));
+        case aPower: return QString(tr("aPower"));
+        case work: return QString(tr("Work"));
+        case watts_inv_time: return QString(tr("Power by inv of time"));
+
+        default: return QString(tr("Unknown"));
+    }
+}
+
+RideFile::SeriesType
+CriticalPowerWindow::getRideSeries(CriticalSeriesType series)
+{
+    switch (series) {
+        case watts: return RideFile::watts;
+        case wattsKg: return RideFile::wattsKg;
+        case xPower: return RideFile::xPower;
+        case NP: return RideFile::NP;
+        case hr: return RideFile::hr;
+        case kph: return RideFile::kph;
+        case kphd: return RideFile::kphd;
+        case wattsd: return RideFile::wattsd;
+        case cadd: return RideFile::cadd;
+        case nmd: return RideFile::nmd;
+        case hrd: return RideFile::hrd;
+        case cad: return RideFile::cad;
+        case nm: return RideFile::nm;
+        case vam: return RideFile::vam;
+        case aPower: return RideFile::aPower;
+
+
+        // non RideFile series
+        case work: return RideFile::none;
+        case watts_inv_time: return RideFile::watts;
+
+        default: return RideFile::none;
+    }
+}
+
+void
+CriticalPowerWindow::addSeries()
 {
     // setup series list
-    seriesList << RideFile::watts
-               << RideFile::wattsKg
-               << RideFile::xPower
-               << RideFile::NP
-               << RideFile::hr
-               << RideFile::kph
-               << RideFile::cad
-               << RideFile::nm
-               << RideFile::vam
-               << RideFile::aPower
-               << RideFile::none; // this shows energy (hack)
+    seriesList << watts
+               << wattsKg
+               << xPower
+               << NP
+               << hr
+               << kph
+               << cad
+               << nm
+               << vam
+               << aPower
+               << kphd
+               << wattsd
+               << nmd
+               << cadd
+               << hrd
+               << work
+               << watts_inv_time;
 
-    foreach (RideFile::SeriesType x, seriesList) {
-        if (x==RideFile::none) {
-            seriesCombo->addItem(tr("Energy"), static_cast<int>(x));
-        }
-        else {
-            seriesCombo->addItem(RideFile::seriesName(x), static_cast<int>(x));
-        }
+    foreach (CriticalSeriesType x, seriesList) {
+        seriesCombo->addItem(seriesName(x), static_cast<int>(x));
     }
 }
 

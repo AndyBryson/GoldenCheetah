@@ -38,14 +38,17 @@ class Model_eCP
         Model_eCP()  :
             version(""),
             paa(0), paa_dec(0), ecp(0), etau(0), ecp_del(0), tau_del(0), ecp_dec(0), ecp_dec_del(0),
-            pMax(0), cp60(0) {}
+            pMax(0), mmp60(0) {}
 
         QString version;
 
-        // Parameters
+        // Parameters ecp
         double paa, paa_dec, ecp, etau, ecp_del, tau_del, ecp_dec, ecp_dec_del;
 
-        int pMax, cp60;
+        // Parameters dan
+        double p1, t1, p2, t2, a2;
+
+        int pMax, mmp60;
 };
 
 /*class Model_eCP
@@ -144,6 +147,11 @@ class ExtendedCriticalPower
 
         // Marker for Model
         QwtPlotMarker* getPlotMarkerForExtendedCP(Model_eCP athleteModeleCP2);
+
+        // Dan-Veloclinic Model
+        Model_eCP deriveDanVeloclinicCP_Parameters(bool usebest, RideFileCache *bests, RideFile::SeriesType series, double sanI1, double sanI2, double anI1, double anI2, double aeI1, double aeI2, double laeI1, double laeI2);
+
+
 
     private:
         Context *context;

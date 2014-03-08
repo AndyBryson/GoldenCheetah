@@ -79,8 +79,11 @@
 // 58  23  Jan 2014 Mark Liversedge    W' work rename and calculate without reference to WPrime class (speed)
 // 59  24  Jan 2014 Mark Liversedge    Added Maximum W' exp which is same as W'bal bur expressed as used not left
 // 60  05  Feb 2014 Mark Liversedge    Added Critical Power as a metric -- retreives from settings for now
+// 61  15  Feb 2014 Mark Liversedge    Fixed W' Work (for recintsecs not 1s!).
+// 62  06  Mar 2014 Mark Liversedge    Fixed Fatigue Index to find peak then watch for decay, primarily useful in sprint intervals
+// 63  06  Mar 2014 Mark Liversedge    Added Pacing Index AP as %age of Max Power
 
-int DBSchemaVersion = 60;
+int DBSchemaVersion = 63;
 
 DBAccess::DBAccess(Context* context) : context(context), db(NULL)
 {

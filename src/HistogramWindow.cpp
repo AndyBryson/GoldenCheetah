@@ -231,7 +231,7 @@ HistogramWindow::HistogramWindow(Context *context, bool rangemode) : GcChartWind
     cl->addRow(blankLabel6 = new QLabel(""), showInZones);
 
     showInCPZones = new QCheckBox;
-    showInCPZones->setText(tr("Use Exercise Intensity Domains"));
+    showInCPZones->setText(tr("Use polarised zones"));
     cl->addRow(blankLabel7 = new QLabel(""), showInCPZones);
 
     // bin width
@@ -374,8 +374,10 @@ HistogramWindow::compareChanged()
 
         // set data and create empty curves
         if (!rangemode || data->isChecked()) {
+
             // using the bests (ride file cache)
             powerHist->setDataFromCompare();
+
         } else {
             // using the metric arrays
             powerHist->setDelta(getDelta());
@@ -898,18 +900,8 @@ HistogramWindow::updateChart()
 
     // just reflect chart setting changes
     if (isCompare()) {
-        powerHist->setSeries(series);
 
-        // and now the controls
-        powerHist->setShading(shadeZones->isChecked() ? true : false);
-        powerHist->setZoned(showInZones->isChecked() ? true : false);
-        powerHist->setCPZoned(showInCPZones->isChecked() ? true : false);
-        powerHist->setlnY(showLnY->isChecked() ? true : false);
-        powerHist->setWithZeros(showZeroes->isChecked() ? true : false);
-        powerHist->setSumY(showSumY->currentIndex()== 0 ? true : false);
-        powerHist->recalcCompare();
-        powerHist->replot();
-
+        compareChanged();
         return;
     }
 
