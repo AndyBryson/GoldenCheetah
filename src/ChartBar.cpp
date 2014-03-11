@@ -25,26 +25,71 @@
 
 ChartBar::ChartBar(Context *context) : QWidget(context->mainWindow), context(context)
 {
+    // left / right scroller icon
+    static QIcon leftIcon = iconFromPNG(":images/mac/left.png");
+    static QIcon rightIcon = iconFromPNG(":images/mac/right.png");
 
     setFixedHeight(23);
-    setContentsMargins(10,0,10,0);
-    QHBoxLayout *vlayout = new QHBoxLayout(this);
+    setContentsMargins(3,0,3,0);
+
+    // main layout
+    QHBoxLayout *mlayout = new QHBoxLayout(this);
+    mlayout->setSpacing(0);
+    mlayout->setContentsMargins(0,0,0,0);
+
+    // buttonBar Widget
+    buttonBar = new ButtonBar(this);
+    buttonBar->setFixedHeight(23);
+    buttonBar->setContentsMargins(0,0,0,0);
+
+    QHBoxLayout *vlayout = new QHBoxLayout(buttonBar); 
     vlayout->setSpacing(0);
     vlayout->setContentsMargins(0,0,0,0);
 
-    layout = new QHBoxLayout; 
+    layout = new QHBoxLayout;
     layout->setSpacing(2);
     layout->setContentsMargins(0,0,0,0);
-
     vlayout->addLayout(layout);
     vlayout->addStretch();
 
+    // scrollarea
+    scrollArea = new QScrollArea(this);
+    scrollArea->setFixedHeight(23);
+    scrollArea->setAutoFillBackground(false);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameStyle(QFrame::NoFrame);
+    scrollArea->setContentsMargins(0,0,0,0);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scrollArea->setWidget(buttonBar);
+    // scroll area turns it on .. we turn it off!
+    buttonBar->setAutoFillBackground(false);
 
-#ifdef Q_OS_MAC
-    buttonFont.setFamily("Lucida Grande");
-#else
-    buttonFont.setFamily("Helvetica");
-#endif
+    // scroller buttons
+    left = new QToolButton(this);
+    left->setStyleSheet("QToolButton { border: none; padding: 0px; }");
+    left->setAutoFillBackground(false);
+    left->setFixedSize(20,20);
+    left->setIcon(leftIcon);
+    left->setIconSize(QSize(20,20));
+    left->setFocusPolicy(Qt::NoFocus);
+    mlayout->addWidget(left);
+    connect(left, SIGNAL(clicked()), this, SLOT(scrollLeft()));
+
+    // menu bar in the middle of the buttons
+    mlayout->addWidget(scrollArea);
+
+    right = new QToolButton(this);
+    right->setStyleSheet("QToolButton { border: none; padding: 0px; }");
+    right->setAutoFillBackground(false);
+    right->setFixedSize(20,20);
+    right->setIcon(rightIcon);
+    right->setIconSize(QSize(20,20));
+    right->setFocusPolicy(Qt::NoFocus);
+    mlayout->addWidget(right);
+    connect(right, SIGNAL(clicked()), this, SLOT(scrollRight()));
+
+
     buttonFont.setPointSize(10);
     buttonFont.setWeight(QFont::Black);
 
@@ -69,6 +114,9 @@ ChartBar::ChartBar(Context *context) : QWidget(context->mainWindow), context(con
 
     signalMapper = new QSignalMapper(this); // maps each option
     connect(signalMapper, SIGNAL(mapped(int)), this, SLOT(clicked(int)));
+
+    // trap resize / mouse events
+    installEventFilter(this);
 }
 
 void
@@ -94,6 +142,75 @@ ChartBar::addWidget(QString title)
     // map signals
     connect(newbutton, SIGNAL(clicked(bool)), signalMapper, SLOT(map()));
     signalMapper->setMapping(newbutton, buttons.count()-1);
+
+    newbutton->installEventFilter(this);
+
+    // tidy up scrollers etc
+    tidy();
+}
+
+void
+ChartBar::setText(int index, QString text)
+{
+    buttons[index]->setText(text);
+    QFontMetrics fontMetric(buttonFont);
+    int width = fontMetric.width(text);
+    buttons[index]->setWidth(width+20);
+
+    tidy(); // still fit ?
+}
+
+// tidy up the scrollers on first show...
+void
+ChartBar::tidy()
+{
+    if (buttonBar->width() > scrollArea->width()) {
+        left->show(); right->show();
+    } else {
+        left->hide(); right->hide();
+    }
+}
+
+bool 
+ChartBar::eventFilter(QObject *object, QEvent *e)
+{
+    // show/hide scrollers on resize event
+    if (object == this && e->type() == QEvent::Resize) {
+
+        // we do NOT move the position, we just show/hide
+        // the left and right scrollers
+        tidy();
+    }
+
+    // showing us - tidy up
+    if (object == this && e->type() == QEvent::Show) {
+        tidy();
+    }
+
+    // enter/leave we can track approximate mouse position and decide 
+    // if we want to 'autoscroll'
+    if (e->type() == QEvent::Leave || e->type() == QEvent::Enter) {
+        tidy(); // tidy up anyway
+
+        // XXX for later, perhaps when drag/dropping
+        //     we should try and be a little more fluid / animate ...
+        //     which will probably mean using QScrollArea::ScrollContentsBy
+    }
+}
+
+void
+ChartBar::scrollRight()
+{
+    // scroll to the right...
+    int w = buttonBar->width();
+    scrollArea->ensureVisible(w-10,0,10,10);
+}
+
+void
+ChartBar::scrollLeft()
+{
+    // scroll to the left
+    scrollArea->ensureVisible(0,0,10,10);
 }
 
 void
@@ -191,6 +308,40 @@ ChartBar::paintBackground(QPaintEvent *)
     painter.setPen(Qt::NoPen);
     painter.fillRect(all, QColor(Qt::white));
     painter.fillRect(all, isActiveWindow() ? active : inactive);
+
+    QPen black(QColor(100,100,100,200));
+    painter.setPen(black);
+    painter.drawLine(0,height()-1, width()-1, height()-1);
+
+    QPen gray(QColor(230,230,230));
+    painter.setPen(gray);
+    painter.drawLine(0,0, width()-1, 0);
+
+    painter.restore();
+}
+
+void
+ButtonBar::paintEvent(QPaintEvent *event)
+{
+    // paint the darn thing!
+    paintBackground(event);
+    QWidget::paintEvent(event);
+}
+
+// paint is the same as sidebar
+void
+ButtonBar::paintBackground(QPaintEvent *)
+{
+    // setup a painter and the area to paint
+    QPainter painter(this);
+
+    painter.save();
+    QRect all(0,0,width(),height());
+
+    // fill with a linear gradient
+    painter.setPen(Qt::NoPen);
+    painter.fillRect(all, QColor(Qt::white));
+    painter.fillRect(all, isActiveWindow() ? chartbar->active : chartbar->inactive);
 
     QPen black(QColor(100,100,100,200));
     painter.setPen(black);

@@ -23,6 +23,10 @@
 #include <QList>
 #include <QAction>
 #include <QHBoxLayout>
+#include <QScrollArea>
+#include <QToolButton>
+#include <QObject>
+#include <QEvent>
 
 class Context;
 #ifdef Q_OS_MAC
@@ -31,6 +35,7 @@ class QtMacButton;
 class GcScopeButton;
 #endif
 class GcLabel;
+class ButtonBar;
 
 class ChartBar : public QWidget
 {
@@ -41,14 +46,22 @@ public:
     ChartBar(Context *context);
     ~ChartBar();
 
+    // reused by button bar
+    QLinearGradient active, inactive;
+
 public slots:
 
     void paintEvent (QPaintEvent *event);
+    bool eventFilter(QObject *object, QEvent *e); // trap resize
     void addWidget(QString);
     void clear();
     void clicked(int);
     void removeWidget(int);
+    void setText(int index, QString);
     //void setCurrentIndex(int index);
+    void scrollLeft();
+    void scrollRight();
+    void tidy();
 
 signals:
     void currentIndexChanged(int);
@@ -57,6 +70,10 @@ private:
     void paintBackground(QPaintEvent *);
 
     Context *context;
+
+    ButtonBar *buttonBar;
+    QToolButton *left, *right; // scrollers, hidden if menu fits
+    QScrollArea *scrollArea;
     QHBoxLayout *layout;
 
     QFont buttonFont;
@@ -67,9 +84,27 @@ private:
 #endif
     QSignalMapper *signalMapper;
 
-    QLinearGradient active, inactive;
     int currentIndex_;
     bool state;
+};
+
+class ButtonBar : public QWidget
+{
+    Q_OBJECT;
+
+public:
+
+    ButtonBar(ChartBar *parent) : QWidget(parent), chartbar(parent) {}
+
+public slots:
+
+    void paintEvent (QPaintEvent *event);
+
+private:
+
+    void paintBackground(QPaintEvent *);
+    ChartBar *chartbar;
+
 };
 
 #endif
