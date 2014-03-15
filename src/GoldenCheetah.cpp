@@ -174,7 +174,7 @@ GcWindow::GcWindow()
     setContentsMargins(0,0,0,0);
     setResizable(false);
     setMouseTracking(true);
-    setProperty("color", QColor(Qt::white));
+    setProperty("color", GColor(CPLOTBACKGROUND));
     setProperty("nomenu", false);
 
     // make sure its underneath the toggle button
@@ -209,7 +209,7 @@ GcWindow::GcWindow(Context *context) : QFrame(context->mainWindow), dragState(No
     setContentsMargins(0,0,0,0);
     setResizable(false);
     setMouseTracking(true);
-    setProperty("color", QColor(Qt::white));
+    setProperty("color", GColor(CPLOTBACKGROUND));
     setProperty("nomenu", false);
 
     // make sure its underneath the toggle button
@@ -243,10 +243,8 @@ GcWindow::amVisible()
 void 
 GcWindow::setColor(QColor x)
 {
-    if (_color != x) {
-        _color = x;
-        emit colorChanged(x);
-    }
+    _color = x;
+    emit colorChanged(x);
 }
 
 QColor
@@ -767,7 +765,6 @@ GcChartWindow::colorChanged(QColor z)
 
     menuButton->setStyleSheet(QString("QPushButton { border: 0px; padding: 0px; %1 } QPushButton::menu-indicator { image: none; } ").arg(stylesheet));
     _revealControls->setStyleSheet(stylesheet);
-    menuButton->setStyleSheet(stylesheet);
 }
 
 void

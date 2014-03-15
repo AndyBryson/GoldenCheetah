@@ -30,7 +30,7 @@ ChartBar::ChartBar(Context *context) : QWidget(context->mainWindow), context(con
     static QIcon rightIcon = iconFromPNG(":images/mac/right.png");
 
     setFixedHeight(23);
-    setContentsMargins(3,0,3,0);
+    setContentsMargins(0,0,0,0);
 
     // main layout
     QHBoxLayout *mlayout = new QHBoxLayout(this);
@@ -133,7 +133,7 @@ ChartBar::addWidget(QString title)
     // make the right size
     QFontMetrics fontMetric(buttonFont);
     int width = fontMetric.width(title);
-    newbutton->setWidth(width+20);
+    newbutton->setFixedWidth(width+20);
 
     // add to layout
     layout->addWidget(newbutton);
@@ -164,6 +164,17 @@ ChartBar::setText(int index, QString text)
 void
 ChartBar::tidy()
 {
+    // resize to button widths + 2px spacing
+    int width = 2;
+#ifdef Q_OS_MAC
+    foreach (QtMacButton *button, buttons) {
+#else
+    foreach (GcScopeButton *button, buttons) {
+#endif
+        width += button->geometry().width() + 2;
+    }
+    buttonBar->setMinimumWidth(width);
+
     if (buttonBar->width() > scrollArea->width()) {
         left->show(); right->show();
     } else {
@@ -196,6 +207,8 @@ ChartBar::eventFilter(QObject *object, QEvent *e)
         //     we should try and be a little more fluid / animate ...
         //     which will probably mean using QScrollArea::ScrollContentsBy
     }
+
+    return false;
 }
 
 void
@@ -238,6 +251,12 @@ ChartBar::removeWidget(int index)
     for (int i=0; i<buttons.count(); i++)
         signalMapper->setMapping(buttons[i], i);
 
+}
+
+void
+ChartBar::setCurrentIndex(int index)
+{
+    clicked(index);
 }
 
 void
