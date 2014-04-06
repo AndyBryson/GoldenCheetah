@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2007 Sean C. Rhea (srhea@srhea.net)
  *               2009 Justin F. Knotzke (jknotzke@shampoo.ca)
+ *               2013 Mark Liversedge (liversedge@gmail.com)
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -103,6 +104,7 @@ RideFile::seriesName(SeriesType series)
     case RideFile::watts: return QString(tr("Power"));
     case RideFile::xPower: return QString(tr("xPower"));
     case RideFile::aPower: return QString(tr("aPower"));
+    case RideFile::aTISS: return QString(tr("aTISS"));
     case RideFile::NP: return QString(tr("Normalized Power"));
     case RideFile::alt: return QString(tr("Altitude"));
     case RideFile::lon: return QString(tr("Longitude"));
@@ -135,6 +137,7 @@ RideFile::colorFor(SeriesType series)
     case RideFile::wattsd: return GColor(CPOWER);
     case RideFile::xPower: return GColor(CXPOWER);
     case RideFile::aPower: return GColor(CAPOWER);
+    case RideFile::aTISS: return GColor(CNPOWER);
     case RideFile::NP: return GColor(CNPOWER);
     case RideFile::alt: return GColor(CALTITUDE);
     case RideFile::headwind: return GColor(CWINDSPEED);
@@ -173,6 +176,7 @@ RideFile::unitName(SeriesType series, Context *context)
     case RideFile::wattsd: return QString(tr("watts/s"));
     case RideFile::xPower: return QString(tr("watts"));
     case RideFile::aPower: return QString(tr("watts"));
+    case RideFile::aTISS: return QString(tr("TISS"));
     case RideFile::NP: return QString(tr("watts"));
     case RideFile::alt: return QString(useMetricUnits ? tr("metres") : tr("feet"));
     case RideFile::lon: return QString(tr("lon"));
@@ -663,6 +667,8 @@ RideFile::isDataPresent(SeriesType series)
         case nm : return dataPresent.nm; break;
         case watts : return dataPresent.watts; break;
         case aPower : return dataPresent.apower; break;
+        case aTISS : return dataPresent.atiss; break;
+        case anTISS : return dataPresent.antiss; break;
         case alt : return dataPresent.alt; break;
         case lon : return dataPresent.lon; break;
         case lat : return dataPresent.lat; break;
@@ -727,6 +733,8 @@ RideFilePoint::value(RideFile::SeriesType series) const
         case RideFile::NP : return np; break;
         case RideFile::xPower : return xp; break;
         case RideFile::aPower : return apower; break;
+        case RideFile::aTISS : return atiss; break;
+        case RideFile::anTISS : return antiss; break;
 
         default:
         case RideFile::none : break;
@@ -787,6 +795,7 @@ RideFile::decimalsFor(SeriesType series)
         case watts : return 0; break;
         case xPower : return 0; break;
         case aPower : return 0; break;
+        case aTISS : return 0; break;
         case NP : return 0; break;
         case alt : return 3; break;
         case lon : return 6; break;
@@ -818,6 +827,7 @@ RideFile::maximumFor(SeriesType series)
         case NP : return 2500; break;
         case xPower : return 2500; break;
         case aPower : return 2500; break;
+        case aTISS : return 1000; break;
         case alt : return 8850; break; // mt everest is highest point above sea level
         case lon : return 180; break;
         case lat : return 90; break;
@@ -847,6 +857,7 @@ RideFile::minimumFor(SeriesType series)
         case watts : return 0; break;
         case xPower : return 0; break;
         case aPower : return 0; break;
+        case aTISS : return 0; break;
         case NP : return 0; break;
         case alt : return -413; break; // the Red Sea is lowest land point on earth
         case lon : return -180; break;
@@ -1026,7 +1037,33 @@ RideFile::recalculateDerivedSeries()
     // APower Initialisation -- working variables
     double APtotal=0;
     double APcount=0;
-    
+
+    // aTISS - Aerobic Training Impact Scoring System
+    static const double a = 0.663788683661645f;
+    static const double b = -7.5095428451195f;
+    static const double c = -0.86118031563782f;
+    static const double t = 2;
+    // anTISS
+    static const double an = 0.238923886004611f;
+    //static const double bn = -12.2066385296127f;
+    static const double bn = -61.849f;
+    static const double cn = -1.73549567522521f;
+
+    int CP = 0;
+    int WPRIME = 0;
+    double aTISS = 0.0f;
+    double anTISS = 0.0f;
+
+    // set WPrime and CP
+    if (context->athlete->zones()) {
+        int zoneRange = context->athlete->zones()->whichRange(startTime().date());
+        CP = zoneRange >= 0 ? context->athlete->zones()->getCP(zoneRange) : 0;
+        WPRIME = zoneRange >= 0 ? context->athlete->zones()->getWprime(zoneRange) : 0;
+
+        // did we override CP in metadata / metrics ?
+        int oCP = getTag("CP","0").toInt();
+        if (oCP) CP=oCP;
+    }
 
     // last point looked at
     RideFilePoint *lastP = NULL;
@@ -1128,20 +1165,20 @@ RideFile::recalculateDerivedSeries()
 
             dataPresent.apower = true;
 
-            static const double a0  = -174.1448622;
-            static const double a1  = 1.0899959;
-            static const double a2  = -0.0015119;
-            static const double a3  = 7.2674E-07;
-            static const double E = 2.71828183;
+            static const double a0  = -174.1448622f;
+            static const double a1  = 1.0899959f;
+            static const double a2  = -0.0015119f;
+            static const double a3  = 7.2674E-07f;
+            static const double E = 2.71828183f;
 
             if (p->alt > 0) {
                 // pbar [mbar]= 0.76*EXP( -alt[m] / 7000 )*1000 
-                double pbar = 0.76 * pow(E, p->alt / 7000) * 1000;
+                double pbar = 0.76f * exp(p->alt / -7000.00f) * 1000.00f;
 
                 // %Vo2max= a0 + a1 * pbar + a2 * pbar ^2 + a3 * pbar ^3 (with pbar in mbar)
                 double vo2maxPCT = a0 + (a1 * pbar) + (a2 * pow(pbar,2)) + (a3 * pow(pbar,3)); 
 
-                p->apower = (p->watts / 100) * vo2maxPCT;
+                p->apower = double(p->watts / vo2maxPCT) * 100;
 
             } else {
 
@@ -1159,6 +1196,16 @@ RideFile::recalculateDerivedSeries()
 
         APtotal += p->apower;
         APcount++;
+
+        // Anaerobic and Aerobic TISS
+        if (CP && dataPresent.watts) {
+
+            // a * exp (b * exp (c * fraction of cp) ) 
+            aTISS += recIntSecs_ * (a * exp(b * exp(c * (double(p->watts) / double(CP)))));
+            anTISS += recIntSecs_ * (an * exp(bn * exp(cn * (double(p->watts) / double(CP)))));
+            p->atiss = aTISS;
+            p->antiss = anTISS;
+        }
 
         // last point
         lastP = p;

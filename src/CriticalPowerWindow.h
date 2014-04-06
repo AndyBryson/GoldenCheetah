@@ -1,5 +1,8 @@
 /*
  * Copyright (c) 2009 Sean C. Rhea (srhea@srhea.net)
+ * Copyright (c) 2009 Dan Connelly (@djconnel)
+ * Copyright (c) 2014 Damien Grauser (Damien.Grauser@pev-geneve.ch)
+ * Copyright (c) 2014 Mark Liversedge (liversedge@gmail.com)
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -29,8 +32,9 @@
 #include <QtGui>
 #include <QFormLayout>
 #include <QCheckBox>
+#include <qwt_plot_grid.h>
 
-class CpintPlot;
+class CPPlot;
 class QwtPlotCurve;
 class Context;
 class RideItem;
@@ -47,6 +51,8 @@ class CriticalPowerWindow : public GcChartWindow
     Q_PROPERTY(QString filter READ filter WRITE setFilter USER true)
 #endif
     Q_PROPERTY(int mode READ mode WRITE setMode USER true)
+    Q_PROPERTY(bool showPercent READ showPercent WRITE setShowPercent USER true)
+    Q_PROPERTY(bool showGrid READ showGrid WRITE setShowGrid USER true)
 
     // for retro compatibility
     Q_PROPERTY(QString season READ season WRITE setSeason USER true)
@@ -77,7 +83,7 @@ class CriticalPowerWindow : public GcChartWindow
 
     public:
 
-        CriticalPowerWindow(const QDir &home, Context *context, bool range = false);
+        CriticalPowerWindow(const QDir &home, Context *context, bool range);
 
         // compare is supported
         bool isCompare() const {
@@ -85,12 +91,11 @@ class CriticalPowerWindow : public GcChartWindow
         }
 
         // reveal
-        bool hasReveal() { return false; }
+        bool hasReveal() { return true; }
 
         void deleteCpiFile(QString filename);
 
         // set/get properties
-        // ---------------------------------------------------
         int mode() const { return seriesCombo->currentIndex(); }
         void setMode(int x) { seriesCombo->setCurrentIndex(x); }
 
@@ -107,7 +112,7 @@ class CriticalPowerWindow : public GcChartWindow
         int ridePlotMode() const { return ridePlotStyleCombo->currentIndex(); }
         void setRidePlotMode(int x) { ridePlotStyleCombo->setCurrentIndex(x); }
 
-        // for retro compatibility
+        // for old settings config (<3.0) compatibility
         QString season() const { return cComboSeason->itemText(cComboSeason->currentIndex()); }
         void setSeason(QString x) { 
             int index = cComboSeason->findText(x);
@@ -184,6 +189,12 @@ class CriticalPowerWindow : public GcChartWindow
         bool showHeatByDate() { return showHeatByDateCheck->isChecked(); }
         void setShowHeatByDate(bool x) { return showHeatByDateCheck->setChecked(x); }
 
+        bool showGrid() { return showGridCheck->isChecked(); }
+        void setShowGrid(bool x) { return showGridCheck->setChecked(x); }
+
+        bool showPercent() { return showPercentCheck->isChecked(); }
+        void setShowPercent(bool x) { return showPercentCheck->setChecked(x); }
+
     protected slots:
         void forceReplot();
         void newRideAdded(RideItem*);
@@ -193,12 +204,15 @@ class CriticalPowerWindow : public GcChartWindow
         void configChanged();
         void intervalSelected();
         void intervalsChanged();
+        void intervalHover(RideFileInterval);
         void seasonSelected(int season);
         void shadingSelected(int shading);
         void showHeatChanged(int check);
         void showHeatByDateChanged(int check);
+        void showPercentChanged(int check);
+        void showGridChanged(int check);
         void shadeIntervalsChanged(int state);
-        void setRidePlotStyle(int index);
+        void setPlotType(int index);
         void setSeries(int index);
         void resetSeasons();
         void filterChanged();
@@ -212,6 +226,10 @@ class CriticalPowerWindow : public GcChartWindow
         void modelParametersChanged(); // we changed the intervals
         void modelChanged(); // we changed the model type 
 
+        // reveal controls changed
+        void rPercentChanged(int check);
+        void rHeatChanged(int check);
+
     private:
         void updateCpint(double minutes);
         void hideIntervalCurve(int index);
@@ -224,7 +242,7 @@ class CriticalPowerWindow : public GcChartWindow
     protected:
 
         QDir home;
-        CpintPlot *cpintPlot;
+        CPPlot *cpPlot;
         Context *context;
         QLabel *cpintTimeValue;
         QLabel *cpintTodayValue;
@@ -238,7 +256,11 @@ class CriticalPowerWindow : public GcChartWindow
         QCheckBox *shadeIntervalsCheck;
         QCheckBox *showHeatCheck;
         QCheckBox *showHeatByDateCheck;
+        QCheckBox *showPercentCheck;
+        QCheckBox *showGridCheck;
+        QCheckBox *rPercent, *rHeat;
         QwtPlotPicker *picker;
+        QwtPlotGrid *grid;
         void addSeries();
         Seasons *seasons;
         QList<Season> seasonsList;
@@ -270,7 +292,7 @@ class CriticalPowerWindow : public GcChartWindow
 
         DateSettingsEdit *dateSetting;
         bool active; // when resetting parameters
+        QwtPlotCurve *hoverCurve;
 };
 
 #endif // _GC_CriticalPowerWindow_h
-

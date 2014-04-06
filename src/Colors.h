@@ -71,6 +71,7 @@ class GCColor : public QObject
         static QColor invertColor(QColor); // return the contrasting color
         static QColor alternateColor(QColor); // return the alternate background
         static QColor htmlCode(QColor x) { return x.name(); } // return the alternate background
+        static QString css();
 
     public slots:
         void readConfig();
@@ -101,7 +102,7 @@ class ColorEngine : public QObject
 #define GColor(x) GCColor::getColor(x)
 
 // Define how many cconfigurable metric colors are available
-#define CNUMOFCFGCOLORS       77
+#define CNUMOFCFGCOLORS       79
 
 #define CPLOTBACKGROUND       0
 #define CRIDEPLOTBACKGROUND   1
@@ -180,5 +181,7 @@ class ColorEngine : public QObject
 #define CBALANCERIGHT         74
 #define CWBAL                 75
 #define CRIDECP               76
+#define CATISS                77
+#define CANTISS               78
 
 #endif

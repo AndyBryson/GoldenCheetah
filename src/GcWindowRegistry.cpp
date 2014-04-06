@@ -69,7 +69,7 @@ GcWindowRegistry::initialize()
 {
   static GcWindowRegistry GcWindowsInit[30] = {
     // name                     GcWinID
-    { VIEW_HOME|VIEW_DIARY, tr("Long Term Metrics"),GcWindowTypes::LTM },
+    { VIEW_HOME|VIEW_DIARY, tr("Metric Trends"),GcWindowTypes::LTM },
     { VIEW_HOME, tr("Performance Manager"),GcWindowTypes::PerformanceManager },
     { VIEW_HOME|VIEW_DIARY, tr("Collection TreeMap"),GcWindowTypes::TreeMap },
     //{ VIEW_HOME, tr("Weekly Summary"),GcWindowTypes::WeeklySummary },// DEPRECATED
@@ -135,7 +135,7 @@ GcWindowRegistry::newGcWindow(GcWinID id, Context *context)
     switch(id) {
     case GcWindowTypes::Aerolab: returning = new AerolabWindow(context); break;
     case GcWindowTypes::AllPlot: returning = new AllPlotWindow(context); break;
-    case GcWindowTypes::CriticalPower: returning = new CriticalPowerWindow(context->athlete->home, context); break;
+    case GcWindowTypes::CriticalPower: returning = new CriticalPowerWindow(context->athlete->home, context, false); break;
     case GcWindowTypes::CriticalPowerSummary: returning = new CriticalPowerWindow(context->athlete->home, context, true); break;
 #ifdef GC_HAVE_ICAL
     case GcWindowTypes::Diary: returning = new DiaryWindow(context); break;

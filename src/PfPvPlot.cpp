@@ -144,7 +144,7 @@ public:
 
 
 PfPvPlot::PfPvPlot(Context *context)
-    : rideItem (NULL), context(context), cp_ (0), cad_ (85), cl_ (0.175), shade_zones(true)
+    : rideItem (NULL), context(context), hover(NULL), cp_ (0), cad_ (85), cl_ (0.175), shade_zones(true)
 {
     static_cast<QwtPlotCanvas*>(canvas())->setFrameStyle(QFrame::NoFrame);
 
@@ -218,9 +218,9 @@ PfPvPlot::configChanged()
     // frame with inverse of background
     QwtSymbol *sym = new QwtSymbol;
     sym->setStyle(QwtSymbol::Ellipse);
-    sym->setSize(6);
+    sym->setSize(4);
     sym->setPen(QPen(Qt::red));
-    sym->setBrush(QBrush(Qt::NoBrush));
+    sym->setBrush(QBrush(Qt::red));
     curve->setSymbol(sym);
     curve->setStyle(QwtPlotCurve::Dots);
     curve->setRenderHint(QwtPlotItem::RenderAntialiased);
@@ -405,6 +405,101 @@ int PfPvPlot::intervalCount() const
     return highlighted;
 }
 
+void 
+PfPvPlot::mouseTrack(double cad, double watts)
+{
+    if (watts <= 0 || cad <= 0) return;
+
+    double aepf = (watts * 60.0) / (cad * cl_ * 2.0 * PI);
+    double cpv = (cad * cl_ * 2.0 * PI) / 60.0;
+
+    if (rideItem && rideItem->ride() && rideItem->ride()->intervals().count() >= intervalMarkers.count()) {
+        // are we hovering "close" to an interval marker ?
+        int index = 0;
+        foreach (QwtPlotMarker *is, intervalMarkers) {
+
+            double x = is->xValue() - cpv;
+            double y = is->yValue() - aepf;
+
+            if ((x > -0.05f && x < 0.05f) && (y > -3 && y < 3)) {
+                context->notifyIntervalHover(rideItem->ride()->intervals()[index]);
+            }
+    
+            index++;
+        }
+    }
+}
+
+// for accumulating averages when refreshing interval markers
+class accum { public: accum() : count(0), aepf(0), cpv(0) {} int count; double aepf; double cpv; };
+
+void
+PfPvPlot::refreshIntervalMarkers()
+{
+    // zap what we got ...
+    foreach(QwtPlotMarker *is, intervalMarkers) {
+        is->detach();
+        delete is;
+    }
+    intervalMarkers.clear();
+
+    // do we have a ride with intervals to refresh ?
+    int count=0;
+    if (rideItem && rideItem->ride() && rideItem->ride()->dataPoints().count() && (count = rideItem->ride()->intervals().count())) {
+
+        // accumulating...
+        QVector<accum> intervalAccumulator(count);
+
+        foreach (RideFilePoint *p1, rideItem->ride()->dataPoints()) {
+
+            if (p1->cad && p1->watts) {
+
+                // calculate the values
+                double aepf = (p1->watts * 60.0) / (p1->cad * cl_ * 2.0 * PI);
+                double cpv = (p1->cad * cl_ * 2.0 * PI) / 60.0;
+
+                // accumulate values for each interval here ....
+                for(int i=0; i < count; i++) {
+
+                    RideFileInterval v = rideItem->ride()->intervals()[i];
+
+                    // in our interval ?
+                    if (p1->secs >= v.start && p1->secs <= v.stop) {
+                        intervalAccumulator[i].aepf += aepf;
+                        intervalAccumulator[i].cpv += cpv;
+                        intervalAccumulator[i].count++;
+                    }
+                }
+            }
+        }
+
+        // ok, so now add markers for the average position for each interval
+        int index = 0;
+        foreach (accum a, intervalAccumulator) {
+
+            QColor color;
+            color.setHsv(index * 255/count, 255,255);
+            double cpv = a.cpv/double(a.count);
+            double aepf = a.aepf/double(a.count);
+
+            QwtSymbol *sym = new QwtSymbol;
+            sym->setStyle(QwtSymbol::Diamond);
+            sym->setSize(8);
+            sym->setPen(QPen(GColor(CPLOTMARKER)));
+            sym->setBrush(QBrush(color));
+
+            QwtPlotMarker *p = new QwtPlotMarker();
+            p->setValue(cpv, aepf);
+            p->setYAxis(yLeft);
+            p->setSymbol(sym);
+            p->attach(this);
+            intervalMarkers << p;
+
+            index++;
+        }
+    }
+}
+
 void
 PfPvPlot::setData(RideItem *_rideItem)
 {
@@ -416,10 +511,17 @@ PfPvPlot::setData(RideItem *_rideItem)
        while (i.hasNext()) {
            QwtPlotCurve *curve = i.next();
            curve->detach();
-           //delete curve;
+           delete curve;
        }
     }
     intervalCurves.clear();
+
+    // clear the hover curve
+    if (hover) {
+        hover->detach();
+        delete hover;
+        hover = NULL;
+    }
 
     rideItem = _rideItem;
     RideFile *ride = rideItem->ride();
@@ -482,15 +584,19 @@ PfPvPlot::setData(RideItem *_rideItem)
 
             QwtSymbol *sym = new QwtSymbol;
             sym->setStyle(QwtSymbol::Ellipse);
-            sym->setSize(6);
+            sym->setSize(4);
             sym->setPen(QPen(Qt::red));
-            sym->setBrush(QBrush(Qt::NoBrush));
+            sym->setBrush(QBrush(Qt::red));
             curve->setSymbol(sym);
             curve->setStyle(QwtPlotCurve::Dots);
             curve->setRenderHint(QwtPlotItem::RenderAntialiased);
 
             // now show the data (zone shading would already be visible)
             refreshZoneItems();
+
+            // averages for intervals
+            refreshIntervalMarkers();
+
             curve->setSymbol(sym);
             curve->setVisible(true);
         }
@@ -502,6 +608,66 @@ PfPvPlot::setData(RideItem *_rideItem)
     }
 
     replot();
+}
+
+void
+PfPvPlot::intervalHover(RideFileInterval x)
+{
+    if (!isVisible()) return;
+    if (context->isCompareIntervals) return;
+    if (!rideItem) return;
+    if (!rideItem->ride()) return;
+
+    // zap the old one
+    if (hover) {
+        hover->detach();
+        delete hover;
+        hover = NULL;
+    }
+
+    // collect the data
+    QVector<double> aepfArray, cpvArray;
+    foreach(const RideFilePoint *p1, rideItem->ride()->dataPoints()) {
+
+        if (p1->secs < x.start || p1->secs > x.stop) continue;
+
+        if (p1->watts != 0 && p1->cad != 0) {
+            double aepf = (p1->watts * 60.0) / (p1->cad * cl_ * 2.0 * PI);
+            double cpv = (p1->cad * cl_ * 2.0 * PI) / 60.0;
+
+            aepfArray << aepf;
+            cpvArray << cpv;
+        }
+    }
+
+    // which interval is it or how many ?
+    int count = 0;
+    int ours = 0;
+    foreach(RideFileInterval p, rideItem->ride()->intervals()) {
+        if (p.start == x.start && p.stop == x.stop) ours = count;
+        count++;
+    }
+
+    // any data ?
+    if (aepfArray.size()) {
+        QwtSymbol *sym = new QwtSymbol;
+        sym->setStyle(QwtSymbol::Ellipse);
+        sym->setSize(4);
+        QColor color;
+        color.setHsv(ours * 255/count, 255,255);
+        color.setAlpha(128);
+        sym->setPen(QPen(color));
+        sym->setBrush(QBrush(color));
+
+        hover = new QwtPlotCurve();
+        hover->setSymbol(sym);
+        hover->setStyle(QwtPlotCurve::Dots);
+        hover->setRenderHint(QwtPlotItem::RenderAntialiased);
+        hover->setSamples(cpvArray, aepfArray);
+        hover->attach(this);
+    }
+
+    replot(); // refresh
 }
 
 void
@@ -627,12 +793,14 @@ PfPvPlot::showIntervals(RideItem *_rideItem)
 
                 QwtSymbol *sym = new QwtSymbol;
                 sym->setStyle(QwtSymbol::Ellipse);
-                sym->setSize(6);
+                sym->setSize(4);
                 sym->setBrush(QBrush(Qt::NoBrush));
 
                 QPen pen;
                 pen.setColor(intervalColor);
                 sym->setPen(pen);
+                intervalColor.setAlpha(128);
+                sym->setBrush(QBrush(intervalColor));
 
                 curve->setSymbol(sym);
                 curve->setStyle(QwtPlotCurve::Dots);
@@ -644,6 +812,7 @@ PfPvPlot::showIntervals(RideItem *_rideItem)
             }
         }
     }
+    refreshIntervalMarkers();
     replot();
 }
 
@@ -865,14 +1034,21 @@ PfPvPlot::recalc()
 
         if (totaltime) {
 
-            tiqMarker[0]->setLabel(QwtText(QString("%1%")
-                          .arg(timeInQuadrant[0] / totaltime * 100, 0, 'f', 1),QwtText::PlainText));
-            tiqMarker[1]->setLabel(QwtText(QString("%1%")
-                          .arg(timeInQuadrant[1] / totaltime * 100, 0, 'f', 1),QwtText::PlainText));
-            tiqMarker[2]->setLabel(QwtText(QString("%1%")
-                          .arg(timeInQuadrant[2] / totaltime * 100, 0, 'f', 1),QwtText::PlainText));
-            tiqMarker[3]->setLabel(QwtText(QString("%1%")
-                          .arg(timeInQuadrant[3] / totaltime * 100, 0, 'f', 1),QwtText::PlainText));
+            QwtText t0(QString("%1%").arg(timeInQuadrant[0] / totaltime * 100, 0, 'f', 1),QwtText::PlainText);
+            t0.setColor(GColor(CPLOTMARKER));
+            tiqMarker[0]->setLabel(t0);
+
+            QwtText t1(QString("%1%").arg(timeInQuadrant[1] / totaltime * 100, 0, 'f', 1),QwtText::PlainText);
+            t1.setColor(GColor(CPLOTMARKER));
+            tiqMarker[1]->setLabel(t1);
+
+            QwtText t2(QString("%1%").arg(timeInQuadrant[2] / totaltime * 100, 0, 'f', 1),QwtText::PlainText);
+            t2.setColor(GColor(CPLOTMARKER));
+            tiqMarker[2]->setLabel(t2);
+
+            QwtText t3(QString("%1%").arg(timeInQuadrant[3] / totaltime * 100, 0, 'f', 1),QwtText::PlainText);
+            t3.setColor(GColor(CPLOTMARKER));
+            tiqMarker[3]->setLabel(t3);
 
         } else {
 
@@ -1080,12 +1256,14 @@ PfPvPlot::showCompareIntervals()
 
             QwtSymbol *sym = new QwtSymbol;
             sym->setStyle(QwtSymbol::Ellipse);
-            sym->setSize(6);
+            sym->setSize(4);
             sym->setBrush(QBrush(Qt::NoBrush));
 
             QPen pen;
             pen.setColor(intervalColor);
             sym->setPen(pen);
+            intervalColor.setAlpha(128);
+            sym->setBrush(QBrush(intervalColor));
 
             _curve->setSymbol(sym);
             _curve->setStyle(QwtPlotCurve::Dots);

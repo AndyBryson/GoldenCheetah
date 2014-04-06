@@ -33,7 +33,7 @@
 #include <math.h>
 
 RideSummaryWindow::RideSummaryWindow(Context *context, bool ridesummary) :
-     GcChartWindow(context), context(context), ridesummary(ridesummary), useCustom(false), useToToday(false), filtered(false)
+     GcChartWindow(context), context(context), ridesummary(ridesummary), useCustom(false), useToToday(false), filtered(false), bestsCache(NULL)
 {
     setRideItem(NULL);
 
@@ -63,6 +63,9 @@ RideSummaryWindow::RideSummaryWindow(Context *context, bool ridesummary) :
 #endif
 
         cl->addRow(new QLabel(tr("Date range")), dateSetting);
+
+        // ecp model
+        ecp = new ExtendedCriticalPower(context);
     }
 
     QVBoxLayout *vlayout = new QVBoxLayout;
@@ -248,9 +251,11 @@ RideSummaryWindow::refresh()
         // if we're summarising a ride but have no ride to summarise
         if (ridesummary && !myRideItem) {
             setSubTitle(tr("Summary"));
-	        rideSummary->page()->mainFrame()->setHtml("");
+	        rideSummary->page()->mainFrame()->setHtml(GCColor::css());
             return;
         }
+
+        setUpdatesEnabled(false); // don't flicker as caches read
 
         if (ridesummary) {
             RideItem *rideItem = myRideItem;
@@ -265,11 +270,13 @@ RideSummaryWindow::refresh()
             }
         }
         rideSummary->page()->mainFrame()->setHtml(htmlSummary());
+
+        setUpdatesEnabled(true); // ready to update now
     }
 }
 
 QString
-RideSummaryWindow::htmlSummary() const
+RideSummaryWindow::htmlSummary()
 {
     QString summary("");
     QColor bgColor = GColor(CPLOTBACKGROUND);
@@ -297,14 +304,14 @@ RideSummaryWindow::htmlSummary() const
     }
 
     // set those colors
-    summary = QString("<STYLE>BODY { background-color: %1; color: %2 }</STYLE><center>").arg(bgColor.name())
-                                                                                        .arg(fgColor.name());
+    summary = GCColor::css();
+    summary += "<center>";
 
     // device summary for ride summary, otherwise how many activities?
     if (ridesummary) summary += ("<p><h3>" + tr("Device Type: ") + ride->deviceType() + "</h3><p>");
 
     // All the metrics we will display
-    static const QStringList columnNames = QStringList() << tr("Totals") << tr("Averages") << tr("Maximums") << tr("Metrics*");
+    static const QStringList columnNames = QStringList() << tr("Totals") << tr("Averages") << tr("Maximums") << tr("Metrics");
     static const QStringList totalColumn = QStringList()
         << "workout_time"
         << "time_riding"
@@ -414,7 +421,7 @@ RideSummaryWindow::htmlSummary() const
     for (int i = 0; i < columnNames.count(); ++i) {
         summary += "<td align=\"center\" valign=\"top\" width=\"%1%%\"><table>"
             "<tr><td align=\"center\" colspan=2><h3>%2</h3></td></tr>";
-        summary = summary.arg(90 / columnNames.count());
+        summary = summary.arg(90 / (columnNames.count() + (ridesummary ? 0 : 1)));
         summary = summary.arg(columnNames[i]);
 
         QStringList metricsList;
@@ -524,6 +531,49 @@ RideSummaryWindow::htmlSummary() const
         }
         summary += "</table></td>";
     }
+
+    // now add in the model parameters if we are not in ridesummary mode...
+    // if we're summarising a range we need to get the model parameters refreshed
+    if (!ridesummary && bestsCache == NULL) {
+
+        // update the model if neccessary
+        bestsCache = new RideFileCache(context, current.from, current.to, filtered, filters, true);
+
+        // use sensible intervals for parameter selection
+        cpModel = ecp->deriveExtendedCP_5_3_Parameters(true, bestsCache,
+                  RideFile::watts, 20.0f/60.0f, 90.0f/60.0f, 120.0f/60.0f, 
+                  300.0f/60.0f, 600.0f/60.0f, 3000.0f/60.0f, 4000.0f/60.0f, 
+                  30000.0f/60.0f);
+
+        // lets get a table going
+        summary += "<td align=\"center\" valign=\"top\" width=\"%1%%\"><table>"
+            "<tr><td align=\"center\" colspan=2><h3>%2</h3></td></tr>";
+        summary = summary.arg(90 / columnNames.count()+1);
+        summary = summary.arg(tr("Model"));
+
+        // W;
+        summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
+                .arg("W' (kJ)")
+                .arg(cpModel.etau * cpModel.ecp * 60.0f / 1000.0, 0, 'f', 1);
+
+        // CP;
+        summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
+                .arg("CP (watts)")
+                .arg(int(cpModel.ecp));
+
+        // FTP/MMP60;
+        summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
+                .arg("FTP / MMP60 (watts)")
+                .arg(int(cpModel.mmp60));
+
+        // Pmax;
+        summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
+                .arg("P-max (watts)")
+                .arg(int(cpModel.pMax));
+
+        summary += "</table></td>";
+    }
+
     summary += "</tr></table>";
 
     //
@@ -892,7 +942,7 @@ RideSummaryWindow::htmlSummary() const
     summary += tr("<br>BikeScore is a trademark of Dr. Philip "
         "Friere Skiba, PhysFarm Training Systems LLC");
 
-    summary += tr("<br>TSS, NP and IF are trademarks of Peaksware LLC</center>");
+    summary += tr("<br>FTP, TSS, NP and IF are trademarks of Peaksware LLC</center>");
     return summary;
 }
 
@@ -1015,8 +1065,9 @@ RideSummaryWindow::htmlCompareSummary() const
         }
 
         // LETS FORMAT THE HTML
-        summary = QString("<STYLE>BODY { background-color: %1; color: %2 }</STYLE><center>").arg(bgColor.name())
-                                                                                        .arg(fgColor.name());
+        summary = GCColor::css();
+        summary += "<center>";
+
         //
         // TOTALS, AVERAGES, MAX, METRICS
         //
@@ -1281,8 +1332,8 @@ RideSummaryWindow::htmlCompareSummary() const
     } else { // DATE RANGE COMPARE
 
         // LETS FORMAT THE HTML
-        summary = QString("<STYLE>BODY { background-color: %1; color: %2 }</STYLE><center>").arg(bgColor.name())
-                                                                                        .arg(fgColor.name());
+        summary = GCColor::css();
+        summary += "<center>";
 
         // get metric details here ...
         RideMetricFactory &factory = RideMetricFactory::instance();
@@ -1554,7 +1605,7 @@ RideSummaryWindow::htmlCompareSummary() const
     summary += tr("<br>BikeScore is a trademark of Dr. Philip "
         "Friere Skiba, PhysFarm Training Systems LLC");
 
-    summary += tr("<br>TSS, NP and IF are trademarks of Peaksware LLC</center>");
+    summary += tr("<br>FTP, TSS, NP and IF are trademarks of Peaksware LLC</center>");
     return summary;
 }
 
@@ -1592,6 +1643,12 @@ void RideSummaryWindow::dateRangeChanged(DateRange dr)
     // range didnt change ignore it...
     if (dr.from == current.from && dr.to == current.to) return;
     else current = dr;
+
+    // wipe bests coz we need to refresh
+    if (!ridesummary && bestsCache) {
+        delete bestsCache;
+        bestsCache=NULL;
+    }
 
     if (useCustom) {
         data = context->athlete->metricDB->getAllMetricsFor(custom);

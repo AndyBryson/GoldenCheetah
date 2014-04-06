@@ -182,6 +182,7 @@ GcWindow::GcWindow()
     menuButton->setStyleSheet("QPushButton::menu-indicator { image: none; } QPushButton { border: 0px; padding: 0px; }");
     //menuButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
     menuButton->setText(tr("More..."));
+    menuButton->setFocusPolicy(Qt::NoFocus);
     //menuButton->setArrowType(Qt::NoArrow);
     //menuButton->setPopupMode(QPushButton::InstantPopup);
 
@@ -215,6 +216,7 @@ GcWindow::GcWindow(Context *context) : QFrame(context->mainWindow), dragState(No
     // make sure its underneath the toggle button
     menuButton = new QPushButton(this);
     menuButton->setStyleSheet("QPushButton::menu-indicator { image: none; } QPushButton { border: 0px; padding: 0px; }");
+    menuButton->setFocusPolicy(Qt::NoFocus);
     //menuButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
     menuButton->setText(tr("More..."));
     //menuButton->setArrowType(Qt::NoArrow);
@@ -329,33 +331,12 @@ GcWindow::paintEvent(QPaintEvent * /*event*/)
 /*----------------------------------------------------------------------
  * Drag and resize tiles
  *--------------------------------------------------------------------*/
-
-bool
-GcWindow::eventFilter(QObject *, QEvent *e)
-{
-    if (!resizable()) return false;
-
-    // handle moving / resizing activity
-    if (dragState != None) {
-        switch (e->type()) {
-        case QEvent::MouseMove:
-            mouseMoveEvent((QMouseEvent*)e);
-            return false;
-            break;
-        case QEvent::MouseButtonRelease:
-            mouseReleaseEvent((QMouseEvent*)e);
-            return false;
-            break;
-        default:
-            break;
-        }
-    }
-    return false;
-}
-
 void
 GcWindow::mousePressEvent(QMouseEvent *e)
 {
+    // always propagate
+    e->ignore();
+
     if (!resizable() || e->button() == Qt::NoButton || isHidden()) {
         setDragState(None);
         return;
@@ -387,8 +368,11 @@ GcWindow::mousePressEvent(QMouseEvent *e)
 }
 
 void
-GcWindow::mouseReleaseEvent(QMouseEvent *)
+GcWindow::mouseReleaseEvent(QMouseEvent *e)
 {
+    // always propagate
+    e->ignore();
+
     // tell the owner!
     if (dragState == Move) {
         setProperty("gripped", false);
@@ -439,6 +423,9 @@ GcWindow::spotHotSpot(QMouseEvent *e)
 void
 GcWindow::mouseMoveEvent(QMouseEvent *e)
 {
+    // always propagate
+    e->ignore();
+
     if (!resizable()) return;
 
     if (dragState == None) {
@@ -819,12 +806,14 @@ GcChartWindow:: reveal()
 void GcChartWindow:: unreveal()
 {
     _unrevealAnim->start();
+    //_unrevealTimer->setSingleShot(150);
     _unrevealTimer->start(150);
 }
 
 void GcChartWindow:: hideRevealControls()
 {
     _revealControls->hide();
+    _unrevealTimer->stop();
 }
 
 void GcChartWindow:: saveImage()

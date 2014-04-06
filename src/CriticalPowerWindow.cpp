@@ -1,5 +1,8 @@
 /*
  * Copyright (c) 2009 Sean C. Rhea (srhea@srhea.net)
+ * Copyright (c) 2009 Dan Connelly (@djconnel)
+ * Copyright (c) 2014 Damien Grauser (Damien.Grauser@pev-geneve.ch)
+ * Copyright (c) 2014 Mark Liversedge (liversedge@gmail.com)
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -20,7 +23,7 @@
 #include "Settings.h"
 #include "SearchFilterBox.h"
 #include "MetricAggregator.h"
-#include "CpintPlot.h"
+#include "CPPlot.h"
 #include "Context.h"
 #include "Context.h"
 #include "Athlete.h"
@@ -42,7 +45,7 @@
 #include <QXmlSimpleReader>
 
 CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, bool rangemode) :
-    GcChartWindow(context), _dateRange("{00000000-0000-0000-0000-000000000001}"), home(home), context(context), currentRide(NULL), rangemode(rangemode), isfiltered(false), stale(true), useCustom(false), useToToday(false), active(false)
+    GcChartWindow(context), _dateRange("{00000000-0000-0000-0000-000000000001}"), home(home), context(context), currentRide(NULL), rangemode(rangemode), isfiltered(false), stale(true), useCustom(false), useToToday(false), active(false), hoverCurve(NULL)
 {
     //
     // reveal controls widget
@@ -51,6 +54,20 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     // layout reveal controls
     QHBoxLayout *revealLayout = new QHBoxLayout;
     revealLayout->setContentsMargins(0,0,0,0);
+
+    rPercent = new QCheckBox(this);
+    rPercent->setText(tr("Percentage of Best"));
+    rHeat = new QCheckBox(this);
+    rHeat->setText(tr("Show Heat"));
+
+    QVBoxLayout *checks = new QVBoxLayout;
+    checks->addStretch();
+    checks->addWidget(rPercent);
+    checks->addWidget(rHeat);
+    checks->addStretch();
+
+    revealLayout->addStretch();
+    revealLayout->addLayout(checks);
     revealLayout->addStretch();
 
     setRevealLayout(revealLayout);
@@ -58,15 +75,14 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     //
     // main plot area
     //
-    QVBoxLayout *vlayout = new QVBoxLayout;
-    cpintPlot = new CpintPlot(context, home.path(), context->athlete->zones(), rangemode);
-    vlayout->addWidget(cpintPlot);
-
-    QGridLayout *mainLayout = new QGridLayout();
-    mainLayout->addLayout(vlayout, 0, 0);
+    QVBoxLayout *mainLayout = new QVBoxLayout();
     setChartLayout(mainLayout);
 
+    cpPlot = new CPPlot(this, context, rangemode);
+    mainLayout->addWidget(cpPlot);
 
+
+#if 0
     //
     // picker - on chart controls/display
     //
@@ -113,7 +129,7 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     }
     pcl->addRow(cpintAllLabel, cpintAllValue);
     pcl->addRow(cpintCPLabel, cpintCPValue);
-
+#endif
 
     //
     // Chart settings
@@ -121,7 +137,6 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
 
     // controls widget and layout
     QTabWidget *settingsTabs = new QTabWidget(this);
-    mainLayout->addWidget(settingsTabs);
 
     QWidget *settingsWidget = new QWidget(this);
     settingsWidget->setContentsMargins(0,0,0,0);
@@ -142,8 +157,8 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
 #ifdef GC_HAVE_LUCENE
     // filter / searchbox
     searchBox = new SearchFilterBox(this, context);
-    connect(searchBox, SIGNAL(searchClear()), cpintPlot, SLOT(clearFilter()));
-    connect(searchBox, SIGNAL(searchResults(QStringList)), cpintPlot, SLOT(setFilter(QStringList)));
+    connect(searchBox, SIGNAL(searchClear()), cpPlot, SLOT(clearFilter()));
+    connect(searchBox, SIGNAL(searchResults(QStringList)), cpPlot, SLOT(setFilter(QStringList)));
     connect(searchBox, SIGNAL(searchClear()), this, SLOT(filterChanged()));
     connect(searchBox, SIGNAL(searchResults(QStringList)), this, SLOT(filterChanged()));
     cl->addRow(new QLabel(tr("Filter")), searchBox);
@@ -183,6 +198,16 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     QLabel *shading = new QLabel(tr("Power Shading"));
     shadeCombo->setCurrentIndex(2);
     cl->addRow(shading, shadeCombo);
+
+    showGridCheck = new QCheckBox(this);
+    showGridCheck->setChecked(true); // default on
+    QLabel *gridify = new QLabel(tr("Show grid"));
+    cl->addRow(gridify, showGridCheck);
+
+    showPercentCheck = new QCheckBox(this);
+    showPercentCheck->setChecked(false); // default off
+    QLabel *percentify = new QLabel(tr("Show as percentage"));
+    cl->addRow(percentify, showPercentCheck);
 
     showHeatCheck = new QCheckBox(this);
     showHeatCheck->setChecked(false); // default off
@@ -255,7 +280,7 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     aeI1SpinBox->setMaximum(3600);
     aeI1SpinBox->setSingleStep(1.0);
     aeI1SpinBox->setAlignment(Qt::AlignRight);
-    aeI1SpinBox->setValue(1800); // 30 minutes
+    aeI1SpinBox->setValue(1200); // 30 minutes
 
     aeI2SpinBox = new QDoubleSpinBox(this);
     aeI2SpinBox->setDecimals(0);
@@ -263,7 +288,7 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     aeI2SpinBox->setMaximum(3600);
     aeI2SpinBox->setSingleStep(1.0);
     aeI2SpinBox->setAlignment(Qt::AlignRight);
-    aeI2SpinBox->setValue(3600); // 60 minutes
+    aeI2SpinBox->setValue(1800); // 60 minutes
 
     QHBoxLayout *aeLayout = new QHBoxLayout;
     aeLayout->addWidget(aeI1SpinBox);
@@ -320,9 +345,15 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
 
     picker = new QwtPlotPicker(QwtPlot::xBottom, QwtPlot::yLeft,
                                QwtPicker::VLineRubberBand,
-                               QwtPicker::AlwaysOff, cpintPlot->canvas());
+                               QwtPicker::AlwaysOff, cpPlot->canvas());
     picker->setStateMachine(new QwtPickerDragPointMachine);
     picker->setRubberBandPen(GColor(CPLOTTRACKER));
+
+    grid = new QwtPlotGrid();
+    grid->enableX(true); // not needed
+    grid->enableY(true);
+    grid->setZ(-20);
+    grid->attach(cpPlot);
 
     connect(picker, SIGNAL(moved(const QPoint &)), SLOT(pickerMoved(const QPoint &)));
 
@@ -337,6 +368,7 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
         connect(cComboSeason, SIGNAL(currentIndexChanged(int)), this, SLOT(seasonSelected(int)));
         connect(context, SIGNAL(intervalSelected()), this, SLOT(intervalSelected()));
         connect(context, SIGNAL(intervalsChanged()), this, SLOT(intervalsChanged()));  
+        connect(context, SIGNAL(intervalHover(RideFileInterval)), this, SLOT(intervalHover(RideFileInterval)));  
 
         // Compare
         connect(context, SIGNAL(compareIntervalsStateChanged(bool)), SLOT(forceReplot()));
@@ -344,9 +376,9 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     }
 
     connect(seriesCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(setSeries(int)));
-    connect(ridePlotStyleCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(setRidePlotStyle(int)));
+    connect(ridePlotStyleCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(setPlotType(int)));
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
-    connect(context, SIGNAL(configChanged()), cpintPlot, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged()), cpPlot, SLOT(configChanged()));
 
     // model updated?
     connect(modelCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(modelChanged()));
@@ -370,7 +402,11 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     connect(shadeCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(shadingSelected(int)));
     connect(shadeIntervalsCheck, SIGNAL(stateChanged(int)), this, SLOT(shadeIntervalsChanged(int)));
     connect(showHeatCheck, SIGNAL(stateChanged(int)), this, SLOT(showHeatChanged(int)));
+    connect(rHeat, SIGNAL(stateChanged(int)), this, SLOT(rHeatChanged(int)));
     connect(showHeatByDateCheck, SIGNAL(stateChanged(int)), this, SLOT(showHeatByDateChanged(int)));
+    connect(showPercentCheck, SIGNAL(stateChanged(int)), this, SLOT(showPercentChanged(int)));
+    connect(showGridCheck, SIGNAL(stateChanged(int)), this, SLOT(showGridChanged(int)));
+    connect(rPercent, SIGNAL(stateChanged(int)), this, SLOT(rPercentChanged(int)));
     connect(dateSetting, SIGNAL(useCustomRange(DateRange)), this, SLOT(useCustomRange(DateRange)));
     connect(dateSetting, SIGNAL(useThruToday()), this, SLOT(useThruToday()));
     connect(dateSetting, SIGNAL(useStandardRange()), this, SLOT(useStandardRange()));
@@ -384,6 +420,10 @@ void
 CriticalPowerWindow::configChanged()
 {
     setProperty("color", GColor(CPLOTBACKGROUND));
+
+    QPen gridPen(GColor(CPLOTGRID));
+    grid->setPen(gridPen);
+
     rideSelected();
 }
 
@@ -439,9 +479,9 @@ CriticalPowerWindow::modelChanged()
 
             // Default values
             anI1SpinBox->setValue(180);
-            anI2SpinBox->setValue(360);
-            aeI1SpinBox->setValue(1800);
-            aeI2SpinBox->setValue(3600);
+            anI2SpinBox->setValue(300);
+            aeI1SpinBox->setValue(1200);
+            aeI2SpinBox->setValue(1800);
 
             break;
 
@@ -511,7 +551,7 @@ CriticalPowerWindow::modelParametersChanged()
     if (active == true) return;
 
     // tell the plot
-    cpintPlot->setModel(sanI1SpinBox->value(),
+    cpPlot->setModel(sanI1SpinBox->value(),
                         sanI2SpinBox->value(),
                         anI1SpinBox->value(),
                         anI2SpinBox->value(),
@@ -523,7 +563,7 @@ CriticalPowerWindow::modelParametersChanged()
 
     // and apply
     if (amVisible() && myRideItem != NULL) {
-        cpintPlot->calculate(myRideItem);
+        cpPlot->setRide(myRideItem);
     }
 }
 
@@ -535,11 +575,11 @@ CriticalPowerWindow::refreshRideSaved()
 
     // if the saved ride is in the aggregated time period
     QDate date = current->dateTime.date();
-    if (date >= cpintPlot->startDate &&
-        date <= cpintPlot->endDate) {
+    if (date >= cpPlot->startDate &&
+        date <= cpPlot->endDate) {
 
         // force a redraw next time visible
-        cpintPlot->changeSeason(cpintPlot->startDate, cpintPlot->endDate);
+        cpPlot->setDateRange(cpPlot->startDate, cpPlot->endDate);
     }
 }
 
@@ -556,7 +596,7 @@ CriticalPowerWindow::forceReplot()
         Season season = seasons->seasons.at(cComboSeason->currentIndex());
 
         // Refresh aggregated curve (ride added/filter changed)
-        cpintPlot->changeSeason(season.getStart(), season.getEnd());
+        cpPlot->setDateRange(season.getStart(), season.getEnd());
 
         // if visible make the changes visible
         // rideSelected is easiest way
@@ -605,7 +645,6 @@ CriticalPowerWindow::intervalSelected()
                 delete p;
             }
         }
-
         return;
     }
 
@@ -627,13 +666,15 @@ CriticalPowerWindow::intervalSelected()
 
         // clear, resize to interval count and set to null
         intervalCurves.clear();
-        for (int i=0; i< context->athlete->allIntervalItems()->childCount(); i++) intervalCurves << NULL;
+        if (myRideItem && myRideItem->ride() && myRideItem->ride()->intervals().count())
+            for (int i=0; i< myRideItem->ride()->intervals().count(); i++)
+                intervalCurves << NULL;
     }
 
     // which itervals are selected?
     IntervalItem *current=NULL;
     for (int i=0; i<context->athlete->allIntervalItems()->childCount(); i++) {
-        current = dynamic_cast<IntervalItem *>(context->athlete->allIntervalItems()->child(i));
+        current = static_cast<IntervalItem *>(context->athlete->allIntervalItems()->child(i));
         if (current != NULL) {
             if (current->isSelected() == true) {
                 showIntervalCurve(current, i); // set it all up
@@ -642,7 +683,81 @@ CriticalPowerWindow::intervalSelected()
             }
         }
     }
-    cpintPlot->replot();
+    cpPlot->replot();
+}
+
+// user hovered over an interval
+void
+CriticalPowerWindow::intervalHover(RideFileInterval x)
+{
+    // ignore in compare mode
+    if (!amVisible() || context->isCompareIntervals) return;
+
+    // do we need to fill with nulls ?
+    if (intervalCurves.count() == 0 && myRideItem && myRideItem->ride() && myRideItem->ride()->intervals().count())
+        for (int i=0; i< myRideItem->ride()->intervals().count(); i++)
+            intervalCurves << NULL;
+
+    // only one interval can be hovered at any one time
+    // so we always use the same curve to ensure we don't leave
+    // any nasty artefacts behind. And its always gray :)
+
+    // first lets see what interval this actually is?
+    IntervalItem *current=NULL;
+    int index = -1;
+
+    for (int i=0; i<context->athlete->allIntervalItems()->childCount(); i++) {
+        current = dynamic_cast<IntervalItem *>(context->athlete->allIntervalItems()->child(i));
+        if (current != NULL) {
+            // is this the one ?
+            if (x.start == current->start && x.stop == current->stop) {
+                index = i;
+                break;
+            }
+        }
+    }
+
+    if (index >=0 && index < intervalCurves.count()) {
+
+        // lazy for now just reuse existing
+        if (intervalCurves[index] == NULL) {
+
+            // get the data setup
+            // but if there is no data for the ride series
+            // selected they will still be null
+            showIntervalCurve(current, index); // set it all up
+            hideIntervalCurve(index); // in case its shown at present
+        }
+
+        // wipe what we have
+        if (hoverCurve != NULL) {
+            hoverCurve->detach();
+            delete hoverCurve;
+            hoverCurve = NULL;
+        }
+
+        // still NULL so they have no data
+        if (intervalCurves[index] == NULL) return;
+
+        // clone the data
+        QVector<QPointF> array;
+        for (size_t i=0; i<intervalCurves[index]->data()->size(); i++) array << intervalCurves[index]->data()->sample(i);
+
+        QPen pen(Qt::gray);
+        double width = appsettings->value(this, GC_LINEWIDTH, 1.0).toDouble();
+        pen.setWidth(width);
+
+        // create the hover curve
+        hoverCurve = new QwtPlotCurve("Interval");
+        hoverCurve->setPen(pen);
+        if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true) hoverCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
+        hoverCurve->setYAxis(QwtPlot::yLeft);
+        hoverCurve->setSamples(array);
+        hoverCurve->setVisible(true);
+        hoverCurve->setZ(100);
+        hoverCurve->attach(cpPlot);
+        cpPlot->replot();
+    }
 }
 
 void
@@ -663,7 +778,7 @@ CriticalPowerWindow::showIntervalCurve(IntervalItem *current, int index)
     // we already made it?
     if (intervalCurves[index] != NULL) {
         intervalCurves[index]->detach(); // in case
-        intervalCurves[index]->attach(cpintPlot);
+        intervalCurves[index]->attach(cpPlot);
 
         return;
     }
@@ -724,7 +839,7 @@ CriticalPowerWindow::showIntervalCurve(IntervalItem *current, int index)
     curve->setSamples(x.data()+1, y.data()+1, x.count()-2); // ignore he first 0,0 point
 
     // attach and register
-    curve->attach(cpintPlot);
+    curve->attach(cpPlot);
     intervalCurves[index] = curve;
 }
 
@@ -744,7 +859,6 @@ CriticalPowerWindow::intervalsChanged()
 
     // clear, resize to interval count and set to null
     intervalCurves.clear();
-    for (int i=0; i<= context->athlete->allIntervalItems()->childCount(); i++) intervalCurves << NULL;
 
     if (!amVisible()) return;
 
@@ -767,7 +881,13 @@ CriticalPowerWindow::rideSelected()
 
         // clear, resize to interval count and set to null
         intervalCurves.clear();
-        for (int i=0; i<= context->athlete->allIntervalItems()->childCount(); i++) intervalCurves << NULL;
+
+        // clear the hover curve
+        if (hoverCurve) {
+            hoverCurve->detach();
+            delete hoverCurve;
+            hoverCurve = NULL;
+        }
     }
 
     if (!amVisible()) return;
@@ -777,16 +897,19 @@ CriticalPowerWindow::rideSelected()
         if (context->athlete->zones()) {
             int zoneRange = context->athlete->zones()->whichRange(currentRide->dateTime.date());
             int CP = zoneRange >= 0 ? context->athlete->zones()->getCP(zoneRange) : 0;
-            cpintPlot->setDateCP(CP);
+            cpPlot->setDateCP(CP);
         } else {
-            cpintPlot->setDateCP(0);
+            cpPlot->setDateCP(0);
         }
-        cpintPlot->calculate(currentRide);
+        cpPlot->setRide(currentRide);
 
-        // apply latest colors
-        picker->setRubberBandPen(GColor(CPLOTTRACKER));
-        setIsBlank(false);
+        if (currentRide->ride() && currentRide->ride()->dataPoints().count() == 0)
+            setIsBlank(true);
+        else
+            setIsBlank(false);
+
     } else if (!rangemode) {
+
         setIsBlank(true);
     }
 
@@ -801,8 +924,8 @@ CriticalPowerWindow::setSeries(int index)
 
         if (rangemode) {
 
-            cpintPlot->setSeries(static_cast<CriticalSeriesType>(seriesCombo->itemData(index).toInt()));
-            cpintPlot->calculate(currentRide);
+            cpPlot->setSeries(static_cast<CriticalSeriesType>(seriesCombo->itemData(index).toInt()));
+            cpPlot->setRide(currentRide);
 
         } else {
 
@@ -818,8 +941,8 @@ CriticalPowerWindow::setSeries(int index)
             intervalCurves.clear();
             for (int i=0; i<= context->athlete->allIntervalItems()->childCount(); i++) intervalCurves << NULL;
 
-            cpintPlot->setSeries(static_cast<CriticalSeriesType>(seriesCombo->itemData(index).toInt()));
-            cpintPlot->calculate(currentRide);
+            cpPlot->setSeries(static_cast<CriticalSeriesType>(seriesCombo->itemData(index).toInt()));
+            cpPlot->setRide(currentRide);
 
             // refresh intervals
             intervalSelected();
@@ -921,18 +1044,18 @@ CriticalPowerWindow::updateCpint(double minutes)
 
     // current ride
     {
-      double value = curve_to_point(minutes, cpintPlot->getThisCurve(), series());
+      double value = curve_to_point(minutes, cpPlot->getThisCurve(), series());
       QString label;
       if (value > 0)
           label = QString("%1 %2").arg(value).arg(units);
       else
           label = tr("no data");
-      cpintTodayValue->setText(label);
+          //XXXcpintTodayValue->setText(label);
     }
 
     // cp line
-    if (cpintPlot->getCPCurve()) {
-      double value = curve_to_point(minutes, cpintPlot->getCPCurve(), series());
+    if (cpPlot->getModelCurve()) {
+      double value = curve_to_point(minutes, cpPlot->getModelCurve(), series());
       QString label;
       if (value > 0)
         label = QString("%1 %2").arg(value).arg(units);
@@ -945,9 +1068,9 @@ CriticalPowerWindow::updateCpint(double minutes)
     {
       QString label;
       int index = (int) ceil(minutes * 60);
-      if (index >= 0 && cpintPlot->bests && cpintPlot->getBests().count() > index) {
-          QDate date = cpintPlot->getBestDates()[index];
-          double value = cpintPlot->getBests()[index];
+      if (index >= 0 && cpPlot->getBests().count() > index) {
+          QDate date = cpPlot->getBestDates()[index];
+          double value = cpPlot->getBests()[index];
 
           double a = pow(10,RideFileCache::decimalsFor(getRideSeries(series())));
           value = ((int)((0.5/a + value) * a))/a;
@@ -965,6 +1088,7 @@ CriticalPowerWindow::updateCpint(double minutes)
 void
 CriticalPowerWindow::cpintTimeValueEntered()
 {
+  return; //XXX
   double minutes = str_to_interval(cpintTimeValue->text()) / 60.0;
   updateCpint(minutes);
 }
@@ -972,7 +1096,8 @@ CriticalPowerWindow::cpintTimeValueEntered()
 void
 CriticalPowerWindow::pickerMoved(const QPoint &pos)
 {
-    double minutes = cpintPlot->invTransform(QwtPlot::xBottom, pos.x());
+    return; //XXX
+    double minutes = cpPlot->invTransform(QwtPlot::xBottom, pos.x());
     cpintTimeValue->setText(interval_to_str(60.0*minutes));
     updateCpint(minutes);
 }
@@ -1130,27 +1255,31 @@ CriticalPowerWindow::dateRangeChanged(DateRange dateRange)
         if (dateRange.to > today) dateRange.to = today;
 
     } else dateRange = myDateRange;
-    
-    if (dateRange.from == cfrom && dateRange.to == cto && !stale) return;
 
-    cfrom = dateRange.from;
-    cto = dateRange.to;
+    // only change date range if its actually changed! 
+    if (dateRange.from != cfrom || dateRange.to != cto || stale) {
 
-    // lets work out the average CP configure value
-    if (context->athlete->zones()) {
-        int fromZoneRange = context->athlete->zones()->whichRange(cfrom);
-        int toZoneRange = context->athlete->zones()->whichRange(cto);
+        cfrom = dateRange.from;
+        cto = dateRange.to;
 
-        int CPfrom = fromZoneRange >= 0 ? context->athlete->zones()->getCP(fromZoneRange) : 0;
-        int CPto = toZoneRange >= 0 ? context->athlete->zones()->getCP(toZoneRange) : CPfrom;
-        if (CPfrom == 0) CPfrom = CPto;
-        int dateCP = (CPfrom + CPto) / 2;
+        // lets work out the average CP configure value
+        if (context->athlete->zones()) {
+            int fromZoneRange = context->athlete->zones()->whichRange(cfrom);
+            int toZoneRange = context->athlete->zones()->whichRange(cto);
 
-        cpintPlot->setDateCP(dateCP);
+            int CPfrom = fromZoneRange >= 0 ? context->athlete->zones()->getCP(fromZoneRange) : 0;
+            int CPto = toZoneRange >= 0 ? context->athlete->zones()->getCP(toZoneRange) : CPfrom;
+            if (CPfrom == 0) CPfrom = CPto;
+            int dateCP = (CPfrom + CPto) / 2;
+
+            cpPlot->setDateCP(dateCP);
+        }
+
+        cpPlot->setDateRange(dateRange.from, dateRange.to);
     }
 
-    cpintPlot->changeSeason(dateRange.from, dateRange.to);
-    cpintPlot->calculate(currentRide);
+    // always refresh though
+    cpPlot->setRide(currentRide);
 
     stale = false;
 }
@@ -1160,47 +1289,80 @@ void CriticalPowerWindow::seasonSelected(int iSeason)
     if (iSeason >= seasons->seasons.count() || iSeason < 0) return;
     Season season = seasons->seasons.at(iSeason);
     //XXX BROKEM CODE IN 5.1 PORT // _dateRange = season.id();
-    cpintPlot->changeSeason(season.getStart(), season.getEnd());
-    cpintPlot->calculate(currentRide);
+    cpPlot->setDateRange(season.getStart(), season.getEnd());
+    cpPlot->setRide(currentRide);
 }
 
 void CriticalPowerWindow::filterChanged()
 {
-    cpintPlot->calculate(currentRide);
+    cpPlot->setRide(currentRide);
 }
 
 void
 CriticalPowerWindow::shadingSelected(int shading)
 {
-    cpintPlot->setShadeMode(shading);
+    cpPlot->setShadeMode(shading);
     if (rangemode) dateRangeChanged(DateRange());
-    else cpintPlot->calculate(currentRide);
+    else cpPlot->setRide(currentRide);
+}
+
+void
+CriticalPowerWindow::showGridChanged(int state)
+{
+    // redraw
+    if (state) grid->setVisible(true);
+    else grid->setVisible(false);
+    cpPlot->replot();
+}
+
+void
+CriticalPowerWindow::showPercentChanged(int state)
+{
+    cpPlot->setShowPercent(state);
+    rPercent->setChecked(state);
+
+    // redraw
+    if (rangemode) dateRangeChanged(DateRange());
+    else cpPlot->setRide(currentRide);
+}
+
+void 
+CriticalPowerWindow::rPercentChanged(int check)
+{
+    showPercentCheck->setChecked(check);
 }
 
 void
 CriticalPowerWindow::showHeatChanged(int state)
 {
-    cpintPlot->setShowHeat(state);
+    cpPlot->setShowHeat(state);
+    rHeat->setChecked(state);
 
     // redraw
     if (rangemode) dateRangeChanged(DateRange());
-    else cpintPlot->calculate(currentRide);
+    else cpPlot->setRide(currentRide);
+}
+
+void 
+CriticalPowerWindow::rHeatChanged(int check)
+{
+    showHeatCheck->setChecked(check);
 }
 
 void
 CriticalPowerWindow::showHeatByDateChanged(int state)
 {
-    cpintPlot->setShowHeatByDate(state);
+    cpPlot->setShowHeatByDate(state);
 
     // redraw
     if (rangemode) dateRangeChanged(DateRange());
-    else cpintPlot->calculate(currentRide);
+    else cpPlot->setRide(currentRide);
 }
 
 void
 CriticalPowerWindow::shadeIntervalsChanged(int state)
 {
-    cpintPlot->setShadeIntervals(state);
+    cpPlot->setShadeIntervals(state);
 
     // any existing interval curves need brush or no brush
     foreach(QwtPlotCurve *p, intervalCurves) {
@@ -1215,12 +1377,12 @@ CriticalPowerWindow::shadeIntervalsChanged(int state)
         }
     }
     if (rangemode) dateRangeChanged(DateRange());
-    else cpintPlot->calculate(currentRide);
+    else cpPlot->setRide(currentRide);
 }
 
 void
-CriticalPowerWindow::setRidePlotStyle(int index)
+CriticalPowerWindow::setPlotType(int index)
 {
-    cpintPlot->setRidePlotStyle(index);
-    cpintPlot->calculate(currentRide);
+    cpPlot->setPlotType(index);
+    cpPlot->setRide(currentRide);
 }
