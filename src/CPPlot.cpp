@@ -48,7 +48,7 @@
 #include "TimeUtils.h"
 
 
-CPPlot::CPPlot(QWidget *parent, Context *context, bool rangemode) : QwtPlot(parent),
+CPPlot::CPPlot(QWidget *parent, Context *context, bool rangemode) : QwtPlot(parent), parent(parent),
 
     // state
     context(context), rideCache(NULL), bestsCache(NULL), rideSeries(RideFile::watts), isFiltered(false), shadeMode(2),
@@ -56,7 +56,7 @@ CPPlot::CPPlot(QWidget *parent, Context *context, bool rangemode) : QwtPlot(pare
     plotType(0), 
 
     // curves and plot objects
-    rideCurve(NULL), modelCurve(NULL), heatCurve(NULL), heatAgeCurve(NULL), curveTitle(NULL)
+    rideCurve(NULL), modelCurve(NULL), heatCurve(NULL), heatAgeCurve(NULL) 
 
 {
     setAutoFillBackground(true);
@@ -374,11 +374,6 @@ CPPlot::plotModel()
             delete modelCurve;
             modelCurve = NULL;
         }
-        if (curveTitle) {
-            curveTitle->detach();
-            delete curveTitle;
-            curveTitle = NULL;
-        }
         return;
     }
 
@@ -442,35 +437,22 @@ CPPlot::plotModel()
                     cp_curve_time[i] = t;
                 }
 
-                // generate a plot
-                QString curve_title;
-                if (rideSeries == RideFile::wattsKg)
-                    curve_title.sprintf("CP=%.2f w/kg; W'=%.2f kJ/kg", cp, cp * tau * 60.0 / 1000.0);
-                else
-                    curve_title.sprintf("CP=%.0f w; W'=%.0f kJ", cp, cp * tau * 60.0 / 1000.0);
-
-                if (curveTitle) {
-                    delete curveTitle;
-                    curveTitle = NULL;
-                }
-                curveTitle = new QwtPlotMarker("");
-                curveTitle->setXValue(5);
-
                 if (rideSeries == RideFile::watts || rideSeries == RideFile::aPower || rideSeries == RideFile::xPower ||
                     rideSeries == RideFile::NP || rideSeries == RideFile::wattsKg) { 
 
-                    QwtText text(curve_title, QwtText::PlainText);
-                    text.setColor(GColor(CPLOTMARKER));
-                    curveTitle->setLabel(text);
+                    // set parent labels for model values
+                    CriticalPowerWindow *cpw = static_cast<CriticalPowerWindow*>(parent);
+                    cpw->wprimeValue->setText(QString("%1 kJ").arg(cp*tau * 60 / 1000.0, 0, 'f', 1));
+                    cpw->cpValue->setText(QString("%1 w").arg(int(cp)));
+                    cpw->ftpValue->setText("n/a");
+                    if (model == 1) {
+                        cpw->pmaxValue->setText("n/a");
+                    } else {
+                        cpw->pmaxValue->setText(QString("%1 w").arg(int(cp_curve_power[0])));
+                    }
                 }
 
-                if (rideSeries == RideFile::wattsKg)
-                    curveTitle->setYValue(0.6);
-                else
-                    curveTitle->setYValue(70);
-                curveTitle->attach(this);
-
-                modelCurve = new QwtPlotCurve(curve_title);
+                modelCurve = new QwtPlotCurve("Model");
                 if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
                     modelCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
                 QPen pen(GColor(CCP));
@@ -490,20 +472,29 @@ CPPlot::plotModel()
                 deriveCPParameters();
 
                 // calculate extended CP model from all-time best data
-                Model_eCP athleteModeleCP5 = ecp->deriveExtendedCP_5_3_Parameters(true, bestsCache,
+                Model_eCP model = ecp->deriveExtendedCP_5_3_Parameters(true, bestsCache,
                                                                 rideSeries, sanI1, sanI2, anI1, anI2, aeI1, aeI2, laeI1, laeI2);
 
-                modelCurve = ecp->getPlotCurveForExtendedCP_5_3(athleteModeleCP5);
+                modelCurve = ecp->getPlotCurveForExtendedCP_5_3(model);
                 modelCurve->attach(this);
 
-                if (curveTitle) {
-                    curveTitle->detach();
-                    delete curveTitle;
-                }
-                curveTitle = ecp->getPlotMarkerForExtendedCP(athleteModeleCP5);
-                curveTitle->setXValue(5);
-                curveTitle->setYValue(70);
-                curveTitle->attach(this);
+                // set parent labels for model values
+                CriticalPowerWindow *cpw = static_cast<CriticalPowerWindow*>(parent);
+                cpw->wprimeValue->setText(QString("%1 kJ").arg(model.etau*model.ecp* 60.0f / 1000.0f, 0, 'f', 1));
+                cpw->cpValue->setText(QString("%1 w").arg(int (model.ecp)));
+                cpw->ftpValue->setText(QString("%1 w").arg(model.mmp60));
+                cpw->pmaxValue->setText(QString("%1 w").arg(model.pMax));
+                
+                // Add levels for pmax and ftp
+                // TODO use weight from date ?
+
+                // Reference 22.5W/kg -> untrained 8W/kg
+                int _pMaxLevel = 15 * (model.pMax / appsettings->cvalue(context->athlete->cyclist, GC_WEIGHT).toDouble() - 8) / (23-8) ;
+                cpw->pmaxRank->setText(QString("%1").arg(_pMaxLevel));
+
+                // Reference 6.25W/kg -> untrained 2.5W/kg
+                int _ftpLevel = 15 * (model.mmp60 / appsettings->cvalue(context->athlete->cyclist, GC_WEIGHT).toDouble() - 2.5) / (6.25-2.5) ;
+                cpw->ftpRank->setText(QString("%1").arg(_ftpLevel));
             }
             break;
         }
@@ -588,11 +579,6 @@ CPPlot::clearCurves()
     if (modelCurve) {
         delete modelCurve;
         modelCurve = NULL;
-    }
-    if (curveTitle) {
-        curveTitle->detach();
-        delete curveTitle;
-        curveTitle = NULL;
     }
 
     // ride curve
@@ -833,7 +819,7 @@ CPPlot::plotBests()
 
             // use a linear gradient
             if (shadeMode && shadingCP) { // 0 value means no shading please - and only if proper value for shadingCP
-                color.setAlpha(64);
+                color.setAlpha(128);
                 QColor color1 = color.darker();
                 QLinearGradient linearGradient(0, 0, 0, height());
                 linearGradient.setColorAt(0.0, color);
@@ -903,7 +889,20 @@ CPPlot::plotBests()
         ymax = 100 * ceil(values[0] / 100);
         if (ymax == 100) ymax = 5 * ceil(values[0] / 5);
     }
-    setAxisScale(yLeft, 0, ymax);
+
+    // adjust if for power
+    if (rideSeries == RideFile::watts) {
+
+        // set ymax to nearest 100 if power
+        int max = ymax * 1.1f;
+        max = ((max/100) + 1) * 100;
+
+        setAxisScale(yLeft, 0, max);
+    } else {
+
+        // or just add 10% headroom
+        setAxisScale(yLeft, 0, 1.1*ymax);
+    }
 }
 
 // plot the currently selected ride
@@ -955,7 +954,8 @@ CPPlot::plotRide(RideItem *rideItem)
         for (int i = 0; i <= maxNonZero; ++i) {
             energyArray[i] = timeArray[i] * rideCache->meanMaxArray(RideFile::watts)[i] * 60.0 / 1000.0;
         }
-        rideCurve->setSamples(timeArray.data() + 1, energyArray.constData() + 1, maxNonZero - 1);
+        rideCurve->setSamples(timeArray.data() + 1, energyArray.constData() + 1, 
+                              maxNonZero > 0 ? maxNonZero-1 : 0);
 
     } else {
 
@@ -975,7 +975,8 @@ CPPlot::plotRide(RideItem *rideItem)
                 samples[i] = rideCache->meanMaxArray(rideSeries)[i] /
                              bestsCache->meanMaxArray(rideSeries)[i] * 100.00f;
             }
-            rideCurve->setSamples(timeArray.data() + 1, samples.data() + 1, maxNonZero -1);
+            rideCurve->setSamples(timeArray.data() + 1, samples.data() + 1, 
+                                  maxNonZero > 0 ? maxNonZero-1 : 0);
 
             // did we get over 100% .. because if so
             // we need to set the maxY on the RHS to reflect that
@@ -988,7 +989,8 @@ CPPlot::plotRide(RideItem *rideItem)
 
             // JUST A NORMAL CURVE
             rideCurve->setYAxis(yLeft);
-            rideCurve->setSamples(timeArray.data() + 1, rideCache->meanMaxArray(rideSeries).constData() + 1, maxNonZero - 1);
+            rideCurve->setSamples(timeArray.data() + 1, rideCache->meanMaxArray(rideSeries).constData() + 1, 
+                                  maxNonZero > 0 ? maxNonZero-1 : 0);
         }
     }
 
@@ -1095,11 +1097,14 @@ CPPlot::setRide(RideItem *rideItem)
 void
 CPPlot::pointHover(QwtPlotCurve *curve, int index)
 {
+    if (curve == modelCurve) return; // ignore model curve hover
+
     if (index >= 0) {
 
         double xvalue = curve->sample(index).x();
         double yvalue = curve->sample(index).y();
         QString text, dateStr;
+        QString units;
 
         // add when to tooltip if its all curve
         if (bestsCurves.contains(curve)) {
@@ -1110,11 +1115,15 @@ CPPlot::pointHover(QwtPlotCurve *curve, int index)
             }
         }
 
+        // show percent ?
+        if (curve == rideCurve && showPercent) units = QString("%");
+        else units = RideFile::unitName(rideSeries, context);
+
         // output the tooltip
         text = QString("%1\n%3 %4%5")
                .arg(interval_to_str(60.0*xvalue))
                .arg(yvalue, 0, 'f', RideFile::decimalsFor(rideSeries))
-               .arg(RideFile::unitName(rideSeries, context))
+               .arg(units)
                .arg(dateStr);
 
         // set that text up
@@ -1544,7 +1553,19 @@ CPPlot::calculateForDateRanges(QList<CompareDateRange> compareDateRanges)
             }
         }
     }
-    setAxisScale(yLeft, 0, 1.1*ymax);
+
+    if (rideSeries == RideFile::watts) {
+
+        // set ymax to nearest 100 if power
+        int max = ymax * 1.1f;
+        max = ((max/100) + 1) * 100;
+
+        setAxisScale(yLeft, 0, max);
+    } else {
+
+        // or just add 10% headroom
+        setAxisScale(yLeft, 0, 1.1*ymax);
+    }
     replot();
 }
 

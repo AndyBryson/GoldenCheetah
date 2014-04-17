@@ -62,6 +62,8 @@ public slots:
     void scrollLeft();
     void scrollRight();
     void tidy();
+    void setChartMenu();
+    void menuPopup();
 
 signals:
     void currentIndexChanged(int);
@@ -73,6 +75,7 @@ private:
 
     ButtonBar *buttonBar;
     QToolButton *left, *right; // scrollers, hidden if menu fits
+    QToolButton *menuButton;
     QScrollArea *scrollArea;
     QHBoxLayout *layout;
 
@@ -83,6 +86,8 @@ private:
     QVector<GcScopeButton*> buttons;
 #endif
     QSignalMapper *signalMapper;
+
+    QMenu *barMenu, *chartMenu;
 
     int currentIndex_;
     bool state;

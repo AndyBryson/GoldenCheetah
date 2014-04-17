@@ -97,8 +97,8 @@ void
 TwitterDialog::tweetCurrentRide()
 {
 
-    QString strToken = appsettings->value(this, GC_TWITTER_TOKEN).toString();
-    QString strSecret = appsettings->value(this, GC_TWITTER_SECRET).toString();
+    QString strToken = appsettings->cvalue(context->athlete->cyclist, GC_TWITTER_TOKEN).toString();
+    QString strSecret = appsettings->cvalue(context->athlete->cyclist, GC_TWITTER_SECRET).toString();
 
     QString s_token = QString(strToken);
     QString s_secret = QString(strSecret);
@@ -120,7 +120,7 @@ TwitterDialog::tweetCurrentRide()
     // This is for API 1.0
     // QString qurl = "http://api.twitter.com/1/statuses/update.json?status=";
     // This is for API 1.1
-    QString qurl = "http://api.twitter.com/1.1/statuses/update.json?status=";
+    QString qurl = "https://api.twitter.com/1.1/statuses/update.json?status=";
 
     QString twitterMsg = getTwitterMessage();
 

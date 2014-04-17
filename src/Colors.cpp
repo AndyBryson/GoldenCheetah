@@ -119,6 +119,10 @@ void GCColor::setupColors()
         { tr("Ride CP Curve"), "CRIDECP", Qt::red },
         { tr("Aerobic TISS"), "CATISS", Qt::magenta },
         { tr("Anaerobic TISS"), "CANTISS", Qt::cyan },
+        { tr("Left Torque Effectiveness"), "CLTE", Qt::cyan },
+        { tr("Right Torque Effectiveness"), "CRTE", Qt::magenta },
+        { tr("Left Pedal Smoothness"), "CLPS", Qt::cyan },
+        { tr("Right Pedal Smoothness"), "CRPS", Qt::magenta },
         { "", "", QColor(0,0,0) },
     };
 
@@ -293,4 +297,30 @@ GCColor::css()
                    "</style> ").arg(GColor(CPLOTMARKER).name())
                                .arg(bgColor.name())
                                .arg(fgColor.name());
+}
+QPalette 
+GCColor::palette()
+{
+    // make it to order, to reflect current config
+    QPalette palette;
+    palette.setBrush(QPalette::Window, QBrush(GColor(CPLOTBACKGROUND)));
+    palette.setBrush(QPalette::Background, QBrush(GColor(CPLOTBACKGROUND)));
+    palette.setBrush(QPalette::Base, QBrush(GColor(CPLOTBACKGROUND)));
+    palette.setColor(QPalette::WindowText, GCColor::invertColor(GColor(CPLOTBACKGROUND)));
+    palette.setColor(QPalette::Text, GCColor::invertColor(GColor(CPLOTBACKGROUND)));
+    palette.setColor(QPalette::Normal, QPalette::Window, GCColor::invertColor(GColor(CPLOTBACKGROUND)));
+
+    return palette;
+}
+
+QString 
+GCColor::stylesheet()
+{
+    // make it to order to reflect current config
+    QColor bgColor = GColor(CPLOTBACKGROUND);
+    QColor fgColor = GCColor::invertColor(bgColor);
+    return QString("QTreeView { color: %2; background: %1; }"
+                   "QTableWidget { color: %2; background: %1; }"
+                   "QTableWidget::item:hover { color: black; background: lightGray; }"
+                   "QTreeView::item:hover { color: black; background: lightGray; }").arg(bgColor.name()).arg(fgColor.name());
 }

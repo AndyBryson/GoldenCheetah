@@ -414,12 +414,20 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
     twitterPIN = new QLineEdit(this);
     twitterPIN->setText("");
 
+    QPixmap passwords = QPixmap(":/images/toolbar/passwords.png");
+
+    twitterAuthorised = new QPushButton(this);
+    twitterAuthorised->setContentsMargins(0,0,0,0);
+    twitterAuthorised->setIcon(passwords.scaled(16,16));
+    twitterAuthorised->setIconSize(QSize(16,16));
+    twitterAuthorised->setFixedHeight(16);
+    twitterAuthorised->setFixedWidth(16);
+
     stravaAuthorise = new QPushButton("Authorise", this);
+
 #ifndef GC_STRAVA_CLIENT_SECRET
     stravaAuthorise->setEnabled(false);
 #endif
-
-    QPixmap passwords = QPixmap(":/images/toolbar/passwords.png");
 
     stravaAuthorised = new QPushButton(this);
     stravaAuthorised->setContentsMargins(0,0,0,0);
@@ -508,7 +516,7 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
     grid->addWidget(twp, 9,0);
     grid->addWidget(twurlLabel, 10,0);
     grid->addWidget(twauthLabel, 11,0);
-    grid->addWidget(twpinLabel, 12,0);
+    //grid->addWidget(twpinLabel, 12,0);
     grid->addWidget(str, 13,0);
     grid->addWidget(strauthLabel, 14,0);
     grid->addWidget(can, 15,0);
@@ -548,7 +556,12 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
 
     grid->addWidget(twitterURL, 10, 1, 0);
     grid->addWidget(twitterAuthorise, 11, 1, Qt::AlignLeft | Qt::AlignVCenter);
-    grid->addWidget(twitterPIN, 12, 1, Qt::AlignLeft | Qt::AlignVCenter);
+
+    if (appsettings->cvalue(context->athlete->cyclist, GC_TWITTER_TOKEN, "")!="")
+        grid->addWidget(twitterAuthorised, 11, 1, Qt::AlignLeft | Qt::AlignVCenter);
+    else
+        twitterAuthorised->hide(); // if no token no show
+    //grid->addWidget(twitterPIN, 12, 1, Qt::AlignLeft | Qt::AlignVCenter);
 
     grid->addWidget(stravaAuthorise, 14, 1, Qt::AlignLeft | Qt::AlignVCenter);
     if (appsettings->cvalue(context->athlete->cyclist, GC_STRAVA_TOKEN, "")!="")
@@ -603,6 +616,12 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
 void CredentialsPage::authoriseTwitter()
 {
 #ifdef GC_HAVE_LIBOAUTH
+    OAuthDialog *oauthDialog = new OAuthDialog(context, OAuthDialog::TWITTER);
+    oauthDialog->setWindowModality(Qt::ApplicationModal);
+    oauthDialog->exec();
+#endif
+    /*
+#ifdef GC_HAVE_LIBOAUTH
     int rc;
     char **rv = NULL;
     QString token;
@@ -610,7 +629,7 @@ void CredentialsPage::authoriseTwitter()
     t_key = NULL;
     t_secret = NULL;
 
-    const char *request_token_uri = "http://api.twitter.com/oauth/request_token";
+    const char *request_token_uri = "https://api.twitter.com/oauth/request_token";
 
     char *req_url = NULL;
     char *postarg = NULL;
@@ -623,11 +642,12 @@ void CredentialsPage::authoriseTwitter()
     token = QString(rv[1]);
     t_key  =strdup(&(rv[1][12]));
     t_secret =strdup(&(rv[2][19]));
-    url = QString("http://api.twitter.com/oauth/authorize?");
+    url = QString("https://api.twitter.com/oauth/authorize?");
     url.append(token);
     QDesktopServices::openUrl(QUrl(url));
     if(rv) free(rv);
 #endif
+    */
 }
 
 void CredentialsPage::saveTwitter()
@@ -637,7 +657,7 @@ void CredentialsPage::saveTwitter()
     char *req_url;
     char **rv = NULL;
     char *postarg = NULL;
-    QString url = QString("http://api.twitter.com/oauth/access_token?a=b&oauth_verifier=");
+    QString url = QString("https://api.twitter.com/oauth/access_token?a=b&oauth_verifier=");
 
     QString strPin = twitterPIN->text();
     if(strPin.size() == 0)
@@ -658,8 +678,8 @@ void CredentialsPage::saveTwitter()
         const char *oauth_secret = strdup(&(rv[1][19]));
 
         //Save Twitter oauth_token and oauth_secret;
-        appsettings->setValue(GC_TWITTER_TOKEN, oauth_token);
-        appsettings->setValue(GC_TWITTER_SECRET, oauth_secret);
+        appsettings->setCValue(context->athlete->cyclist, GC_TWITTER_TOKEN, oauth_token);
+        appsettings->setCValue(context->athlete->cyclist, GC_TWITTER_SECRET, oauth_secret);
     }
 #endif
 }
@@ -685,6 +705,8 @@ void CredentialsPage::authoriseCyclingAnalytics()
 void
 CredentialsPage::saveClicked()
 {
+    // don't need anymore : saveTwitter();
+
     appsettings->setCValue(context->athlete->cyclist, GC_GCURL, gcURL->text());
     appsettings->setCValue(context->athlete->cyclist, GC_GCUSER, gcUser->text());
     appsettings->setCValue(context->athlete->cyclist, GC_GCPASS, gcPass->text());

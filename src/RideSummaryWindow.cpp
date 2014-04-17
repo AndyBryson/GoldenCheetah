@@ -532,6 +532,8 @@ RideSummaryWindow::htmlSummary()
         summary += "</table></td>";
     }
 
+//XXX TOO SLOW -- NEED TO THINK ABOUT DOING THIS IN BACKGROUND
+#if 0
     // now add in the model parameters if we are not in ridesummary mode...
     // if we're summarising a range we need to get the model parameters refreshed
     if (!ridesummary && bestsCache == NULL) {
@@ -573,6 +575,7 @@ RideSummaryWindow::htmlSummary()
 
         summary += "</table></td>";
     }
+#endif
 
     summary += "</tr></table>";
 
@@ -748,7 +751,7 @@ RideSummaryWindow::htmlSummary()
                         break;
                     f.appendPoint(p->secs, p->cad, p->hr, p->km, p->kph, p->nm,
                                 p->watts, p->alt, p->lon, p->lat, p->headwind,
-                                p->slope, p->temp, p->lrbalance, 0);
+                                p->slope, p->temp, p->lrbalance, p->lte, p->rte, p->lps, p->rps, 0);
 
                     // derived data
                     RideFilePoint *l = f.dataPoints().last();

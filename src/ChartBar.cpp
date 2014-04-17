@@ -89,6 +89,22 @@ ChartBar::ChartBar(Context *context) : QWidget(context->mainWindow), context(con
     mlayout->addWidget(right);
     connect(right, SIGNAL(clicked()), this, SLOT(scrollRight()));
 
+    // spacer to make the menuButton on the right
+    QLabel *spacer = new QLabel("", this);
+    spacer->setAutoFillBackground(false);
+    spacer->setFixedHeight(20);
+    spacer->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    mlayout->addWidget(spacer);
+
+    menuButton = new QToolButton(this);
+    menuButton->setStyleSheet("QToolButton { border: none; padding: 0px; }");
+    menuButton->setAutoFillBackground(false);
+    menuButton->setFixedSize(20,20);
+    menuButton->setIcon(iconFromPNG(":images/sidebar/extra.png"));
+    menuButton->setIconSize(QSize(10,10));
+    menuButton->setFocusPolicy(Qt::NoFocus);
+    mlayout->addWidget(menuButton);
+    //connect(p, SIGNAL(clicked()), action, SLOT(trigger()));
 
     buttonFont.setPointSize(10);
     buttonFont.setWeight(QFont::Black);
@@ -114,6 +130,14 @@ ChartBar::ChartBar(Context *context) : QWidget(context->mainWindow), context(con
 
     signalMapper = new QSignalMapper(this); // maps each option
     connect(signalMapper, SIGNAL(mapped(int)), this, SLOT(clicked(int)));
+
+    barMenu = new QMenu("Add");
+    chartMenu = barMenu->addMenu(tr("Add Chart"));
+
+    // menu
+    connect(menuButton, SIGNAL(clicked()), this, SLOT(menuPopup()));
+    connect(chartMenu, SIGNAL(aboutToShow()), this, SLOT(setChartMenu()));
+    connect(chartMenu, SIGNAL(triggered(QAction*)), context->mainWindow, SLOT(addChart(QAction*)));
 
     // trap resize / mouse events
     installEventFilter(this);
@@ -147,6 +171,19 @@ ChartBar::addWidget(QString title)
 
     // tidy up scrollers etc
     tidy();
+}
+
+void
+ChartBar::setChartMenu()
+{
+    context->mainWindow->setChartMenu(chartMenu);
+}
+
+void
+ChartBar::menuPopup()
+{
+    // set the point for the menu and call below
+    barMenu->exec(this->mapToGlobal(QPoint(menuButton->pos().x(), menuButton->pos().y()+20)));
 }
 
 void
