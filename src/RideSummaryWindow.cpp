@@ -33,7 +33,7 @@
 #include <math.h>
 
 RideSummaryWindow::RideSummaryWindow(Context *context, bool ridesummary) :
-     GcChartWindow(context), context(context), ridesummary(ridesummary), useCustom(false), useToToday(false), filtered(false), bestsCache(NULL)
+     GcChartWindow(context), context(context), ridesummary(ridesummary), useCustom(false), useToToday(false), filtered(false), bestsCache(NULL), force(false)
 {
     setRideItem(NULL);
 
@@ -116,6 +116,9 @@ void
 RideSummaryWindow::configChanged()
 {
     setProperty("color", GColor(CPLOTBACKGROUND)); // called on config change
+    force = true;
+    refresh();
+    force = false;
 }
 
 #ifdef GC_HAVE_LUCENE
@@ -182,7 +185,7 @@ RideSummaryWindow::metadataChanged()
 void
 RideSummaryWindow::refresh()
 {
-    if (!amVisible()) return; // only if you can see me!
+    if (!force && !amVisible()) return; // only if you can see me!
 
     if (isCompare()) { // COMPARE MODE
 
@@ -751,7 +754,7 @@ RideSummaryWindow::htmlSummary()
                         break;
                     f.appendPoint(p->secs, p->cad, p->hr, p->km, p->kph, p->nm,
                                 p->watts, p->alt, p->lon, p->lat, p->headwind,
-                                p->slope, p->temp, p->lrbalance, p->lte, p->rte, p->lps, p->rps, 0);
+                                p->slope, p->temp, p->lrbalance, p->lte, p->rte, p->lps, p->rps, p->smo2, p->thb, 0);
 
                     // derived data
                     RideFilePoint *l = f.dataPoints().last();

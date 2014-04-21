@@ -411,7 +411,6 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     allPlotFrame->setFrameStyle(QFrame::NoFrame);
     allPlotFrame->setAutoFillBackground(false);
     allPlotFrame->setContentsMargins(0,0,0,0);
-    allPlotFrame->setPalette(palette);
 
     spanSlider = new QxtSpanSlider(Qt::Horizontal, this);
     spanSlider->setFocusPolicy(Qt::NoFocus);
@@ -588,6 +587,8 @@ AllPlotWindow::configChanged()
     allStack->setPalette(palette);
     allPlotStack->setPalette(palette);
     allPlotFrame->setPalette(palette);
+    allPlotFrame->viewport()->setPalette(palette); // its a scroll area
+
     comparePlotFrame->setPalette(palette);
     comparePlotWidget->setPalette(palette);
     seriesstackFrame->setPalette(palette);
@@ -678,6 +679,14 @@ AllPlotWindow::compareChanged()
 
     // new ones ..
     if (context->isCompareIntervals) {
+
+        // first, lets init fullPlot, just in case its never
+        // been set (ie, switched to us before ever plotting a ride
+        if (myRideItem) fullPlot->setDataFromRide(myRideItem);
+
+        // and even if the current ride is blank, we're not
+        // going to be blank !!
+        setIsBlank(false);
 
         //
         // SETUP FULLPLOT FOR COMPARE MODE
