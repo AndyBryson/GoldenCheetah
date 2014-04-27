@@ -82,56 +82,6 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     cpPlot = new CPPlot(this, context, rangemode);
     mainLayout->addWidget(cpPlot);
 
-
-#if 0
-    //
-    // picker - on chart controls/display
-    //
-
-    // picker widget
-    QWidget *pickerControls = new QWidget(this);
-    mainLayout->addWidget(pickerControls, 0, 0, Qt::AlignTop | Qt::AlignRight);
-    pickerControls->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Minimum);
-
-    // picker layout
-    QVBoxLayout *pickerLayout = new QVBoxLayout(pickerControls);
-    QFormLayout *pcl = new QFormLayout;
-    pickerLayout->addLayout(pcl);
-    pickerLayout->addStretch(); // get labels at top right
-
-    // picker details
-    QLabel *cpintTimeLabel = new QLabel(tr("Duration:"), this);
-    cpintTimeValue = new QLabel("0 s");
-    QLabel *cpintTodayLabel = new QLabel(tr("Today:"), this);
-    cpintTodayValue = new QLabel(tr("no data"));
-    QLabel *cpintAllLabel = new QLabel(tr("Best:"), this);
-    cpintAllValue = new QLabel(tr("no data"));
-    QLabel *cpintCPLabel = new QLabel(tr("CP Curve:"), this);
-    cpintCPValue = new QLabel(tr("no data"));
-
-    // chart overlayed values in smaller font
-    QFont font = cpintTimeValue->font();
-    font.setPointSize(font.pointSize()-2);
-    cpintTodayValue->setFont(font);
-    cpintAllValue->setFont(font);
-    cpintCPValue->setFont(font);
-    cpintTimeValue->setFont(font);
-    cpintTimeLabel->setFont(font);
-    cpintTodayLabel->setFont(font);
-    cpintAllLabel->setFont(font);
-    cpintCPLabel->setFont(font);
-
-    pcl->addRow(cpintTimeLabel, cpintTimeValue);
-    if (rangemode) {
-        cpintTodayLabel->hide();
-        cpintTodayValue->hide();
-    } else {
-        pcl->addRow(cpintTodayLabel, cpintTodayValue);
-    }
-    pcl->addRow(cpintAllLabel, cpintAllValue);
-    pcl->addRow(cpintCPLabel, cpintCPValue);
-#endif
-
     //
     // Chart settings
     //
@@ -148,7 +98,7 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
 
     QWidget *modelWidget = new QWidget(this);
     modelWidget->setContentsMargins(0,0,0,0);
-    settingsTabs->addTab(modelWidget, tr("Model"));
+    settingsTabs->addTab(modelWidget, tr("CP Model"));
 
     QFormLayout *mcl = new QFormLayout(modelWidget);;
     mcl->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
@@ -239,7 +189,8 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     modelCombo->addItem("None");
     modelCombo->addItem("2 parameter");
     modelCombo->addItem("3 parameter");
-    modelCombo->addItem("ExtendedCP");
+    modelCombo->addItem("Extended CP");
+    modelCombo->addItem("Multicomponent");
     modelCombo->setCurrentIndex(1);
 
     mcl->addRow(new QLabel(tr("CP Model")), modelCombo);
@@ -427,7 +378,7 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     gridLayout->addWidget(ftpValue, 4, 1);
     gridLayout->addWidget(ftpRank, 4, 2);
 
-    addHelper(QString("Model"), helper);
+    addHelper(QString("CP Model"), helper);
 
     if (rangemode) {
         connect(this, SIGNAL(dateRangeChanged(DateRange)), SLOT(dateRangeChanged(DateRange)));
@@ -578,7 +529,8 @@ CriticalPowerWindow::modelChanged()
             // No default values !
             break;
 
-    case 1 : // 2 param model
+    case 4 : // Veloclinic Model uses 2 parameter classic
+    case 1 : // Classic 2 param model 2-20 default (per literature)
 
             intervalLabel->show();
             secondsLabel->show();
@@ -596,14 +548,14 @@ CriticalPowerWindow::modelChanged()
             laeI1SpinBox->hide();
             laeI2SpinBox->hide();
 
-            // Default values
-            anI1SpinBox->setValue(180);
-            anI2SpinBox->setValue(300);
-            aeI1SpinBox->setValue(1200);
-            aeI2SpinBox->setValue(1800);
+            // Default values: class 2-20 model
+            anI1SpinBox->setValue(100);
+            anI2SpinBox->setValue(120);
+            aeI1SpinBox->setValue(1000);
+            aeI2SpinBox->setValue(1200);
             break;
 
-    case 2 : // 3 param model
+    case 2 : // 3 param model: 3-30 model
 
             intervalLabel->show();
             secondsLabel->show();
