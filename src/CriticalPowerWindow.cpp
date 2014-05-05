@@ -44,6 +44,7 @@
 #include "Zones.h"
 #include <QXmlInputSource>
 #include <QXmlSimpleReader>
+#include <QFileDialog>
 
 CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, bool rangemode) :
     GcChartWindow(context), _dateRange("{00000000-0000-0000-0000-000000000001}"), home(home), context(context), currentRide(NULL), rangemode(rangemode), isfiltered(false), stale(true), useCustom(false), useToToday(false), active(false), hoverCurve(NULL), firstShow(true)
@@ -102,6 +103,11 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
 
     QFormLayout *mcl = new QFormLayout(modelWidget);;
     mcl->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
+
+    // add additional menu items before setting
+    // controls since the menu is SET from setControls
+    QAction *exportData = new QAction(tr("Export Chart Data..."), this);
+    addAction(exportData);
 
     setControls(settingsTabs);
 
@@ -196,7 +202,6 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     mcl->addRow(new QLabel(tr("CP Model")), modelCombo);
 
     mcl->addRow(new QLabel(tr(" ")));
-
     intervalLabel = new QLabel(tr("Search Interval"));
     secondsLabel = new QLabel(tr("(seconds)"));
     mcl->addRow(intervalLabel, secondsLabel);
@@ -292,6 +297,15 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     laeLayout->addWidget(laeI1SpinBox);
     laeLayout->addWidget(laeI2SpinBox);
     mcl->addRow(laeLabel, laeLayout);
+
+    mcl->addRow(new QLabel(""), new QLabel(""));
+    velo1 = new QRadioButton(tr("Exponential"));
+    velo1->setChecked(true);
+    mcl->addRow(vlabel = new QLabel(tr("Variant")), velo1);
+    velo2 = new QRadioButton(tr("Linear feedback"));
+    mcl->addRow(new QLabel(""), velo2);
+    velo3 = new QRadioButton(tr("Regeneration"));
+    mcl->addRow(new QLabel(""), velo3);
 
     // point 2 + 3 -or- point 1 + 2 in a 2 point model
 
@@ -402,6 +416,7 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     connect(ridePlotStyleCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(setPlotType(int)));
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
     connect(context, SIGNAL(configChanged()), cpPlot, SLOT(configChanged()));
+    connect(exportData, SIGNAL(triggered()), this, SLOT(exportData()));
 
     // model updated?
     connect(modelCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(modelChanged()));
@@ -413,6 +428,9 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     connect(sanI2SpinBox, SIGNAL(valueChanged(double)), this, SLOT(modelParametersChanged()));
     connect(laeI1SpinBox, SIGNAL(valueChanged(double)), this, SLOT(modelParametersChanged()));
     connect(laeI2SpinBox, SIGNAL(valueChanged(double)), this, SLOT(modelParametersChanged()));
+    connect(velo1, SIGNAL(toggled(bool)), this, SLOT(modelParametersChanged()));
+    connect(velo2, SIGNAL(toggled(bool)), this, SLOT(modelParametersChanged()));
+    connect(velo3, SIGNAL(toggled(bool)), this, SLOT(modelParametersChanged()));
 
     // redraw on config change -- this seems the simplest approach
     connect(context, SIGNAL(filterChanged()), this, SLOT(forceReplot()));
@@ -507,6 +525,14 @@ CriticalPowerWindow::modelChanged()
     // for best results in predicting both W' and CP and providing
     // a reasonable fit for durations < 2mins.
     active = true;
+
+    // hide veloclinic's variation for everyone
+    // it will get shown for model 4 below
+    vlabel->hide();
+    velo1->hide();
+    velo2->hide();
+    velo3->hide();
+
     switch (modelCombo->currentIndex()) {
 
     case 0 : // None
@@ -529,7 +555,15 @@ CriticalPowerWindow::modelChanged()
             // No default values !
             break;
 
-    case 4 : // Veloclinic Model uses 2 parameter classic
+    case 4 : // Veloclinic Model uses 2 parameter classic but 
+             // also lets you select a variation ..
+            vlabel->show();
+            velo1->show();
+            velo2->show();
+            velo3->show();
+
+            // and drop through into case 1 below ...
+
     case 1 : // Classic 2 param model 2-20 default (per literature)
 
             intervalLabel->show();
@@ -553,6 +587,7 @@ CriticalPowerWindow::modelChanged()
             anI2SpinBox->setValue(120);
             aeI1SpinBox->setValue(1000);
             aeI2SpinBox->setValue(1200);
+
             break;
 
     case 2 : // 3 param model: 3-30 model
@@ -615,6 +650,27 @@ CriticalPowerWindow::modelChanged()
     modelParametersChanged();
 }
 
+// kind of tedious but return index into a radio button group 
+// for the button that is actually checked.
+int 
+CriticalPowerWindow::variant() const
+{
+    if (velo1->isChecked()) return 0;
+    if (velo2->isChecked()) return 1;
+    if (velo3->isChecked()) return 2;
+    return 0; // default
+}
+
+void
+CriticalPowerWindow::setVariant(int index)
+{
+    switch (index) {
+    case 0 : velo1->setChecked(true); velo2->setChecked(false); velo3->setChecked(false); break;
+    case 1 : velo1->setChecked(false); velo2->setChecked(true); velo3->setChecked(false); break;
+    case 2 : velo1->setChecked(false); velo2->setChecked(false); velo3->setChecked(true); break;
+    }
+}
+
 void
 CriticalPowerWindow::modelParametersChanged()
 {
@@ -636,7 +692,8 @@ CriticalPowerWindow::modelParametersChanged()
                         aeI2SpinBox->value(),
                         laeI1SpinBox->value(),
                         laeI2SpinBox->value(),
-                        modelCombo->currentIndex());
+                        modelCombo->currentIndex(),
+                        variant());
 
     // and apply
     if (amVisible() && myRideItem != NULL) {
@@ -1464,4 +1521,17 @@ CriticalPowerWindow::setPlotType(int index)
 {
     cpPlot->setPlotType(index);
     cpPlot->setRide(currentRide);
+}
+
+void
+CriticalPowerWindow::exportData()
+{
+    QString fileName = title()+".csv";
+    fileName = QFileDialog::getSaveFileName(this, tr("Save Best Data as CSV"),  QString(), title()+".csv (*.csv)");
+
+    if (!fileName.isEmpty()) {
+
+        // open and write bests data to the csv file
+        cpPlot->exportBests(fileName);
+    }
 }

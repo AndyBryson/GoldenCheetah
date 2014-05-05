@@ -132,7 +132,6 @@ class CredentialsPage : public QScrollArea
 
     public:
         CredentialsPage(QWidget *parent, Context *context);
-        void saveTwitter();
         void saveClicked();
 
     public slots:
@@ -158,12 +157,7 @@ class CredentialsPage : public QScrollArea
         QLineEdit *twitterPIN;
         char *t_key, *t_secret;
 
-        QLineEdit *stravaURL; // url for strava ... http://www.strava.com
-        //QPushButton *stravaTest;
-        //QLineEdit *stravaUser;
-        //QLineEdit *stravaPass;
         QPushButton *stravaAuthorise, *stravaAuthorised, *twitterAuthorised;
-        QLineEdit *stravaPIN;
         char *s_id, *s_secret;
 
         QPushButton *cyclingAnalyticsAuthorise, *cyclingAnalyticsAuthorised;
@@ -418,13 +412,13 @@ class ColorsPage : public QWidget
         void saveClicked();
 
     public slots:
-        void resetClicked();
+        void applyThemeClicked();
+        void tabChanged();
 
     private:
 
         // General stuff
         QCheckBox *antiAliased;
-        QCheckBox *shadeZones;
         QDoubleSpinBox *lineWidth;
 
         // Fonts
@@ -432,20 +426,22 @@ class ColorsPage : public QWidget
                       *titles,
                       *chartmarkers,
                       *chartlabels,
-                      *calendar,
-                      *popup;
+                      *calendar;
 
         QComboBox *defaultSize,
                   *titlesSize,
                   *chartmarkersSize,
                   *chartlabelsSize,
-                  *calendarSize,
-                  *popupSize;
+                  *calendarSize;
+
+        // tabbed view between colors and themes
+        QTabWidget *colorTab;
 
         // Colors
         QTreeWidget *colors;
+        QTreeWidget *themes;
         const Colors *colorSet;
-        QPushButton *reset;
+        QPushButton *applyTheme;
 };
 
 class FieldsPage : public QWidget

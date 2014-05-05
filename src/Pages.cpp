@@ -321,7 +321,6 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
 
     QLabel *twurlLabel = new QLabel(tr("Website"));
     QLabel *twauthLabel = new QLabel(tr("Authorise"));
-    QLabel *twpinLabel = new QLabel(tr("PIN"));
 
     QLabel *str = new QLabel(tr("Strava"));
     str->setFont(current);
@@ -411,9 +410,6 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
     twitterURL = new QLineEdit(this);
     twitterURL->setText(appsettings->cvalue(context->athlete->cyclist, GC_TWURL, "http://www.twitter.com").toString());
     twitterAuthorise = new QPushButton("Authorise", this);
-    twitterPIN = new QLineEdit(this);
-    twitterPIN->setText("");
-
     QPixmap passwords = QPixmap(":/images/toolbar/passwords.png");
 
     twitterAuthorised = new QPushButton(this);
@@ -561,7 +557,6 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
         grid->addWidget(twitterAuthorised, 11, 1, Qt::AlignLeft | Qt::AlignVCenter);
     else
         twitterAuthorised->hide(); // if no token no show
-    //grid->addWidget(twitterPIN, 12, 1, Qt::AlignLeft | Qt::AlignVCenter);
 
     grid->addWidget(stravaAuthorise, 14, 1, Qt::AlignLeft | Qt::AlignVCenter);
     if (appsettings->cvalue(context->athlete->cyclist, GC_STRAVA_TOKEN, "")!="")
@@ -650,40 +645,6 @@ void CredentialsPage::authoriseTwitter()
     */
 }
 
-void CredentialsPage::saveTwitter()
-{
-#ifdef GC_HAVE_LIBOAUTH
-    char *reply;
-    char *req_url;
-    char **rv = NULL;
-    char *postarg = NULL;
-    QString url = QString("https://api.twitter.com/oauth/access_token?a=b&oauth_verifier=");
-
-    QString strPin = twitterPIN->text();
-    if(strPin.size() == 0)
-        return;
-
-    url.append(strPin);
-
-    req_url = oauth_sign_url2(url.toLatin1(), NULL, OA_HMAC, NULL, GC_TWITTER_CONSUMER_KEY, GC_TWITTER_CONSUMER_SECRET, t_key, t_secret);
-    reply = oauth_http_get(req_url,postarg);
-
-    int rc = oauth_split_url_parameters(reply, &rv);
-
-    if(rc ==4)
-    {
-        qsort(rv, rc, sizeof(char *), oauth_cmpstringp);
-
-        const char *oauth_token = strdup(&(rv[0][12]));
-        const char *oauth_secret = strdup(&(rv[1][19]));
-
-        //Save Twitter oauth_token and oauth_secret;
-        appsettings->setCValue(context->athlete->cyclist, GC_TWITTER_TOKEN, oauth_token);
-        appsettings->setCValue(context->athlete->cyclist, GC_TWITTER_SECRET, oauth_secret);
-    }
-#endif
-}
-
 void CredentialsPage::authoriseStrava()
 {
 #ifdef GC_HAVE_LIBOAUTH
@@ -705,8 +666,6 @@ void CredentialsPage::authoriseCyclingAnalytics()
 void
 CredentialsPage::saveClicked()
 {
-    // don't need anymore : saveTwitter();
-
     appsettings->setCValue(context->athlete->cyclist, GC_GCURL, gcURL->text());
     appsettings->setCValue(context->athlete->cyclist, GC_GCUSER, gcUser->text());
     appsettings->setCValue(context->athlete->cyclist, GC_GCPASS, gcPass->text());
@@ -1156,6 +1115,17 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
 {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
+    themes = new QTreeWidget;
+    themes->headerItem()->setText(0, tr("Swatch"));
+    themes->headerItem()->setText(1, tr("Name"));
+    themes->setColumnCount(2);
+    themes->setColumnWidth(0,240);
+    themes->setSelectionMode(QAbstractItemView::SingleSelection);
+    //colors->setEditTriggers(QAbstractItemView::SelectedClicked); // allow edit
+    themes->setUniformRowHeights(true);
+    themes->setIndentation(0);
+    //colors->header()->resizeSection(0,300);
+
     colors = new QTreeWidget;
     colors->headerItem()->setText(0, tr("Color"));
     colors->headerItem()->setText(1, tr("Select"));
@@ -1167,41 +1137,34 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
     colors->setIndentation(0);
     //colors->header()->resizeSection(0,300);
 
-    shadeZones = new QCheckBox;
-    shadeZones->setChecked(appsettings->value(this, GC_SHADEZONES, true).toBool());
+    QLabel *antiAliasLabel = new QLabel(tr("Antialias"));
     antiAliased = new QCheckBox;
     antiAliased->setChecked(appsettings->value(this, GC_ANTIALIAS, false).toBool());
     lineWidth = new QDoubleSpinBox;
     lineWidth->setMaximum(5);
     lineWidth->setMinimum(0.5);
     lineWidth->setSingleStep(0.5);
-    reset = new QPushButton("Reset");
+    applyTheme = new QPushButton("Apply Theme");
     lineWidth->setValue(appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble());
 
     QLabel *lineWidthLabel = new QLabel(tr("Line Width"));
-    QLabel *antialiasLabel = new QLabel(tr("Antialias" ));
-    QLabel *shadeZonesLabel = new QLabel(tr("Shade Zones" ));
-
     QLabel *defaultLabel = new QLabel(tr("Default"));
     QLabel *titlesLabel = new QLabel(tr("Title" ));
     QLabel *markerLabel = new QLabel(tr("Chart Markers" ));
     QLabel *chartLabel = new QLabel(tr("Chart Labels" ));
     QLabel *calendarLabel = new QLabel(tr("Calendar Text" ));
-    QLabel *popupLabel = new QLabel(tr("Popup Text" ));
 
     def = new QFontComboBox(this);
     titles = new QFontComboBox(this);
     chartmarkers = new QFontComboBox(this);
     chartlabels = new QFontComboBox(this);
     calendar = new QFontComboBox(this);
-    popup = new QFontComboBox(this);
 
     defaultSize = new QComboBox(this); setSizes(defaultSize);
     titlesSize = new QComboBox(this); setSizes(titlesSize);
     chartmarkersSize = new QComboBox(this); setSizes(chartmarkersSize);
     chartlabelsSize = new QComboBox(this); setSizes(chartlabelsSize);
     calendarSize = new QComboBox(this); setSizes(calendarSize);
-    popupSize = new QComboBox(this); setSizes(popupSize);
 
     // get round QTBUG
     def->setCurrentIndex(0);
@@ -1219,9 +1182,6 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
     calendar->setCurrentIndex(0);
     calendar->setCurrentIndex(1);
     calendar->setCurrentFont(QFont());
-    popup->setCurrentIndex(0);
-    popup->setCurrentIndex(1);
-    popup->setCurrentFont(QFont());
 
     QFont font;
 
@@ -1240,69 +1200,62 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
     font.fromString(appsettings->value(this, GC_FONT_CALENDAR, QFont().toString()).toString());
     calendar->setCurrentFont(font);
 
-    font.fromString(appsettings->value(this, GC_FONT_POPUP, QFont().toString()).toString());
-    popup->setCurrentFont(font);
-
 #ifdef Q_OS_MAC
     defaultSize->setCurrentIndex((appsettings->value(this, GC_FONT_DEFAULT_SIZE, 12).toInt() -7) / 2);
     titlesSize->setCurrentIndex((appsettings->value(this, GC_FONT_TITLES_SIZE, 12).toInt() -7) / 2);
     chartmarkersSize->setCurrentIndex((appsettings->value(this, GC_FONT_CHARTMARKERS_SIZE, 12).toInt() -7) / 2);
     chartlabelsSize->setCurrentIndex((appsettings->value(this, GC_FONT_CHARTLABELS_SIZE, 12).toInt() -7) / 2);
     calendarSize->setCurrentIndex((appsettings->value(this, GC_FONT_CALENDAR_SIZE, 12).toInt() -7) / 2);
-    popupSize->setCurrentIndex((appsettings->value(this, GC_FONT_POPUP_SIZE, 10).toInt() -7) / 2);
 #else
     defaultSize->setCurrentIndex((appsettings->value(this, GC_FONT_DEFAULT_SIZE, 12).toInt() -6) / 2);
     titlesSize->setCurrentIndex((appsettings->value(this, GC_FONT_TITLES_SIZE, 12).toInt() -6) / 2);
     chartmarkersSize->setCurrentIndex((appsettings->value(this, GC_FONT_CHARTMARKERS_SIZE, 12).toInt() -6) / 2);
     chartlabelsSize->setCurrentIndex((appsettings->value(this, GC_FONT_CHARTLABELS_SIZE, 12).toInt() -6) / 2);
     calendarSize->setCurrentIndex((appsettings->value(this, GC_FONT_CALENDAR_SIZE, 12).toInt() -6) / 2);
-    popupSize->setCurrentIndex((appsettings->value(this, GC_FONT_POPUP_SIZE, 10).toInt() -6) / 2);
 #endif
 
     QGridLayout *grid = new QGridLayout;
     grid->setSpacing(5);
 
-    QHBoxLayout *misc = new QHBoxLayout;
-    misc->addWidget(lineWidthLabel);
-    misc->addWidget(lineWidth);
-    misc->addStretch();
-    misc->addWidget(antialiasLabel);
-    misc->addWidget(antiAliased);
-    misc->addWidget(shadeZonesLabel);
-    misc->addWidget(shadeZones);
-    misc->addStretch();
-    misc->addWidget(reset);
-
     grid->addWidget(defaultLabel, 0,0);
     grid->addWidget(titlesLabel, 1,0);
+
+    grid->addWidget(lineWidthLabel, 0,3);
+    grid->addWidget(lineWidth, 0,4);
+    grid->addWidget(antiAliasLabel, 1,3);
+    grid->addWidget(antiAliased, 1,4);
+
     grid->addWidget(markerLabel, 2,0);
     grid->addWidget(chartLabel, 3,0);
     grid->addWidget(calendarLabel, 4,0);
-    grid->addWidget(popupLabel, 5,0);
 
     grid->addWidget(def, 0,1, Qt::AlignVCenter|Qt::AlignLeft);
     grid->addWidget(titles, 1,1, Qt::AlignVCenter|Qt::AlignLeft);
     grid->addWidget(chartmarkers, 2,1, Qt::AlignVCenter|Qt::AlignLeft);
     grid->addWidget(chartlabels, 3,1, Qt::AlignVCenter|Qt::AlignLeft);
     grid->addWidget(calendar, 4,1, Qt::AlignVCenter|Qt::AlignLeft);
-    grid->addWidget(popup, 5,1, Qt::AlignVCenter|Qt::AlignLeft);
 
     grid->addWidget(defaultSize, 0,2, Qt::AlignVCenter|Qt::AlignLeft);
     grid->addWidget(titlesSize, 1,2, Qt::AlignVCenter|Qt::AlignLeft);
     grid->addWidget(chartmarkersSize, 2,2, Qt::AlignVCenter|Qt::AlignLeft);
     grid->addWidget(chartlabelsSize, 3,2, Qt::AlignVCenter|Qt::AlignLeft);
     grid->addWidget(calendarSize, 4,2, Qt::AlignVCenter|Qt::AlignLeft);
-    grid->addWidget(popupSize, 5,2, Qt::AlignVCenter|Qt::AlignLeft);
+
+    grid->addWidget(applyTheme, 4,4);
 
     grid->setColumnStretch(0,1);
-    grid->setColumnStretch(1,5);
+    grid->setColumnStretch(1,4);
     grid->setColumnStretch(2,1);
     grid->setColumnStretch(3,1);
-    grid->setColumnStretch(4,3);
+    grid->setColumnStretch(4,4);
 
     mainLayout->addLayout(grid);
-    mainLayout->addLayout(misc);
-    mainLayout->addWidget(colors);
+
+    colorTab = new QTabWidget(this);
+    colorTab->addTab(themes, tr("Theme"));
+    colorTab->addTab(colors, tr("Colors"));
+
+    mainLayout->addWidget(colorTab);
 
     colorSet = GCColor::colorSet();
     for (int i=0; colorSet[i].name != ""; i++) {
@@ -1314,22 +1267,100 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
         colors->setItemWidget(add, 1, colorButton);
 
     }
-    connect(reset, SIGNAL(clicked()), this, SLOT(resetClicked()));
+    connect(applyTheme, SIGNAL(clicked()), this, SLOT(applyThemeClicked()));
+
+    foreach(ColorTheme theme, GCColor::themes().themes) {
+
+        QTreeWidgetItem *add;
+        ColorLabel *swatch = new ColorLabel(theme);
+        swatch->setFixedHeight(30);
+        add = new QTreeWidgetItem(themes->invisibleRootItem());
+        themes->setItemWidget(add, 0, swatch);
+        add->setText(1, theme.name);
+
+    }
+    connect(colorTab, SIGNAL(currentChanged(int)), this, SLOT(tabChanged()));
 }
 
 void
-ColorsPage::resetClicked()
+ColorsPage::tabChanged()
 {
-    colorSet = GCColor::defaultColorSet();
-    colors->clear();
-    for (int i=0; colorSet[i].name != ""; i++) {
+    // are we on the them page
+    if (colorTab->currentIndex() == 0) applyTheme->show();
+    else applyTheme->hide();
+}
 
-        QTreeWidgetItem *add;
-        ColorButton *colorButton = new ColorButton(this, colorSet[i].name, colorSet[i].color);
-        add = new QTreeWidgetItem(colors->invisibleRootItem());
-        add->setText(0, colorSet[i].name);
-        colors->setItemWidget(add, 1, colorButton);
+void
+ColorsPage::applyThemeClicked()
+{
+    int index=0;
 
+    // first check we have a selection!
+    if (themes->currentItem() && (index=themes->invisibleRootItem()->indexOfChild(themes->currentItem())) >= 0) {
+
+        // now get the theme selected
+        ColorTheme theme = GCColor::themes().themes[index];
+        
+        // reset to base
+        colorSet = GCColor::defaultColorSet();
+
+        // reset the color selection tools
+        colors->clear();
+        for (int i=0; colorSet[i].name != ""; i++) {
+
+            QColor color;
+
+            // apply theme to color
+            switch(i) {
+
+            case CPLOTBACKGROUND:
+            case CRIDEPLOTBACKGROUND:
+            case CTRAINPLOTBACKGROUND:
+                color = theme.colors[0]; // background color
+                break;
+
+            // fg color theme.colors[1] not used YET XXX
+
+            case CPLOTSYMBOL:
+            case CRIDEPLOTXAXIS:
+            case CRIDEPLOTYAXIS:
+            case CPLOTMARKER:
+                color = theme.colors[2]; // accent color
+                break;
+ 
+            case CPLOTSELECT:
+            case CPLOTTRACKER:
+            case CINTERVALHIGHLIGHTER:
+                color = theme.colors[3]; // select color
+                break;
+                
+
+            case CPLOTGRID: // grid doesn't have a theme color
+                            // we make it barely distinguishable from background
+                {
+                    QColor bg = theme.colors[0];
+                    if(bg == QColor(Qt::black)) color = bg.lighter(110);
+                    else color = bg.darker(110);
+                }
+                break;
+
+            case CCP:
+            case CWBAL:
+            case CRIDECP:
+                color = theme.colors[4];
+                break;
+
+                default:
+                    color = colorSet[i].color;
+            }
+
+            QTreeWidgetItem *add;
+            ColorButton *colorButton = new ColorButton(this, colorSet[i].name, color);
+            add = new QTreeWidgetItem(colors->invisibleRootItem());
+            add->setText(0, colorSet[i].name);
+            colors->setItemWidget(add, 1, colorButton);
+
+        }
     }
 }
 
@@ -1338,7 +1369,6 @@ ColorsPage::saveClicked()
 {
     appsettings->setValue(GC_LINEWIDTH, lineWidth->value());
     appsettings->setValue(GC_ANTIALIAS, antiAliased->isChecked());
-    appsettings->setValue(GC_SHADEZONES, shadeZones->isChecked());
 
     // run down and get the current colors and save
     for (int i=0; colorSet[i].name != ""; i++) {
@@ -1355,21 +1385,18 @@ ColorsPage::saveClicked()
     appsettings->setValue(GC_FONT_CHARTMARKERS, chartmarkers->currentFont().toString());
     appsettings->setValue(GC_FONT_CHARTLABELS, chartlabels->currentFont().toString());
     appsettings->setValue(GC_FONT_CALENDAR, calendar->currentFont().toString());
-    appsettings->setValue(GC_FONT_POPUP, popup->currentFont().toString());
 #ifdef Q_OS_MAC
     appsettings->setValue(GC_FONT_DEFAULT_SIZE, 7+(defaultSize->currentIndex()*2));
     appsettings->setValue(GC_FONT_TITLES_SIZE, 7+(titlesSize->currentIndex()*2));
     appsettings->setValue(GC_FONT_CHARTMARKERS_SIZE, 7+(chartmarkersSize->currentIndex()*2));
     appsettings->setValue(GC_FONT_CHARTLABELS_SIZE, 7+(chartlabelsSize->currentIndex()*2));
     appsettings->setValue(GC_FONT_CALENDAR_SIZE, 7+(calendarSize->currentIndex()*2));
-    appsettings->setValue(GC_FONT_POPUP_SIZE, 7+(popupSize->currentIndex()*2));
 #else
     appsettings->setValue(GC_FONT_DEFAULT_SIZE, 6+(defaultSize->currentIndex()*2));
     appsettings->setValue(GC_FONT_TITLES_SIZE, 6+(titlesSize->currentIndex()*2));
     appsettings->setValue(GC_FONT_CHARTMARKERS_SIZE, 6+(chartmarkersSize->currentIndex()*2));
     appsettings->setValue(GC_FONT_CHARTLABELS_SIZE, 6+(chartlabelsSize->currentIndex()*2));
     appsettings->setValue(GC_FONT_CALENDAR_SIZE, 6+(calendarSize->currentIndex()*2));
-    appsettings->setValue(GC_FONT_POPUP_SIZE, 6+(popupSize->currentIndex()*2));
 #endif
 
     QFont font;

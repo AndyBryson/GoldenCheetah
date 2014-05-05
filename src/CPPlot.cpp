@@ -50,13 +50,16 @@
 
 CPPlot::CPPlot(QWidget *parent, Context *context, bool rangemode) : QwtPlot(parent), parent(parent),
 
+    // model
+    model(0), modelVariant(0),
+
     // state
     context(context), rideCache(NULL), bestsCache(NULL), rideSeries(RideFile::watts), isFiltered(false), shadeMode(2),
     shadeIntervals(true), rangemode(rangemode), showPercent(false), showHeat(false), showHeatByDate(false),
-    plotType(0), 
+    plotType(0),
 
     // curves and plot objects
-    rideCurve(NULL), modelCurve(NULL), heatCurve(NULL), heatAgeCurve(NULL) 
+    rideCurve(NULL), modelCurve(NULL), heatCurve(NULL), heatAgeCurve(NULL)
 
 {
     setAutoFillBackground(true);
@@ -352,8 +355,8 @@ CPPlot::deriveCPParameters()
                 tau = taun;
         }
 
-        // estimate t0
-        t0 = tau / (bestsCache->meanMaxArray(rideSeries)[1] / cp - 1) - 1 / 60.0;
+        // estimate t0 - but only for veloclinic/3parm cp
+        if (model == 2 || model == 4) t0 = tau / (bestsCache->meanMaxArray(rideSeries)[1] / cp - 1) - 1 / 60.0;
 
     } while ((fabs(tau - tau_prev) > tau_delta_max) || (fabs(t0 - t0_prev) > t0_delta_max));
 }
@@ -436,7 +439,7 @@ CPPlot::plotModel()
                 }
 
                 if (rideSeries == RideFile::watts || rideSeries == RideFile::aPower || rideSeries == RideFile::xPower ||
-                    rideSeries == RideFile::NP || rideSeries == RideFile::wattsKg) { 
+                    rideSeries == RideFile::NP || rideSeries == RideFile::wattsKg) {
 
                     // set parent labels for model values
                     CriticalPowerWindow *cpw = static_cast<CriticalPowerWindow*>(parent);
@@ -482,7 +485,7 @@ CPPlot::plotModel()
                 cpw->cpValue->setText(QString("%1 w").arg(int (model.ecp)));
                 cpw->ftpValue->setText(QString("%1 w").arg(model.mmp60));
                 cpw->pmaxValue->setText(QString("%1 w").arg(model.pMax));
-                
+
                 // Add levels for pmax and ftp
                 // TODO use weight from date ?
 
@@ -498,13 +501,7 @@ CPPlot::plotModel()
 
             case 4:
             {
-                cp  = tau = t0  = 0;
-                deriveCPParameters();
-
-                // ooopsie no model for us!
-                if (cp == 0 && tau == 0 && t0 == 0) return;
-
-                // the Veloclinic model has the following formulation
+                // the Michael Puchowicz (aka @Veloclinic) model has the following formulation
                 //
                 // p(t) = pc1 + pc2
                 //        Power at time t is the sum of;
@@ -514,41 +511,48 @@ CPPlot::plotModel()
                 // The inputs are derived from the CP2-20 model and 3 constants:
                 //
                 //      Pmax - as derived from the CP2-20 model (via t0)
-                //      w1   - W' as derived from the CP2-20 model 
+                //      w1   - W' as derived from the CP2-20 model
                 //      p1   - pmax - cp as derived from the CP2-20 model
                 //      p2   - cp as derived from the CP2-20 model
                 //      tau1 - W'1 / p1
-                //      tau2 = 15,000
-                //      w2  -  A slow twitch W' derived from p2 * tau2
-                //      alpha - 0.1 
-                //      beta
+                //      tau2 - 15,000
+                //      w2   -  A slow twitch W' derived from p2 * tau2
+                //      alpha- 0.1 thru -0.1, we default to zero
+                //      beta - 1.0
                 //
                 // Fast twitch component is:
                 //      pc1(t) = W'1 / t * (1-exp(-t/tau1)) * ((1-exp(-t/10)) ^ (1/alpha))
-                // 
+                //
                 // Slow twitch component has three formulations:
-                //      a) pc2(t) = p2 * tau2 * (1-exp(-t/tau2))
-                //      b) pc2(t) = p2 / (1 + t/tau2)
-                //      c) pc2(t) = p2 / (1 + t/5400) ^ (1/beta)
+                //      sprint capped linear)          pc2(t) = p2 * tau2 * (1-exp(-t/tau2))
+                //      sprint capped regeneration)    pc2(t) = p2 / (1 + t/tau2)
+                //      sprint capped exponential)     pc2(t) = p2 / (1 + t/5400) ^ (1/beta)
                 //
                 // Currently deciding which of the three formulations to use
                 // as the base for GoldenCheetah (we have enough models already !)
                 //
                 // to keep things simple we just use formulation (a) for now.
+                cp  = tau = t0  = 0;
+                deriveCPParameters();
+
+                // ooopsie no model for us!
+                if (cp == 0 && tau == 0 && t0 == 0) return;
+
                 double pmax = cp * (double(1.00f)+tau /(((double(1)/double(60))+t0)));
                 double w1 = cp*tau*60;
                 double p1 = pmax - cp;
                 double p2 = cp;
                 double tau1 = w1 / p1;
-                double tau2 = 15000;
-                double alpha = 0.1;
+                const double tau2 = 15000;
+                const double alpha = 0.0f;
+                const double beta = 1.0;
 
                 //double w2 = p2 * tau2;
                 //qDebug()<<"model parameters: pmax="<<pmax<<"w1="<<w1<<"p1="<<p1
                 //            <<"p2="<<p2<<"tau1="<<tau1<<"tau2="<<tau2<<"alpha="<<alpha;
 
                 // populate curve data with a CP curve of 100 points resolution
-                const int points = 3600 * 5; // 5 hours is enough
+                const int points = 3600 * 10; // 10 hours is enough
                 QVector<double> cp_curve_power(points);
                 QVector<double> cp_curve_time(points);
 
@@ -562,8 +566,27 @@ CPPlot::plotModel()
                     } else {
 
                         // two component model
-                        double pc1 = w1 / t * (1.00f - exp(-t/tau1)) * pow(1-exp(-t/10), alpha); // ^ (1/alpha) missing XXX
-                        double pc2 = p2 * tau2 / t * (1-exp(-t/tau2));
+                        double pc1 = w1 / t * (1.00f - exp(-t/tau1)) * pow(1-exp(-t/10), alpha);
+
+                        // which variant for pc2 ?
+                        double pc2 = 0.0f;
+                        switch (modelVariant) {
+
+                            default:
+                            case 0 : // exponential top and bottom
+                                pc2 = p2 * tau2 / t * (1-exp(-t/tau2));
+                                break;
+
+                            case 1 : // linear feedback
+                                pc2 = p2 / (1+t/tau2);
+                                break;
+
+                            case 2 : // regeneration
+                                pc2 = pow(p2 / (1+t/5400),1/beta);
+                                //pc2 = p2 / pow((1+t/5400),(1/beta));
+                                break;
+
+                        }
 
                         // p(t) as a sum of both component powers
                         cp_curve_power[i] = pc1 + pc2;
@@ -575,7 +598,7 @@ CPPlot::plotModel()
                 }
 
                 if (rideSeries == RideFile::watts || rideSeries == RideFile::aPower || rideSeries == RideFile::xPower ||
-                    rideSeries == RideFile::NP || rideSeries == RideFile::wattsKg) { 
+                    rideSeries == RideFile::NP || rideSeries == RideFile::wattsKg) {
 
                     // set parent labels for model values
                     CriticalPowerWindow *cpw = static_cast<CriticalPowerWindow*>(parent);
@@ -639,7 +662,7 @@ CPPlot::plotModel()
         // HeatCurveByDate
         heatAgeCurve = new CpPlotCurve("heat by date");
 
-        if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true) 
+        if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
             heatAgeCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
 
         heatAgeCurve->setPenWidth(1);
@@ -713,16 +736,16 @@ CPPlot::clearCurves()
 }
 
 // get bests or an empty set if it is null
-QVector<double> 
-CPPlot::getBests() 
-{ 
-    if (bestsCache) return bestsCache->meanMaxArray(rideSeries); 
+QVector<double>
+CPPlot::getBests()
+{
+    if (bestsCache) return bestsCache->meanMaxArray(rideSeries);
     else return QVector<double>();
 }
 
 // get bests dates or an empty set if it is null
-QVector<QDate> 
-CPPlot::getBestDates() 
+QVector<QDate>
+CPPlot::getBestDates()
 {
     if (bestsCache) return bestsCache->meanMaxDates(rideSeries);
     else return QVector<QDate>();
@@ -779,7 +802,7 @@ CPPlot::plotBests()
         // PLAIN CURVE
 
         // if we're plotting work we need to adjust from
-        // power to work from the bests cache, before we 
+        // power to work from the bests cache, before we
         // set the curve samples.
         //
 
@@ -1037,9 +1060,9 @@ CPPlot::plotRide(RideItem *rideItem)
     rideCurve->setBrush(QBrush(Qt::NoBrush)); // never filled
 
     // what color and fill do we have for the ride ?
-    // there is a specific colour setting for the "ride curve" on 
+    // there is a specific colour setting for the "ride curve" on
     // the CP plot, regardless of the series. Its only the bests
-    // curve that gets any special colour treatment. 
+    // curve that gets any special colour treatment.
     QPen ridePen;
     ridePen.setColor(GColor(CRIDECP));
     double width = appsettings->value(this, GC_LINEWIDTH, 1.0).toDouble();
@@ -1054,7 +1077,7 @@ CPPlot::plotRide(RideItem *rideItem)
         for (int i = 0; i <= maxNonZero; ++i) {
             energyArray[i] = timeArray[i] * rideCache->meanMaxArray(RideFile::watts)[i] * 60.0 / 1000.0;
         }
-        rideCurve->setSamples(timeArray.data() + 1, energyArray.constData() + 1, 
+        rideCurve->setSamples(timeArray.data() + 1, energyArray.constData() + 1,
                               maxNonZero > 0 ? maxNonZero-1 : 0);
 
     } else {
@@ -1062,7 +1085,7 @@ CPPlot::plotRide(RideItem *rideItem)
         // ALL OTHER RIDE SERIES
 
         // AS A PERCENTAGE
-        // we want as a percent of best and we do have 
+        // we want as a percent of best and we do have
         // the bests available
         if (showPercent && bestsCache) {
 
@@ -1075,7 +1098,7 @@ CPPlot::plotRide(RideItem *rideItem)
                 samples[i] = rideCache->meanMaxArray(rideSeries)[i] /
                              bestsCache->meanMaxArray(rideSeries)[i] * 100.00f;
             }
-            rideCurve->setSamples(timeArray.data() + 1, samples.data() + 1, 
+            rideCurve->setSamples(timeArray.data() + 1, samples.data() + 1,
                                   maxNonZero > 0 ? maxNonZero-1 : 0);
 
             // did we get over 100% .. because if so
@@ -1089,7 +1112,7 @@ CPPlot::plotRide(RideItem *rideItem)
 
             // JUST A NORMAL CURVE
             rideCurve->setYAxis(yLeft);
-            rideCurve->setSamples(timeArray.data() + 1, rideCache->meanMaxArray(rideSeries).constData() + 1, 
+            rideCurve->setSamples(timeArray.data() + 1, rideCache->meanMaxArray(rideSeries).constData() + 1,
                                   maxNonZero > 0 ? maxNonZero-1 : 0);
         }
     }
@@ -1127,7 +1150,7 @@ CPPlot::setRide(RideItem *rideItem)
         delete rideCache;
         rideCache = NULL;
     }
-    // clear any centile and interval curves 
+    // clear any centile and interval curves
     // since they will be for an old ride
     foreach(QwtPlotCurve *c, centileCurves) {
         c->detach();
@@ -1162,7 +1185,7 @@ CPPlot::setRide(RideItem *rideItem)
             }
             break;
 
-        case 1 : 
+        case 1 :
             {
                 // CENTILE
                 // calculates all the data from the raw ride data, so doesn't need
@@ -1234,7 +1257,40 @@ CPPlot::pointHover(QwtPlotCurve *curve, int index)
     zoomer->setText("");
 }
 
-// no filter 
+void
+CPPlot::exportBests(QString filename)
+{
+    QFile f(filename);
+
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) return; // couldn't open file
+
+    // open stream and write header
+    QTextStream stream(&f);
+    stream << "seconds, value, date" << endl;
+
+    // output a row for each second
+    foreach(QwtPlotCurve *bestsCurve, bestsCurves) {
+
+        // just output for the bests curve
+        for (size_t i=0; i<bestsCurve->data()->size(); i++) {
+            double xvalue = bestsCurve->sample(i).x();
+            double yvalue = bestsCurve->sample(i).y();
+
+            int index = xvalue * 60;
+            QDate date;
+            if (index >= 0 && bestsCache && getBests().count() > index) {
+                date = getBestDates()[index];
+            }
+
+            stream << int(xvalue * 60.00f) << "," << yvalue << "," << date.toString() << endl;
+        }
+    }
+
+    // and we're done
+    f.close();
+}
+
+// no filter
 void
 CPPlot::clearFilter()
 {
@@ -1293,7 +1349,7 @@ CPPlot::setShadeIntervals(int x)
 
 // model parameters!
 void
-CPPlot::setModel(int sanI1, int sanI2, int anI1, int anI2, int aeI1, int aeI2, int laeI1, int laeI2, int model)
+CPPlot::setModel(int sanI1, int sanI2, int anI1, int anI2, int aeI1, int aeI2, int laeI1, int laeI2, int model, int variant)
 {
     this->anI1 = double(anI1) / double(60.00f);
     this->anI2 = double(anI2) / double(60.00f);
@@ -1306,6 +1362,7 @@ CPPlot::setModel(int sanI1, int sanI2, int anI1, int anI2, int aeI1, int aeI2, i
     this->laeI2 = double(laeI2) / double(60.00f);
 
     this->model = model;
+    this->modelVariant = variant;
     clearCurves();
 }
 
@@ -1710,7 +1767,7 @@ CPPlot::plotCache(QVector<double> vector, QColor intervalColor)
 {
     // we don't shade if we're plotting in compare mode
     bool wantShadeIntervals = false;
-    if ((rangemode && !context->isCompareDateRanges) || (!rangemode && !context->isCompareIntervals)) 
+    if ((rangemode && !context->isCompareDateRanges) || (!rangemode && !context->isCompareIntervals))
         wantShadeIntervals = shadeIntervals;
 
     QVector<double>x;

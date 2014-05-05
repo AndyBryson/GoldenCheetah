@@ -1873,13 +1873,13 @@ AllPlot::setYMax()
                                              (1.05 * referencePlot->standard->wattsCurve->maxYValue());
 
         int axisHeight = qRound( plotLayout()->canvasRect().height() );
-        QFontMetrics labelWidthMetric = QFontMetrics( QwtPlot::axisFont(yLeft) );
-        int labelWidth = labelWidthMetric.width( (maxY > 1000) ? " 8,888 " : " 888 " );
-
         int step = 100;
-        while( ( qCeil(maxY / step) * labelWidth ) > axisHeight )
-        {
-            nextStep(step);
+
+        // axisHeight will be zero before first show, so only do this if its non-zero!
+        if (axisHeight) {
+            QFontMetrics labelWidthMetric = QFontMetrics( QwtPlot::axisFont(yLeft) );
+            int labelWidth = labelWidthMetric.width( (maxY > 1000) ? " 8,888 " : " 888 " );
+            while( ( qCeil(maxY / step) * labelWidth ) > axisHeight ) nextStep(step);
         }
 
         QwtValueList xytick[QwtScaleDiv::NTickTypes];
@@ -1888,7 +1888,7 @@ AllPlot::setYMax()
 
         setAxisTitle(yLeft, tr("Watts"));
         setAxisScaleDiv(QwtPlot::yLeft,QwtScaleDiv(0.0,maxY,xytick));
-        //setAxisLabelAlignment(yLeft,Qt::AlignVCenter);
+        axisWidget(yLeft)->update();
     }
 
     if (standard->hrCurve->isVisible() || standard->cadCurve->isVisible() || 
@@ -1927,14 +1927,13 @@ AllPlot::setYMax()
         }
 
         int axisHeight = qRound( plotLayout()->canvasRect().height() );
-        QFontMetrics labelWidthMetric = QFontMetrics( QwtPlot::axisFont(yLeft) );
-        int labelWidth = labelWidthMetric.width( "888 " );
-
-        ymax *= 1.05;
         int step = 10;
-        while( ( qCeil(ymax / step) * labelWidth ) > axisHeight )
-        {
-            nextStep(step);
+
+        if (axisHeight) {
+            QFontMetrics labelWidthMetric = QFontMetrics( QwtPlot::axisFont(yLeft) );
+            int labelWidth = labelWidthMetric.width( "888 " );
+            ymax *= 1.05;
+            while((qCeil(ymax / step) * labelWidth) > axisHeight) nextStep(step);
         }
 
         QwtValueList xytick[QwtScaleDiv::NTickTypes];
@@ -1943,7 +1942,6 @@ AllPlot::setYMax()
 
         setAxisTitle(QwtAxisId(QwtAxis::yLeft, 1), labels.join(" / "));
         setAxisScaleDiv(QwtAxisId(QwtAxis::yLeft, 1),QwtScaleDiv(ymin, ymax, xytick));
-        //setAxisLabelAlignment(yLeft2,Qt::AlignVCenter);
     }
 
     if (standard->balanceLCurve->isVisible() || standard->lteCurve->isVisible() || standard->lpsCurve->isVisible()) {
@@ -2010,22 +2008,19 @@ AllPlot::setYMax()
         ymin = (ymin < 0 ? -100 : 0) + ( qRound(ymin) / 100 ) * 100;
 
         int axisHeight = qRound( plotLayout()->canvasRect().height() );
-        QFontMetrics labelWidthMetric = QFontMetrics( QwtPlot::axisFont(yLeft) );
-        int labelWidth = labelWidthMetric.width( (ymax > 1000) ? " 8888 " : " 888 " );
-
         int step = 10;
-        while( ( qCeil( (ymax - ymin ) / step) * labelWidth ) > axisHeight )
-        {
-            nextStep(step);
+
+        if (axisHeight) {
+            QFontMetrics labelWidthMetric = QFontMetrics( QwtPlot::axisFont(yLeft) );
+            int labelWidth = labelWidthMetric.width( (ymax > 1000) ? " 8888 " : " 888 " );
+            while( ( qCeil( (ymax - ymin ) / step) * labelWidth ) > axisHeight ) nextStep(step);
         }
 
         QwtValueList xytick[QwtScaleDiv::NTickTypes];
         for (int i=ymin;i<ymax;i+=step)
             xytick[QwtScaleDiv::MajorTick]<<i;
 
-        //setAxisScale(QwtAxisId(QwtAxis::yRight, 2), ymin, ymax);
         setAxisScaleDiv(QwtAxisId(QwtAxis::yRight, 1),QwtScaleDiv(ymin,ymax,xytick));
-        //setAxisLabelAlignment(QwtAxisId(QwtAxis::yRight, 2),Qt::AlignVCenter);
         standard->altCurve->setBaseline(ymin);
     }
 
