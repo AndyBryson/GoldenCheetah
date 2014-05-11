@@ -718,8 +718,8 @@ LTMPlot::setData(LTMSettings *set)
             out->attach(this);
         }
 
-        // highlight top N values
-        if (metricDetail.topN > 0) {
+        // highlight lowest / top N values
+        if (metricDetail.lowestN > 0 || metricDetail.topN > 0) {
 
             QMap<double, int> sortedList;
 
@@ -729,11 +729,11 @@ LTMPlot::setData(LTMSettings *set)
 
             // copy the top N values
             QVector<double> hxdata, hydata;
-            hxdata.resize(metricDetail.topN);
-            hydata.resize(metricDetail.topN);
+            hxdata.resize(metricDetail.topN + metricDetail.lowestN);
+            hydata.resize(metricDetail.topN + metricDetail.lowestN);
 
             // QMap orders the list so start at the top and work
-            // backwards
+            // backwards for topN
             QMapIterator<double, int> i(sortedList);
             i.toBack();
             int counter = 0;
@@ -742,6 +742,16 @@ LTMPlot::setData(LTMSettings *set)
                 if (ydata[i.value()]) {
                     hxdata[counter] = xdata[i.value()] + middle;
                     hydata[counter] = ydata[i.value()];
+                    counter++;
+                }
+            }
+            i.toFront();
+            counter = 0; // and forwards for bottomN
+            while (i.hasNext() && counter < metricDetail.lowestN) {
+                i.next();
+                if (ydata[i.value()]) {
+                    hxdata[metricDetail.topN + counter] = xdata[i.value()] + middle;
+                    hydata[metricDetail.topN + counter] = ydata[i.value()];
                     counter++;
                 }
             }
@@ -1122,7 +1132,7 @@ LTMPlot::setData(LTMSettings *set)
         p.next();
 
         // always hide bollocksy curves
-        if (p.key().endsWith(tr("trend")) || p.key().endsWith(tr("Outliers")) || p.key().endsWith(tr("Best")))
+        if (p.key().endsWith(tr("trend")) || p.key().endsWith(tr("Outliers")) || p.key().endsWith(tr("Best")) || p.key().startsWith(tr("Best")))
             p.value()->setItemAttribute(QwtPlotItem::Legend, false);
         else
             p.value()->setItemAttribute(QwtPlotItem::Legend, settings->legend);
@@ -1722,7 +1732,7 @@ LTMPlot::setCompareData(LTMSettings *set)
             }
 
             // highlight top N values
-            if (metricDetail.topN > 0) {
+            if (metricDetail.lowestN > 0 || metricDetail.topN > 0) {
 
                 QMap<double, int> sortedList;
 
@@ -1732,11 +1742,11 @@ LTMPlot::setCompareData(LTMSettings *set)
 
                 // copy the top N values
                 QVector<double> hxdata, hydata;
-                hxdata.resize(metricDetail.topN);
-                hydata.resize(metricDetail.topN);
+                hxdata.resize(metricDetail.topN + metricDetail.lowestN);
+                hydata.resize(metricDetail.topN + metricDetail.lowestN);
 
                 // QMap orders the list so start at the top and work
-                // backwards
+                // backwards for topN
                 QMapIterator<double, int> i(sortedList);
                 i.toBack();
                 int counter = 0;
@@ -1745,6 +1755,16 @@ LTMPlot::setCompareData(LTMSettings *set)
                     if (ydata[i.value()]) {
                         hxdata[counter] = xdata[i.value()] + middle;
                         hydata[counter] = ydata[i.value()];
+                        counter++;
+                    }
+                }
+                i.toFront();
+                counter = 0; // and backwards for bottomN
+                while (i.hasNext() && counter < metricDetail.lowestN) {
+                    i.next();
+                    if (ydata[i.value()]) {
+                        hxdata[metricDetail.topN + counter] = xdata[i.value()] + middle;
+                        hydata[metricDetail.topN + counter] = ydata[i.value()];
                         counter++;
                     }
                 }
@@ -2138,7 +2158,7 @@ LTMPlot::setCompareData(LTMSettings *set)
         p.next();
 
         // always hide bollocksy curves
-        if (p.key().endsWith(tr("trend")) || p.key().endsWith(tr("Outliers")) || p.key().endsWith(tr("Best")))
+        if (p.key().endsWith(tr("trend")) || p.key().endsWith(tr("Outliers")) || p.key().endsWith(tr("Best")) || p.key().startsWith(tr("Best")))
             p.value()->setItemAttribute(QwtPlotItem::Legend, false);
         else
             p.value()->setItemAttribute(QwtPlotItem::Legend, settings->legend);
@@ -2262,6 +2282,9 @@ LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail m
         data = &PMCdata;
     } else if (metricDetail.type == METRIC_BEST) {
         data = settings->bests;
+    } else if (metricDetail.type == METRIC_ESTIMATE) {
+        createEstimateData(context, settings, metricDetail, x,y,n);
+        return;
     }
 
     n=-1;
@@ -2357,6 +2380,80 @@ LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail m
             lastDay = currentDay;
         }
     }
+}
+
+void
+LTMPlot::createEstimateData(Context *context, LTMSettings *settings, MetricDetail metricDetail,
+                                              QVector<double>&x,QVector<double>&y,int&n)
+{
+
+    // lets refresh the model data if we don't have any
+    if (context->athlete->PDEstimates.count() == 0) context->athlete->metricDB->refreshCPModelMetrics(); 
+
+    // resize the curve array to maximum possible size (even if we don't need it)
+    int maxdays = groupForDate(settings->end.date(), settings->groupBy)
+                    - groupForDate(settings->start.date(), settings->groupBy);
+
+    n = 0;
+    x.resize(maxdays+3); // one for start from zero plus two for 0 value added at head and tail
+    y.resize(maxdays+3); // one for start from zero plus two for 0 value added at head and tail
+
+    // what is the first date
+    int firstDay = groupForDate(settings->start.date(), settings->groupBy);
+
+    // loop through all the estimate data
+    foreach(PDEstimate est, context->athlete->PDEstimates) {
+
+        // skip entries for other models
+        if (est.model != metricDetail.model) continue;
+
+        // skip if no in our time period
+        if (est.to < settings->start.date() || est.from > settings->end.date()) continue;
+
+        // get dat for first and last
+        QDate from = est.from < settings->start.date() ? settings->start.date() : est.from;
+        QDate to = est.to > settings->end.date() ? settings->end.date() : est.to;
+
+        // what value to plot ?
+        double value=0;
+
+        switch(metricDetail.estimate) {
+        case ESTIMATE_WPRIME :
+            value = est.WPrime;
+            break;
+
+        case ESTIMATE_CP :
+            value = est.CP;
+            break;
+
+        case ESTIMATE_FTP :
+            value = est.FTP;
+            break;
+
+        case ESTIMATE_PMAX :
+            value = est.PMax;
+            break;
+
+        }
+
+        if (n <= maxdays && value > 0) {
+            int currentDay = groupForDate(from, settings->groupBy);
+            x[n] = currentDay - firstDay;
+            y[n] = value;
+            n++;
+
+            int nextDay = groupForDate(to, settings->groupBy);
+            while (n <= maxdays && nextDay > currentDay) { // i.e. not the same day
+                x[n] = 1 + currentDay - firstDay;
+                y[n] = value;
+                n++;
+                currentDay++;
+            }
+        }
+    }
+
+    // always seems to be one too many ...
+    if (n>0)n--;
 }
 
 void

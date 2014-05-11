@@ -142,7 +142,7 @@ QDataStream &operator<<(QDataStream &out, const LTMSettings &settings)
     out<<settings.field1;
     out<<settings.field2;
     out<<int(-1);
-    out<<int(7); // version 7
+    out<<int(9); // version 9
     out<<settings.metrics.count();
     foreach(MetricDetail metric, settings.metrics) {
         out<<metric.type;
@@ -175,6 +175,9 @@ QDataStream &operator<<(QDataStream &out, const LTMSettings &settings)
         out<<static_cast<int>(metric.series);
         out<<metric.trendtype;
         out<<metric.labels;
+        out<<metric.lowestN;
+        out<<metric.model;
+        out<<metric.estimate;
     }
     out<<settings.showData;
     out<<settings.stack;
@@ -264,6 +267,18 @@ while(counter-- && !in.atEnd()) {
         
         if (version >= 5) {
             in >>m.labels;
+        }
+
+        if (version >= 8) {
+            in >>m.lowestN;
+        }
+
+        if (version >= 9) {
+            in >> m.model;
+            in >> m.estimate;
+        } else {
+            m.model = "";
+            m.estimate = 0;
         }
         // get a metric pointer (if it exists)
         m.metric = factory.rideMetric(m.symbol);

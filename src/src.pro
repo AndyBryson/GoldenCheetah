@@ -9,6 +9,7 @@ TEMPLATE = app
 TARGET = GoldenCheetah
 !isEmpty( APP_NAME ) { TARGET = $${APP_NAME} }
 DEPENDPATH += .
+QMAKE_INFO_PLIST = ./mac/Info.plist.app
 
 ## qwt and libz
 INCLUDEPATH += ../qwt/src ../qxt/src $${LIBZ_INCLUDE}
@@ -359,6 +360,7 @@ HEADERS += \
         NewCyclistDialog.h \
         NullController.h \
         Pages.h \
+        PDModel.h \
         PerfPlot.h \
         PerformanceManagerWindow.h \
         PfPvPlot.h \
@@ -558,6 +560,7 @@ SOURCES += \
         NewCyclistDialog.cpp \
         NullController.cpp \
         Pages.cpp \
+        PDModel.cpp \
         PeakPower.cpp \
         PerfPlot.cpp \
         PerformanceManagerWindow.cpp \

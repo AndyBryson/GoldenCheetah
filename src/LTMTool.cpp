@@ -38,6 +38,9 @@
 #include "RideMetadata.h"
 #include "SpecialFields.h"
 
+// PDModel estimate support
+#include "PDModel.h"
+
 LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mainWindow), settings(settings), context(context), active(false), _amFiltered(false)
 {
     setStyleSheet("QFrame { FrameStyle = QFrame::NoFrame };"
@@ -1102,15 +1105,18 @@ LTMTool::refreshCustomTable()
     foreach (MetricDetail metricDetail, settings->metrics) {
 
         QTableWidgetItem *t = new QTableWidgetItem();
-        if (metricDetail.type != 5)
+        if (metricDetail.type != 5 && metricDetail.type != 6)
             t->setText(tr("Metric")); // only metrics .. for now ..
-        else
+        else if (metricDetail.type == 5)
             t->setText(tr("Peak"));
+        else
+            t->setText(tr("Estimate"));
+        
         t->setFlags(t->flags() & (~Qt::ItemIsEditable));
         customTable->setItem(i,0,t);
 
         t = new QTableWidgetItem();
-        if (metricDetail.type != 5)
+        if (metricDetail.type != 5 && metricDetail.type != 6)
             t->setText(metricDetail.name);
         else {
             // text description for peak
@@ -1229,6 +1235,53 @@ LTMTool::addCurrent()
     // save charts.xml
 }
 
+// set the estimateSelection based upon what is available
+void 
+EditMetricDetailDialog::modelChanged()
+{
+    int currentIndex=modelSelect->currentIndex();
+    int ce = estimateSelect->currentIndex();
+
+    // pooey this smells ! -- enable of disable each option 
+    //                        based upon the current model
+    qobject_cast<QStandardItemModel *>(estimateSelect->model())->item(0)->setEnabled(models[currentIndex]->hasWPrime());
+    qobject_cast<QStandardItemModel *>(estimateSelect->model())->item(1)->setEnabled(models[currentIndex]->hasCP());
+    qobject_cast<QStandardItemModel *>(estimateSelect->model())->item(2)->setEnabled(models[currentIndex]->hasFTP());
+    qobject_cast<QStandardItemModel *>(estimateSelect->model())->item(3)->setEnabled(models[currentIndex]->hasPMax());
+
+    // switch to other estimate if wanted estimate is not selected
+    if (ce < 0 || !qobject_cast<QStandardItemModel *>(estimateSelect->model())->item(ce)->isEnabled())
+        estimateSelect->setCurrentIndex(0);
+
+    estimateName();
+}
+
+void
+EditMetricDetailDialog::estimateChanged()
+{
+    estimateName();
+}
+
+void
+EditMetricDetailDialog::estimateName()
+{
+    // set the estimate name from model and estimate type
+    QString name;
+
+    // first do the type if estimate
+    switch(estimateSelect->currentIndex()) {
+        case 0 : name = "W'"; break;
+        case 1 : name = "CP"; break;
+        case 2 : name = "FTP"; break;
+        case 3 : name = "p-Max"; break;
+    }
+
+    // now the model
+    name += " (" + models[modelSelect->currentIndex()]->code() + ")";
+    userName->setText(name);
+    metricDetail->symbol = name.replace(" ", "_");
+}
+
 /*----------------------------------------------------------------------
  * EDIT METRIC DETAIL DIALOG
  *--------------------------------------------------------------------*/
@@ -1241,13 +1294,16 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
 
     // choose the type
     chooseMetric = new QRadioButton(tr("Metric"));
-    chooseMetric->setChecked(metricDetail->type != 5);
+    chooseMetric->setChecked(metricDetail->type != 5 && metricDetail->type != 6);
     chooseBest = new QRadioButton(tr("Best"));
     chooseBest->setChecked(metricDetail->type == 5);
+    chooseEstimate = new QRadioButton(tr("Estimate"));
+    chooseEstimate->setChecked(metricDetail->type == 6);
     QVBoxLayout *radioButtons = new QVBoxLayout;
     radioButtons->addStretch();
     radioButtons->addWidget(chooseMetric);
     radioButtons->addWidget(chooseBest);
+    radioButtons->addWidget(chooseEstimate);
     radioButtons->addStretch();
 
     // bests selection
@@ -1301,6 +1357,40 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     bestLayout->addWidget(new QLabel(tr("Peak"), this), 1,0);
     bestLayout->addWidget(dataSeries, 1,1);
 
+    // estimate selection
+    estimateWidget = new QWidget(this);
+    QVBoxLayout *estimateLayout = new QVBoxLayout(estimateWidget);
+
+    modelSelect = new QComboBox(this);
+    estimateSelect = new QComboBox(this);
+
+    // working with estimates, local utility functions
+    models << new CP2Model(context);
+    models << new CP3Model(context);
+    models << new MultiModel(context);
+    models << new ExtendedModel(context);
+    foreach(PDModel *model, models) {
+        modelSelect->addItem(model->name(), model->code());
+    }
+
+    estimateSelect->addItem("W'");
+    estimateSelect->addItem("CP");
+    estimateSelect->addItem("FTP");
+    estimateSelect->addItem("p-Max");
+
+    int n=0;
+    modelSelect->setCurrentIndex(0); // default to 2parm model
+    foreach(PDModel *model, models) {
+        if (model->code() == metricDetail->model) modelSelect->setCurrentIndex(n);
+        else n++;
+    }
+    estimateSelect->setCurrentIndex(metricDetail->estimate);
+
+    estimateLayout->addStretch();
+    estimateLayout->addWidget(modelSelect);
+    estimateLayout->addWidget(estimateSelect);
+    estimateLayout->addStretch();
+
     // metric selection tree
     metricTree = new QTreeWidget;
 
@@ -1337,7 +1427,8 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     typeStack = new QStackedWidget(this);
     typeStack->addWidget(metricTree);
     typeStack->addWidget(bestWidget);
-    typeStack->setCurrentIndex(chooseMetric->isChecked() ? 0 : 1);
+    typeStack->addWidget(estimateWidget);
+    typeStack->setCurrentIndex(chooseMetric->isChecked() ? 0 : (chooseBest->isChecked() ? 1 : 2));
 
     // Grid
     QGridLayout *grid = new QGridLayout;
@@ -1388,13 +1479,21 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     penColor = metricDetail->penColor;
     setButtonIcon(penColor);
 
-    QLabel *topN = new QLabel(tr("Highlight Best"));
+    QLabel *topN = new QLabel(tr("Highlight Highest"));
     showBest = new QDoubleSpinBox(this);
     showBest->setDecimals(0);
     showBest->setMinimum(0);
     showBest->setMaximum(999);
     showBest->setSingleStep(1.0);
     showBest->setValue(metricDetail->topN);
+
+    QLabel *bottomN = new QLabel(tr("Highlight Lowest"));
+    showLowest = new QDoubleSpinBox(this);
+    showLowest->setDecimals(0);
+    showLowest->setMinimum(0);
+    showLowest->setMaximum(999);
+    showLowest->setSingleStep(1.0);
+    showLowest->setValue(metricDetail->lowestN);
 
     QLabel *outN = new QLabel(tr("Highlight Outliers"));
     showOut = new QDoubleSpinBox(this);
@@ -1451,10 +1550,12 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     grid->addWidget(fillCurve, 9,1);
     grid->addWidget(topN, 3,2);
     grid->addWidget(showBest, 3,3);
-    grid->addWidget(outN, 4,2);
-    grid->addWidget(showOut, 4,3);
-    grid->addWidget(baseline, 5, 2);
-    grid->addWidget(baseLine, 5,3);
+    grid->addWidget(bottomN, 4,2);
+    grid->addWidget(showLowest, 4,3);
+    grid->addWidget(outN, 5,2);
+    grid->addWidget(showOut, 5,3);
+    grid->addWidget(baseline, 6, 2);
+    grid->addWidget(baseLine, 6,3);
     grid->addWidget(trendType, 7,2);
     grid->addWidget(curveSmooth, 8,2);
     grid->addWidget(labels, 9,2);
@@ -1470,6 +1571,9 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     buttonLayout->addWidget(applyButton);
     mainLayout->addLayout(buttonLayout);
 
+    // clean up the estimate widgets
+    modelChanged();
+
     // connect up slots
     connect(metricTree, SIGNAL(itemSelectionChanged()), this, SLOT(metricSelected()));
     connect(applyButton, SIGNAL(clicked()), this, SLOT(applyClicked()));
@@ -1477,6 +1581,9 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     connect(curveColor, SIGNAL(clicked()), this, SLOT(colorClicked()));
     connect(chooseMetric, SIGNAL(toggled(bool)), this, SLOT(typeChanged()));
     connect(chooseBest, SIGNAL(toggled(bool)), this, SLOT(typeChanged()));
+    connect(chooseEstimate, SIGNAL(toggled(bool)), this, SLOT(typeChanged()));
+    connect(modelSelect, SIGNAL(currentIndexChanged(int)), this, SLOT(modelChanged()));
+    connect(estimateSelect, SIGNAL(currentIndexChanged(int)), this, SLOT(estimateChanged()));
 
     // when stuff changes rebuild name
     connect(chooseBest, SIGNAL(toggled(bool)), this, SLOT(bestName()));
@@ -1501,13 +1608,22 @@ EditMetricDetailDialog::typeChanged()
     if (chooseMetric->isChecked()) {
         bestWidget->hide();
         metricTree->show();
+        estimateWidget->hide();
         typeStack->setCurrentIndex(0);
     }
 
     if (chooseBest->isChecked()) {
         bestWidget->show();
         metricTree->hide();
+        estimateWidget->hide();
         typeStack->setCurrentIndex(1);
+    }
+
+    if (chooseEstimate->isChecked()) {
+        bestWidget->hide();
+        metricTree->hide();
+        estimateWidget->show();
+        typeStack->setCurrentIndex(2);
     }
     adjustSize();
 }
@@ -1627,6 +1743,7 @@ EditMetricDetailDialog::applyClicked()
     }
 
     if (chooseBest->isChecked()) metricDetail->type = 5; // is a best
+    else if (chooseEstimate->isChecked()) metricDetail->type = 6; // estimate
 
     metricDetail->duration = duration->value();
 
@@ -1637,10 +1754,12 @@ EditMetricDetailDialog::applyClicked()
         default: metricDetail->duration_units = 3600; break;
     }
     metricDetail->series = seriesList.at(dataSeries->currentIndex());
-
+    metricDetail->model = models[modelSelect->currentIndex()]->code();
+    metricDetail->estimate = estimateSelect->currentIndex(); // 0 - 3
     metricDetail->smooth = curveSmooth->isChecked();
     metricDetail->trend = curveTrend->isChecked();
     metricDetail->topN = showBest->value();
+    metricDetail->lowestN = showLowest->value();
     metricDetail->topOut = showOut->value();
     metricDetail->baseline = baseLine->value();
     metricDetail->curveStyle = styleMap[curveStyle->currentIndex()];

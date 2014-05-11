@@ -136,6 +136,7 @@ void MetricAggregator::refreshMetrics(QDateTime forceAfterThisDate)
     QProgressDialog *bar = NULL;
 
     int processed=0;
+    int updates=0;
     QApplication::processEvents(); // get that dialog up!
 
     // log of progress
@@ -167,6 +168,9 @@ void MetricAggregator::refreshMetrics(QDateTime forceAfterThisDate)
             bar->setWindowModality(Qt::WindowModal);
             bar->setMinimumDuration(0);
             bar->show(); // lets hide until elapsed time is > 6 seconds
+
+            // lets make sure it goes to the center!
+            QApplication::processEvents();
         }
 
         // update the dialog always after 6 seconds
@@ -209,7 +213,7 @@ void MetricAggregator::refreshMetrics(QDateTime forceAfterThisDate)
                     importRide(context->athlete->home, ride, name, zoneFingerPrint, (dbTimeStamp > 0));
 
                 }
-
+                updates++;
             }
         }
 
@@ -223,14 +227,15 @@ void MetricAggregator::refreshMetrics(QDateTime forceAfterThisDate)
         // free memory - if needed
         if (ride) delete ride;
 
+        // for model run...
+        // RideFileCache::meanMaxPowerFor(context, context->athlete->home.absolutePath() + "/" + name);
+
         if (bar && bar->wasCanceled()) {
             out << "METRIC REFRESH CANCELLED\r\n";
             break;
         }
     }
 
-    // now zap the progress bar
-    if (bar) delete bar;
 
     // end LUW -- now syncs DB
     out << "COMMIT: " << QDateTime::currentDateTime().toString() + "\r\n";
@@ -243,6 +248,12 @@ void MetricAggregator::refreshMetrics(QDateTime forceAfterThisDate)
 #endif
 #endif
     context->athlete->isclean = true;
+
+    // clear out the estimates if something changed!
+    if (updates) context->athlete->PDEstimates.clear();
+
+    // now zap the progress bar
+    if (bar) delete bar;
 
     // stop logging
     out << "SIGNAL DATA CHANGED: " << QDateTime::currentDateTime().toString() + "\r\n";
@@ -447,4 +458,147 @@ MetricAggregator::getRideMetrics(QString filename)
         return empty;
     }
     return dbaccess->getRideMetrics(filename);
+}
+
+void
+MetricAggregator::refreshCPModelMetrics()
+{
+    // this needs to be done once all the other metrics
+    // Calculate a *monthly* estimate of CP, W' etc using
+    // bests data from the previous 3 months
+
+    // clear any previous calculations
+    context->athlete->PDEstimates.clear(); 
+
+    // we do this by aggregating power data into bests
+    // for each month, and having a rolling set of 3 aggregates
+    // then aggregating those up into a rolling 3 month 'bests'
+    // which we feed to the models to get the estimates for that
+    // point in time based upon the available data
+    QDate from, to;
+
+    // what dates have any power data ?
+    QSqlQuery query(dbaccess->connection());
+    bool rc = query.exec("SELECT ride_date FROM metrics WHERE ZData LIKE '%P%' ORDER BY ride_date;");
+    bool first = true;
+    while (rc && query.next()) {
+        if (first) {
+            from = query.value(0).toDate();
+            if (from.year() >= 1990) first = false; // ignore daft dates
+        } else {
+            to = query.value(0).toDate();
+        }
+    }
+
+    // if we don't have 2 rides or more then skip this!
+    if (to == QDate()) return;
+
+    // run through each month with a rolling bests
+    int year = from.year();
+    int month = from.month();
+    int lastYear = to.year();
+    int lastMonth = to.month();
+    int count = 0;
+
+    // lets make sure we don't run wild when there is bad
+    // ride dates etc -- ignore data before 1990 and after 
+    // next year. This is belt and braces really
+    if (year < 1990) year = 1990;
+    if (lastYear > QDate::currentDate().year()+1) lastYear = QDate::currentDate().year()+1;
+
+    // if we have a progress dialog lets update the bar to show
+    // progress for the model parameters
+    QProgressDialog *bar = new QProgressDialog(tr("Update Model Estimates"), tr("Abort"), 0, (lastYear*12 + lastMonth) - (year*12 + month));
+    bar->setWindowFlags(bar->windowFlags() | Qt::FramelessWindowHint);
+    bar->setWindowModality(Qt::WindowModal);
+    bar->setMinimumDuration(0);
+    bar->setValue(0);
+    bar->show(); // lets hide until elapsed time is > 6 seconds
+    QApplication::processEvents();
+
+    QList< QVector<float> > months;
+
+    // set up the models we support
+    CP2Model p2model(context);
+    CP3Model p3model(context);
+    MultiModel multimodel(context);
+    ExtendedModel extmodel(context);
+
+    QList <PDModel *> models;
+    models << &p2model;
+    models << &p3model;
+    models << &multimodel;
+    models << &extmodel;
+
+    // loop through
+    while (year < lastYear || (year == lastYear && month <= lastMonth)) {
+
+        QDate firstOfMonth = QDate(year, month, 01);
+        QDate lastOfMonth = firstOfMonth.addMonths(1).addDays(-1);
+
+        // months is a rolling 3 months sets of bests
+        months << RideFileCache::meanMaxPowerFor(context, firstOfMonth, lastOfMonth);
+        if (months.count() > 2) months.removeFirst();
+
+        // create a rolling merge of all those months
+        QVector<float> rollingBests = months[0];
+
+        switch(months.count()) {
+            case 1 : // first time through we are done!
+                break;
+
+            case 2 : // second time through just apply month(1)
+                {
+                    if (months[1].size() > rollingBests.size()) rollingBests.resize(months[1].size());
+                    for (int i=0; i<months[1].size(); i++)
+                        if (months[1][i] > rollingBests[i]) rollingBests[i] = months[1][i];
+                }
+                break;
+
+            case 3 : // third time through resize to largest and compare to 1 and 2 XXX not used as limits to 2 month window
+                {
+                    if (months[1].size() > rollingBests.size()) rollingBests.resize(months[1].size());
+                    if (months[2].size() > rollingBests.size()) rollingBests.resize(months[2].size());
+                    for (int i=0; i<months[1].size(); i++) if (months[1][i] > rollingBests[i]) rollingBests[i] = months[1][i];
+                    for (int i=0; i<months[2].size(); i++) if (months[2][i] > rollingBests[i]) rollingBests[i] = months[2][i];
+                }
+        }
+
+        // got some data lets rock
+        if (rollingBests.size()) {
+
+            // we now have the data
+            foreach (PDModel *model, models) {
+
+                // set the data
+                model->setData(rollingBests);
+
+                PDEstimate add;
+                add.from = firstOfMonth;
+                add.to = lastOfMonth;
+                add.model = model->code();
+                add.WPrime = model->hasWPrime() ? model->WPrime() : 0;
+                add.CP = model->hasCP() ? model->CP() : 0;
+                add.PMax = model->hasPMax() ? model->PMax() : 0;
+                add.FTP = model->hasFTP() ? model->FTP() : 0;
+
+                context->athlete->PDEstimates << add;
+
+                //qDebug()<<model->code()<< "W'="<< model->WPrime() <<"3p CP="<< model->CP() <<"3p pMax="<<model->PMax();
+            }
+        }
+
+        // move onto the next month
+        count++;
+        if (month == 12) {
+            year ++;
+            month = 1;
+        } else {
+            month ++;
+        }
+
+        // show some progress
+        bar->setValue(count);
+    }
+    delete bar;
 }

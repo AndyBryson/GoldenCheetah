@@ -842,6 +842,8 @@ DevicePage::DevicePage(QWidget *parent, Context *context) : QWidget(parent), con
 
     deviceList = new QTableView(this);
 #ifdef Q_OS_MAC
+    addButton->setText("Add");
+    delButton->setText("Delete");
     deviceList->setAttribute(Qt::WA_MacShowFocusRect, 0);
 #else
     addButton->setFixedSize(20,20);
@@ -2013,6 +2015,9 @@ MetadataPage::saveClicked()
     fieldsPage->getDefinitions(fieldDefinitions);
     keywordsPage->getDefinitions(keywordDefinitions);
 
+    // save settings
+    appsettings->setValue(GC_RIDEBG, keywordsPage->rideBG->isChecked());
+
     // write to metadata.xml
     RideMetadata::serialize(context->athlete->home.absolutePath() + "/metadata.xml", keywordDefinitions, fieldDefinitions, colorfield);
 
@@ -2050,6 +2055,10 @@ KeywordsPage::KeywordsPage(MetadataPage *parent, QList<KeywordDefinition>keyword
     field->addStretch();
     mainLayout->addLayout(field);
 
+    rideBG = new QCheckBox(tr("Use for Background"));
+    rideBG->setChecked(appsettings->value(this, GC_RIDEBG, false).toBool());
+    field->addWidget(rideBG);
+
     addButton = new QPushButton(tr("+"));
     deleteButton = new QPushButton(tr("-"));
 #ifndef Q_OS_MAC
@@ -2062,6 +2071,8 @@ KeywordsPage::KeywordsPage(MetadataPage *parent, QList<KeywordDefinition>keyword
     addButton->setFixedSize(20,20);
     deleteButton->setFixedSize(20,20);
 #else
+    addButton->setText("Add");
+    deleteButton->setText("Delete");
     upButton = new QPushButton(tr("Up"));
     downButton = new QPushButton(tr("Down"));
 #endif
@@ -2274,6 +2285,8 @@ FieldsPage::FieldsPage(QWidget *parent, QList<FieldDefinition>fieldDefinitions) 
     addButton->setFixedSize(20,20);
     deleteButton->setFixedSize(20,20);
 #else
+    addButton->setText("Add");
+    deleteButton->setText("Delete");
     upButton = new QPushButton(tr("Up"));
     downButton = new QPushButton(tr("Down"));
 #endif
@@ -2578,6 +2591,8 @@ SchemePage::SchemePage(ZonePage* zonePage) : zonePage(zonePage)
     addButton->setFixedSize(20,20);
     deleteButton->setFixedSize(20,20);
 #endif
+    addButton->setText("Add");
+    deleteButton->setText("Delete");
     QHBoxLayout *actionButtons = new QHBoxLayout;
     actionButtons->setSpacing(2);
     actionButtons->addStretch();
@@ -2739,6 +2754,9 @@ CPPage::CPPage(ZonePage* zonePage) : zonePage(zonePage)
 #ifndef Q_OS_MAC
     addButton->setFixedSize(20,20);
     deleteButton->setFixedSize(20,20);
+#else
+    addButton->setText("Add");
+    deleteButton->setText("Delete");
 #endif
     defaultButton = new QPushButton(tr("Def"));
     defaultButton->hide();
@@ -2748,6 +2766,9 @@ CPPage::CPPage(ZonePage* zonePage) : zonePage(zonePage)
 #ifndef Q_OS_MAC
     addZoneButton->setFixedSize(20,20);
     deleteZoneButton->setFixedSize(20,20);
+#else
+    addZoneButton->setText("Add");
+    deleteZoneButton->setText("Delete");
 #endif
 
     QHBoxLayout *zoneButtons = new QHBoxLayout;
@@ -3139,6 +3160,9 @@ HrSchemePage::HrSchemePage(HrZonePage* zonePage) : zonePage(zonePage)
 #ifndef Q_OS_MAC
     addButton->setFixedSize(20,20);
     deleteButton->setFixedSize(20,20);
+#else
+    addButton->setText("Add");
+    deleteButton->setText("Delete");
 #endif
     QHBoxLayout *actionButtons = new QHBoxLayout;
     actionButtons->setSpacing(2);
@@ -3315,6 +3339,9 @@ LTPage::LTPage(HrZonePage* zonePage) : zonePage(zonePage)
 #ifndef Q_OS_MAC
     addButton->setFixedSize(20,20);
     deleteButton->setFixedSize(20,20);
+#else
+    addButton->setText("Add");
+    deleteButton->setText("Delete");
 #endif
     defaultButton = new QPushButton(tr("Def"));
     defaultButton->hide();
@@ -3324,6 +3351,9 @@ LTPage::LTPage(HrZonePage* zonePage) : zonePage(zonePage)
 #ifndef Q_OS_MAC
     addZoneButton->setFixedSize(20,20);
     deleteZoneButton->setFixedSize(20,20);
+#else
+    addZoneButton->setText("Add");
+    deleteZoneButton->setText("Delete");
 #endif
 
     QHBoxLayout *actionButtons = new QHBoxLayout;
@@ -3725,6 +3755,8 @@ MeasuresPage::MeasuresPage(Context *context) : context(context)
     addButton->setFixedSize(20,20);
     deleteButton->setFixedSize(20,20);
 #else
+    addButton->setText("Add");
+    deleteButton->setText("Delete");
     upButton = new QPushButton(tr("Up"));
     downButton = new QPushButton(tr("Down"));
 #endif
@@ -3948,6 +3980,8 @@ SeasonsPage::SeasonsPage(QWidget *parent, Context *context) : QWidget(parent), c
     addButton->setFixedSize(20,20);
     deleteButton->setFixedSize(20,20);
 #else
+    addButton->setText("Add");
+    deleteButton->setText("Delete");
     upButton = new QPushButton(tr("Up"));
     downButton = new QPushButton(tr("Down"));
 #endif
