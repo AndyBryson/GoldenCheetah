@@ -469,6 +469,7 @@ ExtendedModel::ExtendedModel(Context *context) :
 double
 ExtendedModel::y(double t) const
 {
+    t /= 60.00f;
     return paa*(1.20-0.20*exp(-1*double(t)))*exp(paa_dec*(double(t))) + ecp * (1-exp(tau_del*double(t))) * (1-exp(ecp_del*double(t))) * (1+ecp_dec*exp(ecp_dec_del/double(t))) * ( 1 + etau/(double(t)));
 }
 
@@ -699,9 +700,115 @@ ExtendedModel::deriveExtCPParameters()
              (fabs(ecp_dec - ecp_dec_prev) > ecp_dec_delta_max)
             );
 
-    int pMax = paa*(1.20-0.20*exp(-1*(1/60.0)))*exp(paa_dec*(1/60.0)) + ecp * (1-exp(tau_del*(1/60.0))) * (1-exp(ecp_del*(1/60.0))) * (1+ecp_dec*exp(ecp_dec_del/(1/60.0))) * ( 1 + etau/(1/60.0));
-    int mmp60 = paa*(1.20-0.20*exp(-1*60.0))*exp(paa_dec*(60.0)) + ecp * (1-exp(tau_del*(60.0))) * (1-exp(ecp_del*60.0)) * (1+ecp_dec*exp(ecp_dec_del/60.0)) * ( 1 + etau/(60.0));
+    // What did we get ...
+    // To help debug this below we output the derived values
+    // commented out for release, its quite a mouthful !
 
-    //qDebug() <<"eCP(5.3) " << "paa" << paa  << "ecp" << ecp << "etau" << etau << "paa_dec" << paa_dec << "ecp_del" << ecp_del << "ecp_dec" << ecp_dec << "ecp_dec_del" << ecp_dec_del;
-    //qDebug() <<"eCP(5.3) " << "pmax" << pMax << "mmp60" << mmp60;
+#if 0
+    int pMax = paa*(1.20-0.20*exp(-1*(1/60.0)))*exp(paa_dec*(1/60.0)) + ecp * 
+               (1-exp(tau_del*(1/60.0))) * (1-exp(ecp_del*(1/60.0))) * 
+               (1+ecp_dec*exp(ecp_dec_del/(1/60.0))) * 
+               (1+etau/(1/60.0));
+
+    int mmp60 = paa*(1.20-0.20*exp(-1*60.0))*exp(paa_dec*(60.0)) + ecp * 
+               (1-exp(tau_del*(60.0))) * (1-exp(ecp_del*60.0)) * 
+               (1+ecp_dec*exp(ecp_dec_del/60.0)) * 
+               (1+etau/(60.0));
+
+    qDebug() <<"eCP(5.3) " << "paa" << paa  << "ecp" << ecp << "etau" << etau 
+             << "paa_dec" << paa_dec << "ecp_del" << ecp_del << "ecp_dec" 
+             << ecp_dec << "ecp_dec_del" << ecp_dec_del;
+
+    qDebug() <<"eCP(5.3) " << "pmax" << pMax << "mmp60" << mmp60;
+#endif
+}
+
+void MultiModel::loadParameters(QList<double>&here)
+{
+    cp = here[0];
+    tau = here[1];
+    t0 = here[2];
+    w1 = here[3];
+    p1 = here[4];
+    p2 = here[5];
+    tau1 = here[6];
+    tau2 = here[7];
+    alpha = here[8];
+    beta = here[9];
+}
+
+void MultiModel::saveParameters(QList<double>&here)
+{
+    here.clear();
+    here << cp;
+    here << tau;
+    here << t0;
+    here << w1;
+    here << p1;
+    here << p2;
+    here << tau1;
+    here << tau2;
+    here << alpha;
+    here << beta;
+}
+
+void ExtendedModel::loadParameters(QList<double>&here)
+{
+    cp = here[0];
+    tau = here[1];
+    t0 = here[2];
+    paa = here[3];
+    etau = here[4];
+    ecp = here[5];
+    paa_dec = here[6];
+    ecp_del = here[7];
+    tau_del = here[8];
+    ecp_dec = here[9];
+    ecp_dec_del = here[10];
+}
+
+void ExtendedModel::saveParameters(QList<double>&here)
+{
+    here.clear();
+    here << cp;
+    here << tau;
+    here << t0;
+    here << paa;
+    here << etau;
+    here << ecp;
+    here << paa_dec;
+    here << ecp_del;
+    here << tau_del;
+    here << ecp_dec;
+    here << ecp_dec_del;
+}
+
+// 2 and 3 parameter models only load and save cp, tau and t0
+void CP2Model::loadParameters(QList<double>&here)
+{
+    cp = here[0];
+    tau = here[1];
+    t0 = here[2];
+}
+
+void CP2Model::saveParameters(QList<double>&here) 
+{
+    here.clear();
+    here << cp;
+    here << tau;
+    here << t0;
+}
+
+void CP3Model::loadParameters(QList<double>&here)
+{
+    cp = here[0];
+    tau = here[1];
+    t0 = here[2];
+}
+void CP3Model::saveParameters(QList<double>&here)
+{
+    here.clear();
+    here << cp;
+    here << tau;
+    here << t0;
 }

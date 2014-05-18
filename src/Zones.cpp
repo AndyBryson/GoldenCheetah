@@ -240,8 +240,10 @@ bool Zones::read(QFile &file)
         if (wprimerx.indexIn(line, 0) != -1) {
             if (!in_range)
                 qDebug()<<"ignoring errant W'= in power.zones";
-            else
+            else {
                 wprime = wprimerx.cap(1).toInt();
+                if (wprime < 1000) wprime *= 1000; // JOULES not kJ
+            }
         }
 
         // check for zone definition
@@ -916,9 +918,7 @@ Zones::getFingerprint() const
         x += ranges[i].cp;
 
         // W'
-        //!! will not affect metrics so not part of the
-        //!! fingerprint calculation
-        //x += ranges[i].wprime;
+        x += ranges[i].wprime;
 
         // each zone definition (manual edit/default changed)
         for (int j=0; j<ranges[i].zones.count(); j++) {
