@@ -331,6 +331,7 @@ RideSummaryWindow::htmlSummary()
         << "elevation_gain";
 
     QStringList averageColumn = QStringList() // not const as modified below..
+        << "athlete_weight"
         << "average_speed"
         << "average_power"
         << "average_hr"
@@ -746,8 +747,7 @@ RideSummaryWindow::htmlSummary()
             summary += "cellspacing=0 border=0>";
             bool even = false;
             foreach (RideFileInterval interval, ride->intervals()) {
-                RideFile f(ride->startTime(), ride->recIntSecs());
-                f.context = context; // hack, until we refactor athlete and mainwindow
+                RideFile f(ride);
                 for (int i = ride->intervalBegin(interval); i>= 0 &&i < ride->dataPoints().size(); ++i) {
                     const RideFilePoint *p = ride->dataPoints()[i];
                     if (p->secs > interval.stop)
@@ -986,6 +986,7 @@ RideSummaryWindow::htmlCompareSummary() const
         << "elevation_gain";
 
     QStringList averageColumn = QStringList() // not const as modified below..
+        << "athlete_weight"
         << "average_speed"
         << "average_power"
         << "average_hr"

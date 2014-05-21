@@ -50,6 +50,8 @@ class Context;
 class LTMCanvasPicker;
 class CriticalPowerWindow;
 
+#include "PDModel.h" // for all the models
+
 class CPPlot : public QwtPlot
 {
     Q_OBJECT
@@ -63,6 +65,7 @@ class CPPlot : public QwtPlot
         void setRide(RideItem *rideItem);
         void setDateRange(const QDate &start, const QDate &end);
         void setShowPercent(bool x);
+        void setShowBest(bool x);
         void setShowHeat(bool x);
         void setShowHeatByDate(bool x);
         void setShadeMode(int x);
@@ -107,12 +110,12 @@ class CPPlot : public QwtPlot
         // calculate / data setting
         void calculateForDateRanges(QList<CompareDateRange> compareDateRanges);
         void calculateForIntervals(QList<CompareInterval> compareIntervals);
-        void deriveCPParameters();
 
         // plotters
         void plotRide(RideItem *);
         void plotBests();
         void plotModel();
+        void plotModel(QVector<double> vector, QColor plotColor); // for compare date range models
         void plotCentile(RideItem *);
         void plotCache(QVector<double> vector, QColor plotColor);
 
@@ -125,8 +128,6 @@ class CPPlot : public QwtPlot
         // Models and Extended Models
         int model, modelVariant;
         double sanI1, sanI2, anI1, anI2, aeI1, aeI2, laeI1, laeI2;
-        double cp, tau, t0; // CP model parameters
-        ExtendedCriticalPower *ecp;
 
         // Data and State
         Context *context;
@@ -141,6 +142,7 @@ class CPPlot : public QwtPlot
         int shadeMode;
         bool shadeIntervals;
         bool rangemode;
+        bool showBest;
         bool showPercent;
         bool showHeat;
         bool showHeatByDate;
@@ -165,5 +167,8 @@ class CPPlot : public QwtPlot
         // tooltip / zooming
         LTMCanvasPicker *canvasPicker;
         penTooltip *zoomer;
+
+        // the model
+        PDModel *pdModel;
 };
 #endif // _GC_CPPlot_h

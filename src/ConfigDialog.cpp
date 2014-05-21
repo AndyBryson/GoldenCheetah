@@ -39,7 +39,7 @@ ConfigDialog::ConfigDialog(QDir _home, Zones *_zones, Context *context) :
 
 #ifdef Q_OS_MAC
     QToolBar *head = addToolBar(tr("Preferences"));
-    setFixedSize(525,540);
+    setFixedSize(600,540);
     setUnifiedTitleAndToolBarOnMac(true);
     head->setFloatable(false);
     head->setMovable(false);
@@ -48,8 +48,14 @@ ConfigDialog::ConfigDialog(QDir _home, Zones *_zones, Context *context) :
     head->setMovable(false); // oops!
 
     QFont defaultFont;
-    setFixedSize(53 * defaultFont.pointSize(),580);
+    setFixedSize(60 * defaultFont.pointSize(),580);   //Change for 53 to 60 - To be decided if also Size for Q_OS_MAC need change
 #endif
+
+    // center
+    QWidget *spacer = new QWidget(this);
+    spacer->setAutoFillBackground(false);
+    spacer->setSizePolicy(QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding));
+    head->addWidget(spacer);
 
     // icons
     static QIcon generalIcon(QPixmap(":images/toolbar/GeneralPreferences.png"));
@@ -96,6 +102,13 @@ ConfigDialog::ConfigDialog(QDir _home, Zones *_zones, Context *context) :
     added =head->addAction(devicesIcon, tr("Train Devices"));
     connect(added, SIGNAL(triggered()), iconMapper, SLOT(map()));
     iconMapper->setMapping(added, 6);
+
+    // more space
+    spacer = new QWidget(this);
+    spacer->setAutoFillBackground(false);
+    spacer->setSizePolicy(QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding));
+    head->addWidget(spacer);
+
 
     pagesWidget = new QStackedWidget(this);
 

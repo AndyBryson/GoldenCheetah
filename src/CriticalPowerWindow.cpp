@@ -161,6 +161,11 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     QLabel *gridify = new QLabel(tr("Show grid"));
     cl->addRow(gridify, showGridCheck);
 
+    showBestCheck = new QCheckBox(this);
+    showBestCheck->setChecked(true); // default off
+    QLabel *bestify = new QLabel(tr("Show Bests"));
+    cl->addRow(bestify, showBestCheck);
+
     showPercentCheck = new QCheckBox(this);
     showPercentCheck->setChecked(false); // default off
     QLabel *percentify = new QLabel(tr("Show as percentage"));
@@ -330,16 +335,16 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     titleRank = new QLabel(tr("Rank"), this);
     wprimeTitle = new QLabel(tr("W'"), this);
     wprimeValue = new QLabel(tr("0 kJ"), this);
-    wprimeRank = new QLabel(tr("0.0"), this);
+    wprimeRank = new QLabel(tr("n/a"), this);
     cpTitle = new QLabel(tr("CP"), this);
     cpValue = new QLabel(tr("0 w"), this);
-    cpRank = new QLabel(tr("0.0"), this);
+    cpRank = new QLabel(tr("n/a"), this);
     pmaxTitle = new QLabel(tr("Pmax"), this);
     pmaxValue = new QLabel(tr("0 w"), this);
-    pmaxRank = new QLabel(tr("0.0"), this);
+    pmaxRank = new QLabel(tr("n/a"), this);
     ftpTitle = new QLabel(tr("FTP"), this);
     ftpValue = new QLabel(tr("0 w"), this);
-    ftpRank = new QLabel(tr("0.0"), this);
+    ftpRank = new QLabel(tr("n/a"), this);
 
     // autofill
     titleBlank->setAutoFillBackground(true);
@@ -446,6 +451,7 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     connect(rHeat, SIGNAL(stateChanged(int)), this, SLOT(rHeatChanged(int)));
     connect(showHeatByDateCheck, SIGNAL(stateChanged(int)), this, SLOT(showHeatByDateChanged(int)));
     connect(showPercentCheck, SIGNAL(stateChanged(int)), this, SLOT(showPercentChanged(int)));
+    connect(showBestCheck, SIGNAL(stateChanged(int)), this, SLOT(showBestChanged(int)));
     connect(showGridCheck, SIGNAL(stateChanged(int)), this, SLOT(showGridChanged(int)));
     connect(rPercent, SIGNAL(stateChanged(int)), this, SLOT(rPercentChanged(int)));
     connect(dateSetting, SIGNAL(useCustomRange(DateRange)), this, SLOT(useCustomRange(DateRange)));
@@ -679,7 +685,7 @@ CriticalPowerWindow::modelParametersChanged()
     // need a helper any more ?
     if (seriesCombo->currentIndex() >= 0) {
         CriticalSeriesType series = static_cast<CriticalSeriesType>(seriesCombo->itemData(seriesCombo->currentIndex()).toInt());
-        if (series == watts && modelCombo->currentIndex() >= 1) helperWidget()->show();
+        if ((series == watts || series == wattsKg) && modelCombo->currentIndex() >= 1) helperWidget()->show();
         else helperWidget()->hide();
     }
 
@@ -731,7 +737,7 @@ CriticalPowerWindow::forceReplot()
 
         // show helper if we're showing power
         CriticalSeriesType series = static_cast<CriticalSeriesType>(seriesCombo->itemData(seriesCombo->currentIndex()).toInt());
-        if (series == watts && modelCombo->currentIndex() >= 1) helperWidget()->show();
+        if ((series == watts || series == wattsKg) && modelCombo->currentIndex() >= 1) helperWidget()->show();
         else helperWidget()->hide();
     }
 
@@ -934,9 +940,7 @@ CriticalPowerWindow::showIntervalCurve(IntervalItem *current, int index)
     // ack, we need to create the curve for this interval
 
     // make a ridefile
-    RideFile f;
-    f.context = context; // hack, until we refactor athlete and mainwindow
-    f.setRecIntSecs(myRideItem->ride()->recIntSecs());
+    RideFile f(myRideItem->ride());
    
     foreach(RideFilePoint *p, myRideItem->ride()->dataPoints()) { 
        if ((p->secs+f.recIntSecs()) >= current->start && p->secs <= (current->stop+f.recIntSecs())) {
@@ -1086,7 +1090,7 @@ CriticalPowerWindow::setSeries(int index)
 
         // need a helper any more ?
         CriticalSeriesType series = static_cast<CriticalSeriesType>(seriesCombo->itemData(index).toInt());
-        if (series == watts && modelCombo->currentIndex() >= 1) helperWidget()->show();
+        if ((series == watts || series == wattsKg) && modelCombo->currentIndex() >= 1) helperWidget()->show();
         else helperWidget()->hide();
 
         if (rangemode) {
@@ -1463,6 +1467,16 @@ CriticalPowerWindow::showGridChanged(int state)
     if (state) grid->setVisible(true);
     else grid->setVisible(false);
     cpPlot->replot();
+}
+
+void
+CriticalPowerWindow::showBestChanged(int state)
+{
+    cpPlot->setShowBest(state);
+
+    // redraw
+    if (rangemode) dateRangeChanged(DateRange());
+    else cpPlot->setRide(currentRide);
 }
 
 void

@@ -55,6 +55,25 @@ RideFile::RideFile(const QDateTime &startTime, double recIntSecs) :
     totalPoint = new RideFilePoint();
 }
 
+// construct from another is mostly just to get the tags
+// when constructing a temporary ridefile when computing intervals
+// and we want to get special fields and ESPECIALLY "CP" and "Weight"
+RideFile::RideFile(RideFile *p) :
+    recIntSecs_(p->recIntSecs_), deviceType_(p->deviceType_), data(NULL), wprime_(NULL), 
+    wstale(true), weight_(p->weight_), totalCount(0), dstale(true)
+{
+    startTime_ = p->startTime_;
+    tags_ = p->tags_;
+    context = p->context;
+
+    command = new RideFileCommand(this);
+    minPoint = new RideFilePoint();
+    maxPoint = new RideFilePoint();
+    avgPoint = new RideFilePoint();
+    totalPoint = new RideFilePoint();
+
+}
+
 RideFile::RideFile() : 
     recIntSecs_(0.0), deviceType_("unknown"), data(NULL), wprime_(NULL), 
     wstale(true), weight_(0), totalCount(0), dstale(true)
@@ -1064,7 +1083,7 @@ RideFile::getWeight()
     int i = measures.count()-1;
     if (i) {
         while (i>=0) {
-            if ((weight_ = measures[i].getText("Weight", "0.0").toDouble()) > 0) {
+            if ((weight_ = measures[i].getText("Weight_m", "0.0").toDouble()) > 0) {
                return weight_;
             }
             i--;
