@@ -31,7 +31,7 @@ lessThan(QT_MAJOR_VERSION, 5) {
 } else {
 
     ## QT5 specific modules
-    QT += webkitwidgets widgets
+    QT += webkitwidgets widgets concurrent
     macx {
         QT += macextras
     } else {

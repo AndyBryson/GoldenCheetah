@@ -102,12 +102,15 @@ class GCColor : public QObject
         static const Colors *defaultColorSet();
         static void resetColors();
         static struct SizeSettings defaultSizes(int width, int height);
+        static double luminance(QColor color); // return the relative luminance
         static QColor invertColor(QColor); // return the contrasting color
         static QColor alternateColor(QColor); // return the alternate background
         static QColor htmlCode(QColor x) { return x.name(); } // return the alternate background
         static Themes &themes(); 
 
         // for styling things with current preferences
+        static bool isFlat();
+        static QLinearGradient linearGradient(int size, bool active, bool alternate=false);
         static QString css();
         static QPalette palette();
         static QString stylesheet();
@@ -141,7 +144,7 @@ class ColorEngine : public QObject
 #define GColor(x) GCColor::getColor(x)
 
 // Define how many cconfigurable metric colors are available
-#define CNUMOFCFGCOLORS       83
+#define CNUMOFCFGCOLORS       84
 
 #define CPLOTBACKGROUND       0
 #define CRIDEPLOTBACKGROUND   1
@@ -226,5 +229,6 @@ class ColorEngine : public QObject
 #define CRTE                  80
 #define CLPS                  81
 #define CRPS                  82
+#define CCHROME               83
 
 #endif

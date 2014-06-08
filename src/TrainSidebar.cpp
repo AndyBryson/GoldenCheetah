@@ -28,6 +28,9 @@
 #include <QApplication>
 #include <QtGui>
 #include <QRegExp>
+#include <QStyle>
+#include <QStyleFactory>
+#include <QScrollBar>
 
 // Three current realtime device types supported are:
 #include "RealtimeController.h"
@@ -105,6 +108,10 @@ TrainSidebar::TrainSidebar(Context *context) : GcWindow(context), context(contex
     mediaTree->header()->setSortIndicatorShown(false); // blue looks nasty
     mediaTree->setAttribute(Qt::WA_MacShowFocusRect, 0);
 #endif
+#ifdef Q_OS_WIN
+    QStyle *cde = QStyleFactory::create(OS_STYLE);
+    mediaTree->verticalScrollBar()->setStyle(cde);
+#endif
 #endif
 
     deviceTree = new QTreeWidget;
@@ -119,6 +126,10 @@ TrainSidebar::TrainSidebar(Context *context) : GcWindow(context), context(contex
     deviceTree->setIndentation(5);
     deviceTree->expandItem(deviceTree->invisibleRootItem());
     deviceTree->setContextMenuPolicy(Qt::CustomContextMenu);
+#ifdef Q_OS_WIN
+    QStyle *xde = QStyleFactory::create(OS_STYLE);
+    deviceTree->verticalScrollBar()->setStyle(xde);
+#endif
 
     workoutModel = new QSqlTableModel(this, trainDB->connection());
     workoutModel->setTable("workouts");
@@ -152,6 +163,10 @@ TrainSidebar::TrainSidebar(Context *context) : GcWindow(context), context(contex
 #ifdef Q_OS_MAC
     workoutTree->header()->setSortIndicatorShown(false); // blue looks nasty
     workoutTree->setAttribute(Qt::WA_MacShowFocusRect, 0);
+#endif
+#ifdef Q_OS_WIN
+    xde = QStyleFactory::create(OS_STYLE);
+    workoutTree->verticalScrollBar()->setStyle(xde);
 #endif
 
     // TOOLBAR BUTTONS ETC

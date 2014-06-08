@@ -21,6 +21,7 @@
 #include "Context.h"
 #include "Context.h"
 #include "Athlete.h"
+#include "TabView.h"
 #include "AllPlotWindow.h"
 #include "AllPlot.h"
 #include "RideFile.h"
@@ -49,6 +50,7 @@
 #include <qxtspanslider.h>
 #include <QStyleFactory>
 #include <QStyle>
+#include <QScrollBar>
 
 // tooltip
 #include "LTMWindow.h"
@@ -143,7 +145,7 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     stackZoomSlider->setMaximum(7);
     stackZoomSlider->setTickInterval(1);
     stackZoomSlider->setValue(3);
-    cl1->addRow(new QLabel("Stack Zoom"), stackZoomSlider); 
+    cl1->addRow(new QLabel(tr("Stack Zoom")), stackZoomSlider);
 
     showFull = new QCheckBox(tr("Full plot"), this);
     showFull->setCheckState(Qt::Checked);
@@ -164,7 +166,7 @@ AllPlotWindow::AllPlotWindow(Context *context) :
 
     showAccel = new QCheckBox(tr("Acceleration"), this);
     showAccel->setCheckState(Qt::Checked);
-    cl1->addRow(new QLabel("Delta Series"), showAccel);
+    cl1->addRow(new QLabel(tr("Delta Series")), showAccel);
     showPowerD = new QCheckBox(QString(tr("Power %1").arg(deltaChar)), this);
     showPowerD->setCheckState(Qt::Unchecked);
     cl1->addRow(new QLabel(""), showPowerD);
@@ -182,7 +184,7 @@ AllPlotWindow::AllPlotWindow(Context *context) :
 
     showBalance = new QCheckBox(tr("Balance"), this);
     showBalance->setCheckState(Qt::Checked);
-    cl1->addRow(new QLabel("Left/Right"), showBalance);
+    cl1->addRow(new QLabel(tr("Left/Right")), showBalance);
 
     showTE = new QCheckBox(tr("Torque Effectiveness"));
     showTE->setCheckState(Qt::Unchecked);
@@ -224,7 +226,7 @@ AllPlotWindow::AllPlotWindow(Context *context) :
 
     showANTISS = new QCheckBox(tr("Anaerobic TISS"), this);
     showANTISS->setCheckState(Qt::Unchecked);
-    cl2->addRow(new QLabel("Metrics"), showANTISS);
+    cl2->addRow(new QLabel(tr("Metrics")), showANTISS);
 
     showATISS = new QCheckBox(tr("Aerobic TISS"), this);
     showATISS->setCheckState(Qt::Unchecked);
@@ -363,6 +365,10 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     stackWidget->setPalette(palette);
 
     stackFrame = new QScrollArea(this);
+#ifdef Q_OS_WIN
+    QStyle *cde = QStyleFactory::create(OS_STYLE);
+    stackFrame->setStyle(cde);
+#endif
     stackFrame->hide();
     stackFrame->setAutoFillBackground(false);
     stackFrame->setWidgetResizable(true);
@@ -383,6 +389,10 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     seriesstackWidget->setPalette(palette);
 
     seriesstackFrame = new QScrollArea(this);
+#ifdef Q_OS_WIN
+    cde = QStyleFactory::create(OS_STYLE);
+    seriesstackFrame->setStyle(cde);
+#endif
     seriesstackFrame->hide();
     seriesstackFrame->setAutoFillBackground(false);
     seriesstackFrame->setWidgetResizable(true);
@@ -403,6 +413,10 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     comparePlotWidget->setPalette(palette);
 
     comparePlotFrame = new QScrollArea(this);
+#ifdef Q_OS_WIN
+    cde = QStyleFactory::create(OS_STYLE);
+    comparePlotWidget->setStyle(cde);
+#endif
     comparePlotFrame->hide();
     comparePlotFrame->setAutoFillBackground(false);
     comparePlotFrame->setWidgetResizable(true);
@@ -420,6 +434,10 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     allPlotLayout->setSpacing(0);
     allPlotLayout->setContentsMargins(0,0,0,0);
     allPlotFrame = new QScrollArea(this);
+#ifdef Q_OS_WIN
+    cde = QStyleFactory::create(OS_STYLE);
+    allPlotFrame->setStyle(cde);
+#endif
     allPlotFrame->setFrameStyle(QFrame::NoFrame);
     allPlotFrame->setAutoFillBackground(false);
     allPlotFrame->setContentsMargins(0,0,0,0);
@@ -509,7 +527,8 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     vlayout->setSpacing(1);
 
     // put a helper on the screen for mouse over intervals...
-    addHelper(tr("Intervals"), new IntervalSummaryWindow(context));
+    overlayIntervals = new IntervalSummaryWindow(context);
+    addHelper(tr("Intervals"), overlayIntervals);
 
     //mainLayout->addLayout(vlayout,0,0);
     //mainLayout->addWidget(revealBackground,0,0, Qt::AlignTop);
@@ -600,6 +619,15 @@ AllPlotWindow::configChanged()
     palette.setBrush(QPalette::Background, QBrush(GColor(CRIDEPLOTBACKGROUND)));
     setPalette(palette); // propagates to children
 
+    // set style sheets
+#ifndef Q_OS_MAC
+    allPlotFrame->setStyleSheet(TabView::ourStyleSheet());
+    comparePlotFrame->setStyleSheet(TabView::ourStyleSheet());
+    seriesstackFrame->setStyleSheet(TabView::ourStyleSheet());
+    stackFrame->setStyleSheet(TabView::ourStyleSheet());
+    overlayIntervals->setStyleSheet(TabView::ourStyleSheet());
+#endif
+
     // set palettes
     allStack->setPalette(palette);
     allPlotStack->setPalette(palette);
@@ -685,13 +713,22 @@ AllPlotWindow::event(QEvent *event)
     // nasty nasty nasty hack to move widgets as soon as the widget geometry
     // is set properly by the layout system, by default the width is 100 and 
     // we wait for it to be set properly then put our helper widget on the RHS
-    if (event->type() == QEvent::Resize && geometry().width() != 100 && firstShow) {
-        firstShow = false;
-        helperWidget()->move(mainWidget()->geometry().width()-275, 50);
-        helperWidget()->raise();
+    if (event->type() == QEvent::Resize && geometry().width() != 100) {
 
-        if (isShowHelp()) helperWidget()->show();
-        else helperWidget()->hide();
+        // put somewhere nice on first show
+        if (firstShow) {
+            firstShow = false;
+            helperWidget()->move(mainWidget()->geometry().width()-275, 50);
+            helperWidget()->raise();
+
+            if (isShowHelp()) helperWidget()->show();
+            else helperWidget()->hide();
+        }
+
+        // if off the screen move on screen
+        if (helperWidget()->geometry().x() > geometry().width()) {
+            helperWidget()->move(mainWidget()->geometry().width()-275, 50);
+        }
     }
     return QWidget::event(event);
 }
@@ -728,6 +765,7 @@ AllPlotWindow::compareChanged()
         int maxKM=0, maxSECS=0;
 
         fullPlot->standard->setVisible(false);
+        if (fullPlot->smooth < 1) fullPlot->smooth = 1;
         foreach(CompareInterval ci, context->compareIntervals) {
 
             AllPlotObject *po = new AllPlotObject(fullPlot);
@@ -2430,11 +2468,13 @@ AllPlotWindow::setSmoothing(int value)
     //if (!current) return;
     smoothSlider->setValue(value);
 
-    // recalculate etc
-    fullPlot->setSmoothing(value);
-
     // Compare has LOTS of rides to smooth...
     if (context->isCompareIntervals) {
+
+        // no zero smoothin when comparing -- we need the
+        // arrays to be intitialised for all series
+        if (value < 1) value = 1;
+        fullPlot->setSmoothing(value);
 
         setUpdatesEnabled(false);
 
@@ -2458,6 +2498,9 @@ AllPlotWindow::setSmoothing(int value)
         setUpdatesEnabled(true);
 
     } else {
+
+        // recalculate etc
+        fullPlot->setSmoothing(value);
 
         // redraw
         redrawFullPlot();

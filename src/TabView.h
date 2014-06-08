@@ -62,6 +62,7 @@ class TabView : public QWidget
         QWidget *bottom() { return bottom_; }
 
         // sidebar
+        static QString ourStyleSheet();
         void setSidebarEnabled(bool x) { _sidebar=x; sidebarChanged(); }
         bool sidebarEnabled() const { return _sidebar; }
 
@@ -109,6 +110,9 @@ class TabView : public QWidget
 
         //void mediaSelected(QString filename);
         //void ergSelected(ErgFile *erg);
+        void configChanged();
+
+        void resizeEvent(QResizeEvent*);
 
     protected:
 
@@ -124,6 +128,8 @@ class TabView : public QWidget
         bool _tiled;
         bool _selected;
         int lastHeight; // last height of splitter, default to 100...
+        int sidewidth; // width of sidebar
+        bool active;
 
         QStackedWidget *stack;
         QSplitter *splitter;

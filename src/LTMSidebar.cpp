@@ -28,6 +28,9 @@
 #include <QWebFrame>
 #include <QScrollBar>
 #include <QtGui>
+#include <QStyle>
+#include <QStyleFactory>
+#include <QScrollBar>
 
 // seasons support
 #include "Season.h"
@@ -77,6 +80,10 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
 #ifdef Q_OS_MAC
     dateRangeTree->setAttribute(Qt::WA_MacShowFocusRect, 0);
 #endif
+#ifdef Q_OS_WIN
+    QStyle *cde = QStyleFactory::create(OS_STYLE);
+    dateRangeTree->verticalScrollBar()->setStyle(cde);
+#endif
     seasonsWidget->addWidget(dateRangeTree);
 
     // events
@@ -100,6 +107,10 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
     eventTree->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 #ifdef Q_OS_MAC
     eventTree->setAttribute(Qt::WA_MacShowFocusRect, 0);
+#endif
+#ifdef Q_OS_WIN
+    cde = QStyleFactory::create(OS_STYLE);
+    eventTree->verticalScrollBar()->setStyle(cde);
 #endif
     eventsWidget->addWidget(eventTree);
 
@@ -129,6 +140,10 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
     filterTree->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 #ifdef Q_OS_MAC
     filterTree->setAttribute(Qt::WA_MacShowFocusRect, 0);
+#endif
+#ifdef Q_OS_WIN
+    cde = QStyleFactory::create(OS_STYLE);
+    filterTree->verticalScrollBar()->setStyle(cde);
 #endif
     // we cast the filter tree and this because we use the same constructor XXX fix this!!!
     filterSplitter = new GcSubSplitter(Qt::Vertical, (GcSplitterControl*)filterTree, (GcSplitter*)this, true);
@@ -476,6 +491,8 @@ void
 LTMSidebar::setAutoFilterMenu()
 {
 #ifdef GC_HAVE_LUCENE
+    active = true;
+
     QStringList on = appsettings->cvalue(context->athlete->cyclist, GC_LTM_AUTOFILTERS, tr("Workout Code|Sport")).toString().split("|");
     autoFilterMenu->clear();
     autoFilterState.clear();
@@ -488,18 +505,28 @@ LTMSidebar::setAutoFilterMenu()
             action->setCheckable(true);
 
             if (on.contains(field.name)) action->setChecked(true);
+            else action->setChecked(false);
+
             connect(action, SIGNAL(triggered()), this, SLOT(autoFilterChanged()));
 
+            // remove from tree if its already there
+            GcSplitterItem *item = filterSplitter->removeItem(action->text());
+            if (item) delete item; // will be removed from splitter too
+
+            // if you crash on this line compile with QT5.3 or higher
+            // or at least avoid the 5.3 RC1 release (see QTBUG-38685)
             autoFilterMenu->addAction(action);
             autoFilterState << false;
         }
     }
+    active = false;
 #endif
 }
 
 void 
 LTMSidebar::autoFilterChanged()
 {
+    if (active) return;
 
     QString on;
 
@@ -530,6 +557,10 @@ LTMSidebar::autoFilterChanged()
 #ifdef Q_OS_MAC
             tree->setAttribute(Qt::WA_MacShowFocusRect, 0);
 #endif
+#ifdef Q_OS_WIN
+            QStyle *cde = QStyleFactory::create(OS_STYLE);
+            tree->verticalScrollBar()->setStyle(cde);
+#endif
             item->addWidget(tree);
             filterSplitter->addWidget(item);
 
@@ -547,6 +578,7 @@ LTMSidebar::autoFilterChanged()
                 }
             }
             connect(tree,SIGNAL(itemSelectionChanged()), this, SLOT(autoFilterSelectionChanged()));
+
         }
 
         // deactivate
@@ -905,6 +937,11 @@ LTMSidebar::editRange()
     if (dateRangeTree->selectedItems().count() != 1) return;
 
     int index = allDateRanges->indexOfChild(dateRangeTree->selectedItems().first());
+
+    if (seasons->seasons[index].getType() == Season::temporary) {
+        QMessageBox::warning(this, tr("Edit Season"), tr("You can only edit user defined seasons. Please select a season you have created for editing."));
+        return; // must be a user season
+    }
     EditSeasonDialog dialog(context, &seasons->seasons[index]);
 
     if (dialog.exec()) {
@@ -926,6 +963,11 @@ LTMSidebar::deleteRange()
 {
     if (dateRangeTree->selectedItems().count() != 1) return;
     int index = allDateRanges->indexOfChild(dateRangeTree->selectedItems().first());
+
+    if (seasons->seasons[index].getType() == Season::temporary) {
+        QMessageBox::warning(this, tr("Delete Season"), tr("You can only delete user defined seasons. Please select a season you have created for deletion."));
+        return; // must be a user season
+    }
 
     // now delete!
     delete allDateRanges->takeChild(index);

@@ -89,6 +89,8 @@ class RideNavigator : public GcWindow
         void customContextMenuRequested(const QPoint &);
 
     public slots:
+
+        void configChanged();
         void refresh();
 
         void showEvent(QShowEvent *event);
@@ -159,6 +161,7 @@ class RideNavigator : public GcWindow
 
     private:
         bool active;
+        bool mainwindow;
         bool init;
         int currentColumn;
         int pwidth;

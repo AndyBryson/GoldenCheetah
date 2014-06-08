@@ -25,6 +25,13 @@
 #include <QDir>
 #include "Settings.h"
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#ifdef GC_HAVE_DWM
+#include "Dwmapi.h"
+#endif
+#endif
+
 // the standard themes, a global object
 static Themes allThemes;
 
@@ -126,6 +133,15 @@ void GCColor::setupColors()
         { tr("Right Torque Effectiveness"), "CRTE", Qt::magenta },
         { tr("Left Pedal Smoothness"), "CLPS", Qt::cyan },
         { tr("Right Pedal Smoothness"), "CRPS", Qt::magenta },
+#ifdef GC_HAVE_DWM
+        { tr("Toolbar and Sidebar"), "CCHROME", QColor(1,1,1) },
+#else
+#ifdef Q_OS_MAC
+        { tr("Toolbar and Sidebar"), "CCHROME", QColor(213,213,213) },
+#else
+        { tr("Toolbar and Sidebar"), "CCHROME", QColor(197,197,197) },
+#endif
+#endif
         { "", "", QColor(0,0,0) },
     };
 
@@ -177,14 +193,20 @@ GCColor::GCColor(Context *context) : QObject(context)
     connect(context, SIGNAL(configChanged()), this, SLOT(readConfig()));
 }
 
+// returns a luminance for a color from 0 (dark) to 255 (very light) 127 is a half way house gray
+double GCColor::luminance(QColor color)
+{
+    QColor cRGB = color.convertTo(QColor::Rgb);
+
+    // based upon http://en.wikipedia.org/wiki/Luminance_(relative)
+    return (0.2126f * double(cRGB.red()))  + 
+           (0.7152f * double(cRGB.green())) +
+           (0.0722f * double(cRGB.blue()));
+}
+
 QColor GCColor::invertColor(QColor bgColor)
 {
-    QColor cRGB = bgColor.convertTo(QColor::Rgb);
-    // lets work it out..
-    int r = cRGB.red() < 128 ? 255 : 0;
-    int g = cRGB.green() < 128 ? 255 : 0;
-    int b = cRGB.blue() < 128 ? 255 : 0;
-    return QColor(r,g,b);
+    return GCColor::luminance(bgColor) < 127 ? QColor(Qt::white) : QColor(Qt::black);
 }
 
 QColor GCColor::alternateColor(QColor bgColor)
@@ -302,12 +324,25 @@ GCColor::css()
     //QColor altColor = GCColor::alternateColor(bgColor); // not yet ?
 
     return QString("<style> "
-                   "body { color: %3; background-color: %2; }"
+                   "html { overflow: auto; }"
+                   "body { position: absolute; "
+                   "       top: 5px; left: 5px; bottom: 5px; right: 5px; padding: 0px; "
+                   "       overflow-y: hidden; overflow-x: hidden; color: %3; background-color: %2; }"
+                   "body:hover { overflow-y: scroll; }"
                    "h1 { color: %1; background-color: %2; } "
                    "h2 { color: %1; background-color: %2; } "
                    "h3 { color: %1; background-color: %2; } "
                    "h4 { color: %1; background-color: %2; } "
                    "b { color: %1; background-color: %2; } "
+#ifdef Q_OS_MAC
+                   "::-webkit-scrollbar-thumb { border-radius: 4px; background: rgba(0,0,0,0.5);  "
+                   "-webkit-box-shadow: inset 0 0 1px rgba(255,255,255,0.6); }"
+                   "::-webkit-scrollbar { width: 9; background: %2; } "
+#else
+                   "::-webkit-scrollbar-thumb { background: darkGray; } "
+                   "::-webkit-scrollbar-thumb:hover { background: lightGray; } "
+                   "::-webkit-scrollbar { width: 6px; background: %2; } "
+#endif
                    "</style> ").arg(GColor(CPLOTMARKER).name())
                                .arg(bgColor.name())
                                .arg(fgColor.name());
@@ -337,6 +372,91 @@ GCColor::stylesheet()
                    "QTableWidget { color: %2; background: %1; }"
                    "QTableWidget::item:hover { color: black; background: lightGray; }"
                    "QTreeView::item:hover { color: black; background: lightGray; }").arg(bgColor.name()).arg(fgColor.name());
+}
+
+bool
+GCColor::isFlat()
+{
+    return (appsettings->value(NULL, GC_CHROME, "Mac").toString() == "Flat");
+}
+
+// setup a linearGradient for the metallic backgrounds used on things like
+// the toolbar, sidebar handles and so on
+QLinearGradient
+GCColor::linearGradient(int size, bool active, bool alternate)
+{
+    QLinearGradient returning;
+
+    QString chrome = appsettings->value(NULL, GC_CHROME, "Mac").toString();
+
+    if (chrome == "Mac") {
+        int shade, inshade;
+        if (!alternate) {
+#ifdef Q_OS_MAC
+            shade = 178;
+            inshade = 225;
+#else
+            shade = 200;
+            inshade = 250;
+#endif
+        } else {
+#ifdef Q_OS_MAC
+            inshade = 225;
+            shade = 210;
+#else
+            inshade = 250;
+            shade = 225;
+#endif
+        }
+
+        // metallic
+        if (active) {
+            returning = QLinearGradient(0, 0, 0, size);
+            returning.setColorAt(0.0, QColor(shade,shade,shade, 100));
+            returning.setColorAt(0.5, QColor(shade,shade,shade, 180));
+            returning.setColorAt(1.0, QColor(shade,shade,shade, 255));
+            returning.setSpread(QGradient::PadSpread);
+        } else {
+            returning = QLinearGradient(0, 0, 0, size);
+            returning.setColorAt(0.0, QColor(inshade,inshade,inshade, 100));
+            returning.setColorAt(0.5, QColor(inshade,inshade,inshade, 180));
+            returning.setColorAt(1.0, QColor(inshade,inshade,inshade, 255));
+            returning.setSpread(QGradient::PadSpread);
+        }
+
+    } else {
+
+        QColor color = GColor(CCHROME);
+
+//
+// The DWM api is how the MS windows color settings should be accessed
+//
+#ifdef GC_HAVE_DWM
+
+        if (color == QColor(1,1,1)) { // use system default, user hasn't changed
+
+            // use Windows API
+            DWORD wincolor = 0;
+            BOOL opaque = FALSE;
+
+            HRESULT hr = DwmGetColorizationColor(&wincolor, &opaque);
+            if (SUCCEEDED(hr)) {
+                BYTE red = GetRValue(wincolor)
+                BYTE green = GetGValue(wincolor);
+                BYTE blue = GetBValue(wincolor);
+                color = QColor::fromRgb(red,green,blue,255);
+            } 
+        }
+#endif
+
+        // just blocks of color
+        returning = QLinearGradient(0, 0, 0, size);
+        returning.setColorAt(0.0, color);
+        returning.setColorAt(1.0, color);
+
+    }
+
+    return returning; 
 }
 
 //

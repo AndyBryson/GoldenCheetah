@@ -109,25 +109,6 @@ ChartBar::ChartBar(Context *context) : QWidget(context->mainWindow), context(con
     buttonFont.setPointSize(10);
     buttonFont.setWeight(QFont::Black);
 
-    // linear gradients
-#ifdef Q_OS_MAC
-    int shade = 178;
-    int inshade = 225;
-#else
-    int shade = 200;
-    int inshade = 250;
-#endif
-    active = QLinearGradient(0, 0, 0, true ? 23 :18);
-    active.setColorAt(0.0, QColor(shade,shade,shade, 100));
-    active.setColorAt(0.5, QColor(shade,shade,shade, 180));
-    active.setColorAt(1.0, QColor(shade,shade,shade, 255));
-    active.setSpread(QGradient::PadSpread);
-    inactive = QLinearGradient(0, 0, 0, true ? 23 :18);
-    inactive.setColorAt(0.0, QColor(inshade,inshade,inshade, 100));
-    inactive.setColorAt(0.5, QColor(inshade,inshade,inshade, 180));
-    inactive.setColorAt(1.0, QColor(inshade,inshade,inshade, 255));
-    inactive.setSpread(QGradient::PadSpread);
-
     signalMapper = new QSignalMapper(this); // maps each option
     connect(signalMapper, SIGNAL(mapped(int)), this, SLOT(clicked(int)));
 
@@ -360,18 +341,24 @@ ChartBar::paintBackground(QPaintEvent *)
     painter.save();
     QRect all(0,0,width(),height());
 
+    // linear gradients
+    QLinearGradient active = GCColor::linearGradient(23, true); 
+    QLinearGradient inactive = GCColor::linearGradient(23, false); 
+
     // fill with a linear gradient
     painter.setPen(Qt::NoPen);
     painter.fillRect(all, QColor(Qt::white));
     painter.fillRect(all, isActiveWindow() ? active : inactive);
 
-    QPen black(QColor(100,100,100,200));
-    painter.setPen(black);
-    painter.drawLine(0,height()-1, width()-1, height()-1);
+    if (!GCColor::isFlat()) {
+        QPen black(QColor(100,100,100,200));
+        painter.setPen(black);
+        painter.drawLine(0,height()-1, width()-1, height()-1);
 
-    QPen gray(QColor(230,230,230));
-    painter.setPen(gray);
-    painter.drawLine(0,0, width()-1, 0);
+        QPen gray(QColor(230,230,230));
+        painter.setPen(gray);
+        painter.drawLine(0,0, width()-1, 0);
+    }
 
     painter.restore();
 }
@@ -394,18 +381,24 @@ ButtonBar::paintBackground(QPaintEvent *)
     painter.save();
     QRect all(0,0,width(),height());
 
+    // linear gradients
+    QLinearGradient active = GCColor::linearGradient(23, true); 
+    QLinearGradient inactive = GCColor::linearGradient(23, false); 
+
     // fill with a linear gradient
     painter.setPen(Qt::NoPen);
     painter.fillRect(all, QColor(Qt::white));
-    painter.fillRect(all, isActiveWindow() ? chartbar->active : chartbar->inactive);
+    painter.fillRect(all, isActiveWindow() ? active : inactive);
 
-    QPen black(QColor(100,100,100,200));
-    painter.setPen(black);
-    painter.drawLine(0,height()-1, width()-1, height()-1);
+    if (!GCColor::isFlat()) {
+        QPen black(QColor(100,100,100,200));
+        painter.setPen(black);
+        painter.drawLine(0,height()-1, width()-1, height()-1);
 
-    QPen gray(QColor(230,230,230));
-    painter.setPen(gray);
-    painter.drawLine(0,0, width()-1, 0);
+        QPen gray(QColor(230,230,230));
+        painter.setPen(gray);
+        painter.drawLine(0,0, width()-1, 0);
+    }
 
     painter.restore();
 }

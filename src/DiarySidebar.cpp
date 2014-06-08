@@ -191,7 +191,7 @@ GcLabel::paintEvent(QPaintEvent *)
     if (text() != "<" && text() != ">") {
         painter.setFont(this->font());
 
-        if (xoff || yoff) {
+        if (!GCColor::isFlat() && (xoff || yoff)) {
 
             // draw text in white behind...
             QRectF off(xoff,yoff,width(),height());
@@ -200,7 +200,17 @@ GcLabel::paintEvent(QPaintEvent *)
         }
 
         if (filtered && !selected && !underMouse()) painter.setPen(GColor(CCALCURRENT));
-        else painter.setPen(palette().color(QPalette::WindowText));
+        else {
+
+            if (isChrome && GCColor::isFlat()) {
+
+                if (GCColor::luminance(GColor(CCHROME)) < 127)
+                    painter.setPen(QColor(Qt::white));
+                else
+                    painter.setPen(QColor(30,30,30,200));
+
+            } else painter.setPen(palette().color(QPalette::WindowText));
+        }
 
         painter.drawText(norm, alignment(), text());
 
@@ -211,6 +221,7 @@ GcLabel::paintEvent(QPaintEvent *)
 
             painter.drawText(norm, alignment(), text());
         }
+
     } else {
 
         // use standard icons

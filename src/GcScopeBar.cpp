@@ -174,16 +174,7 @@ GcScopeBar::paintBackground(QPaintEvent *)
     QRect all(0,0,width(),height());
 
     // fill with a linear gradient
-#ifdef Q_OS_MAC
-    int shade = isActiveWindow() ? 178 : 225;
-#else
-    int shade = isActiveWindow() ? 200 : 250;
-#endif
-    QLinearGradient linearGradient(0, 0, 0, 23);
-    linearGradient.setColorAt(0.0, QColor(shade,shade,shade, 100));
-    linearGradient.setColorAt(0.5, QColor(shade,shade,shade, 180));
-    linearGradient.setColorAt(1.0, QColor(shade,shade,shade, 255));
-    linearGradient.setSpread(QGradient::PadSpread);
+    QLinearGradient linearGradient = GCColor::linearGradient(23, isActiveWindow());
     painter.setPen(Qt::NoPen);
     painter.fillRect(all, linearGradient);
 
@@ -359,9 +350,27 @@ GcScopeButton::paintEvent(QPaintEvent *)
     }
 
     // now paint the text
-    painter.setPen((underMouse() || checked) ? QColor(50,50,50) : Qt::white);
-    painter.drawText(off, text, Qt::AlignVCenter | Qt::AlignCenter);
-    painter.setPen((underMouse() || checked) ? QColor(240,240,240) : QColor(30,30,30,200));
+    // don't do all that offset nonsense for flat style
+    // set fg checked and unchecked colors
+    QColor checkedCol(240,240,240), uncheckedCol(30,30,30,200);
+    if (!GCColor::isFlat()) {
+
+        // metal style
+        painter.setPen((underMouse() || checked) ? QColor(50,50,50) : Qt::white);
+        painter.drawText(off, text, Qt::AlignVCenter | Qt::AlignCenter);
+
+    } else {
+
+        // adjust colors if flat and dark
+        if (GCColor::luminance(GColor(CCHROME)) < 127) {
+            // dark background so checked is white and unchecked is light gray
+            checkedCol = QColor(Qt::white);
+            uncheckedCol = QColor(Qt::lightGray);
+        }
+    }
+
+    // draw the text
+    painter.setPen((underMouse() || checked) ? checkedCol : uncheckedCol);
     painter.drawText(body, text, Qt::AlignVCenter | Qt::AlignCenter);
     painter.restore();
 }

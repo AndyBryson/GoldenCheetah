@@ -82,6 +82,8 @@ class MainWindow : public QMainWindow
 
     public slots:
 
+        bool eventFilter(QObject*,QEvent*);
+
         // GUI
 #ifndef Q_OS_MAC
         void toggleFullScreen();
@@ -188,6 +190,8 @@ class MainWindow : public QMainWindow
         // save and restore state to context
         void saveState(Context *);
         void restoreState(Context *);
+
+        void configChanged();
 
     private:
 

@@ -23,10 +23,14 @@
 #include "RideNavigator.h"
 #include "RideNavigatorProxy.h"
 #include "SearchFilterBox.h"
+#include "TabView.h"
 
 #include <QtGui>
 #include <QString>
 #include <QTreeView>
+#include <QStyle>
+#include <QStyleFactory>
+#include <QScrollBar>
 
 RideNavigator::RideNavigator(Context *context, bool mainwindow) : context(context), active(false), _groupBy(-1)
 {
@@ -37,6 +41,7 @@ RideNavigator::RideNavigator(Context *context, bool mainwindow) : context(contex
     _sortByIndex = 2;
     _sortByOrder = 0;
     currentColumn = -1;
+    this->mainwindow = mainwindow;
     _groupBy = -1;
     fontHeight = QFontMetrics(QFont()).height();
     ColorEngine ce(context);
@@ -85,6 +90,10 @@ RideNavigator::RideNavigator(Context *context, bool mainwindow) : context(contex
     tableView->header()->setStretchLastSection(false);
     tableView->header()->setMinimumSectionSize(0);
     tableView->header()->setFocusPolicy(Qt::NoFocus);
+#ifdef Q_OS_WIN
+    QStyle *cde = QStyleFactory::create(OS_STYLE);
+    tableView->verticalScrollBar()->setStyle(cde);
+#endif
 #ifdef Q_OS_MAC
     tableView->header()->setSortIndicatorShown(false); // blue looks nasty
     tableView->setAttribute(Qt::WA_MacShowFocusRect, 0);
@@ -103,7 +112,7 @@ RideNavigator::RideNavigator(Context *context, bool mainwindow) : context(contex
     connect(context->athlete->metricDB, SIGNAL(dataChanged()), this, SLOT(refresh()));
 
     // refresh when config changes (metric/imperial?)
-    connect(context, SIGNAL(configChanged()), this, SLOT(refresh()));
+    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
     // refresh when rides added/removed
     connect(context, SIGNAL(rideAdded(RideItem*)), this, SLOT(refresh()));
     connect(context, SIGNAL(rideDeleted(RideItem*)), this, SLOT(refresh()));
@@ -129,6 +138,9 @@ RideNavigator::RideNavigator(Context *context, bool mainwindow) : context(contex
 
     // we accept drag and drop operations
     setAcceptDrops(true);
+
+    // lets go
+    configChanged();
 }
 
 RideNavigator::~RideNavigator()
@@ -138,23 +150,58 @@ RideNavigator::~RideNavigator()
 }
 
 void
-RideNavigator::refresh()
+RideNavigator::configChanged()
 {
     ColorEngine ce(context);
     fontHeight = QFontMetrics(QFont()).height();
     reverseColor = ce.reverseColor;
 
+    // hide ride list scroll bar ?
+#ifndef Q_OS_MAC
+    tableView->setStyleSheet(TabView::ourStyleSheet());
+    if (mainwindow) {
+        if (appsettings->value(this, GC_RIDESCROLL, true).toBool() == false)
+            tableView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        else 
+            tableView->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        if (appsettings->value(this, GC_RIDEHEAD, true).toBool() == false)
+            tableView->header()->hide();
+        else 
+            tableView->header()->show();
+
+        tableView->header()->setStyleSheet(
+        QString("QHeaderView { background-color: %1; color: %2; }"
+                "QHeaderView::section { background-color: %1; color: %2; "
+                " border: 0px ; }")
+                .arg(GColor(CPLOTBACKGROUND).name())
+                .arg(GCColor::invertColor(GColor(CPLOTBACKGROUND)).name()));
+    }
+
+#endif
+
+    refresh();
+}
+
+void
+RideNavigator::refresh()
+{
     context->athlete->sqlModel->select();
     while (context->athlete->sqlModel->canFetchMore(QModelIndex()))
         context->athlete->sqlModel->fetchMore(QModelIndex());
 
     active=false;
+
+    setWidth(geometry().width());
     rideTreeSelectionChanged();
 }
 
 void
 RideNavigator::resizeEvent(QResizeEvent*)
 {
+    // ignore if main window .. we get told to resize
+    // by the splitter mover
+    if (mainwindow) return;
+
     setWidth(geometry().width());
 }
 
@@ -293,6 +340,13 @@ void RideNavigator::setWidth(int x)
     if (tableView->verticalScrollBar()->isVisible())
         x -= tableView->verticalScrollBar()->width()
              + 0 ; // !! no longer account for content margins of 3,3,3,3 was + 6
+#else // we're on a mac with QT5 .. so dodgy way of spotting preferences for scrollbars...
+      // this is a nasty hack, to see if the 'always on' preference for scrollbars is set we
+      // look at the scrollbar width which is 15 in this case (it is 16 when they 'appear' when
+      // needed. No doubt this will change over time and need to be fixed by referencing the
+      // Mac system preferences via an NSScroller - but that will be a massive hassle.
+      if (tableView->verticalScrollBar()->isVisible() && tableView->verticalScrollBar()->width() == 15)
+          x -= tableView->verticalScrollBar()->width() + 0 ; 
 #endif
 
     // take the margins into accopunt top
@@ -362,7 +416,6 @@ void RideNavigator::setWidth(int x)
 
     // make the scrollbars go away
     tableView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    tableView->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     active = false;
 }
@@ -448,7 +501,8 @@ RideNavigator::eventFilter(QObject *object, QEvent *e)
     {
         case QEvent::ContextMenu:
         {
-            borderMenu(((QMouseEvent *)e)->pos());
+            //borderMenu(((QMouseEvent *)e)->pos());
+            borderMenu(mapFromGlobal(QCursor::pos()));
             return true; // I'll take that thanks
             break;
         }
@@ -888,8 +942,13 @@ QSize NavigatorCellDelegate::sizeHint(const QStyleOptionViewItem & /*option*/, c
 void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
                          const QModelIndex &index) const
 {
+
     // paint background for user defined color ?
     bool rideBG = appsettings->value(this,GC_RIDEBG,false).toBool();
+
+    // state of item
+    bool hover = option.state & QStyle::State_MouseOver;
+    bool selected = option.state & QStyle::State_Selected;
 
     // format the cell depending upon what it is...
     QString columnName = rideNavigator->tableView->model()->headerData(index.column(), Qt::Horizontal).toString();
@@ -897,11 +956,11 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
     QString value;
 
     // are we a selected cell ? need to paint acordingly
-    bool selected = false;
-    if (rideNavigator->tableView->selectionModel()->selectedIndexes().count()) { // zero if no rides in list
-        if (rideNavigator->tableView->selectionModel()->selectedIndexes().value(0).row() == index.row())
-            selected = true;
-    }
+    //bool selected = false;
+    //if (rideNavigator->tableView->selectionModel()->selectedIndexes().count()) { // zero if no rides in list
+        //if (rideNavigator->tableView->selectionModel()->selectedIndexes().value(0).row() == index.row())
+            //selected = true;
+    //}
 
     if ((m=rideNavigator->columnMetrics.value(columnName, NULL)) != NULL) {
         // format as a metric
@@ -965,7 +1024,9 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
 
         myOption.displayAlignment = Qt::AlignLeft | Qt::AlignTop;
         QRectF bigger(myOption.rect.x(), myOption.rect.y(), myOption.rect.width()+1, myOption.rect.height()+1);
-        painter->fillRect(bigger, rideBG ? userColor : background);
+
+        if (hover) painter->fillRect(myOption.rect, QColor(Qt::lightGray));
+        else painter->fillRect(bigger, rideBG ? userColor : background);
 
         // clear first
         drawDisplay(painter, myOption, myOption.rect, ""); //added
@@ -980,6 +1041,7 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
         painter->drawLine(0,myOption.rect.y(),rideNavigator->pwidth-1,myOption.rect.y());
         painter->drawLine(0,myOption.rect.y()+myOption.rect.height(),rideNavigator->pwidth-1,myOption.rect.y()+myOption.rect.height());
         painter->drawLine(0,myOption.rect.y()+myOption.rect.height(),0,myOption.rect.y()+myOption.rect.height());
+        painter->drawLine(rideNavigator->pwidth-1, myOption.rect.y(), rideNavigator->pwidth-1, myOption.rect.y()+myOption.rect.height());
 
         // indent first column and draw all in plotmarker color
         myOption.rect.setHeight(rideNavigator->fontHeight + 2); //added
@@ -990,7 +1052,8 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
         painter->setFont(boldened);
         if (!selected) {
             // not selected, so invert ride plot color
-            painter->setPen(rideBG ? rideNavigator->reverseColor : userColor);
+            if (hover) painter->setPen(QColor(Qt::black));
+            else painter->setPen(rideBG ? rideNavigator->reverseColor : userColor);
         }
 
         QRect normal(myOption.rect.x(), myOption.rect.y()+1, myOption.rect.width(), myOption.rect.height());
@@ -1006,7 +1069,7 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
 
         // now get the calendar text to appear ...
         if (calendarText != "") {
-            QRect high(myOption.rect.x()+myOption.rect.width() - 5, myOption.rect.y(), 5, (rideNavigator->fontHeight+2) * 3);
+            QRect high(myOption.rect.x()+myOption.rect.width() - 7, myOption.rect.y(), 7, (rideNavigator->fontHeight+2) * 3);
 
             myOption.rect.setX(0);
             myOption.rect.setY(myOption.rect.y() + rideNavigator->fontHeight + 2);//was +23
@@ -1014,8 +1077,10 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
             myOption.rect.setHeight(rideNavigator->fontHeight * 2); //was 36
             myOption.font.setPointSize(myOption.font.pointSize());
             myOption.font.setWeight(QFont::Normal);
-            //myOption.palette.setColor(QPalette::WindowText, userColor); //XXX
-            painter->fillRect(myOption.rect, rideBG ? userColor : GColor(CPLOTBACKGROUND)); //XXX
+
+            if (hover) painter->fillRect(myOption.rect, QColor(Qt::lightGray)); 
+            else painter->fillRect(myOption.rect, rideBG ? userColor : GColor(CPLOTBACKGROUND));
+
             drawDisplay(painter, myOption, myOption.rect, "");
             myOption.rect.setX(10); // wider notes display
             myOption.rect.setWidth(pwidth-20);// wider notes display
@@ -1023,17 +1088,29 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
             QPen isColor = painter->pen();
             if (!selected) {
                 // not selected, so invert ride plot color
-                painter->setPen(rideBG ? rideNavigator->reverseColor : GCColor::invertColor(GColor(CPLOTBACKGROUND)));
+                if (hover) painter->setPen(QPen(Qt::black));
+                else painter->setPen(rideBG ? rideNavigator->reverseColor : GCColor::invertColor(GColor(CPLOTBACKGROUND)));
             }
             painter->drawText(myOption.rect, Qt::AlignLeft | Qt::TextWordWrap, calendarText);
             painter->setPen(isColor);
 
 #if (defined (Q_OS_MAC) && (QT_VERSION >= 0x050000)) // on QT5 the scrollbars have no width
-            if (!selected && !rideBG && high.x()+10 > rideNavigator->geometry().width() && userColor != GColor(CPLOTMARKER)) {
+            if (!selected && !rideBG && high.x()+12 > rideNavigator->geometry().width() && userColor != GColor(CPLOTMARKER)) {
 #else
-            if (!selected && !rideBG && high.x()+30 > rideNavigator->geometry().width() && userColor != GColor(CPLOTMARKER)) {
+            if (!selected && !rideBG && high.x()+32 > rideNavigator->geometry().width() && userColor != GColor(CPLOTMARKER)) {
 #endif
                 painter->fillRect(high, userColor);
+            } else {
+
+                // border
+                QPen rpen;
+                rpen.setWidth(1);
+                rpen.setColor(GColor(CPLOTGRID));
+                QPen isColor = painter->pen();
+                QFont isFont = painter->font();
+                painter->setPen(rpen);
+                painter->drawLine(rideNavigator->pwidth-1, myOption.rect.y(), rideNavigator->pwidth-1, myOption.rect.y()+myOption.rect.height());
+                painter->setPen(isColor);
             }
         }
 
@@ -1047,8 +1124,8 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
             painter->fillRect(myOption.rect, GColor(CPLOTBACKGROUND));
         }
         QPen isColor = painter->pen();
-        painter->setPen(QPen(Qt::green));
-        myOption.palette.setColor(QPalette::WindowText, QColor(Qt::green)); //XXX
+        painter->setPen(QPen(GColor(CPLOTMARKER)));
+        myOption.palette.setColor(QPalette::WindowText, QColor(GColor(CPLOTMARKER))); //XXX
         painter->drawText(myOption.rect, value);
         painter->setPen(isColor);
     }

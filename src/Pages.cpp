@@ -842,8 +842,8 @@ DevicePage::DevicePage(QWidget *parent, Context *context) : QWidget(parent), con
 
     deviceList = new QTableView(this);
 #ifdef Q_OS_MAC
-    addButton->setText("Add");
-    delButton->setText("Delete");
+    addButton->setText(tr("Add"));
+    delButton->setText(tr("Delete"));
     deviceList->setAttribute(Qt::WA_MacShowFocusRect, 0);
 #else
     addButton->setFixedSize(20,20);
@@ -1117,6 +1117,15 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
 {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
+    // chrome style -- metal or flat currently offered
+    QLabel *chromeLabel = new QLabel(tr("Styling" ));
+    chromeCombo = new QComboBox(this);
+    chromeCombo->addItem(tr("Metallic (Mac)"));
+    chromeCombo->addItem(tr("Flat Color (Windows)"));
+    QString chrome = appsettings->value(this, GC_CHROME, "Mac").toString();
+    if (chrome == "Mac") chromeCombo->setCurrentIndex(0);
+    if (chrome == "Flat") chromeCombo->setCurrentIndex(1);
+
     themes = new QTreeWidget;
     themes->headerItem()->setText(0, tr("Swatch"));
     themes->headerItem()->setText(1, tr("Name"));
@@ -1142,11 +1151,19 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
     QLabel *antiAliasLabel = new QLabel(tr("Antialias"));
     antiAliased = new QCheckBox;
     antiAliased->setChecked(appsettings->value(this, GC_ANTIALIAS, false).toBool());
+#ifndef Q_OS_MAC
+    QLabel *rideScrollLabel = new QLabel(tr("Ride Scrollbar"));
+    rideScroll = new QCheckBox;
+    rideScroll->setChecked(appsettings->value(this, GC_RIDESCROLL, true).toBool());
+    QLabel *rideHeadLabel = new QLabel(tr("Ride Headings"));
+    rideHead = new QCheckBox;
+    rideHead->setChecked(appsettings->value(this, GC_RIDEHEAD, true).toBool());
+#endif
     lineWidth = new QDoubleSpinBox;
     lineWidth->setMaximum(5);
     lineWidth->setMinimum(0.5);
     lineWidth->setSingleStep(0.5);
-    applyTheme = new QPushButton("Apply Theme");
+    applyTheme = new QPushButton(tr("Apply Theme"));
     lineWidth->setValue(appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble());
 
     QLabel *lineWidthLabel = new QLabel(tr("Line Width"));
@@ -1203,17 +1220,17 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
     calendar->setCurrentFont(font);
 
 #ifdef Q_OS_MAC
-    defaultSize->setCurrentIndex((appsettings->value(this, GC_FONT_DEFAULT_SIZE, 12).toInt() -7) / 2);
-    titlesSize->setCurrentIndex((appsettings->value(this, GC_FONT_TITLES_SIZE, 12).toInt() -7) / 2);
-    chartmarkersSize->setCurrentIndex((appsettings->value(this, GC_FONT_CHARTMARKERS_SIZE, 12).toInt() -7) / 2);
-    chartlabelsSize->setCurrentIndex((appsettings->value(this, GC_FONT_CHARTLABELS_SIZE, 12).toInt() -7) / 2);
-    calendarSize->setCurrentIndex((appsettings->value(this, GC_FONT_CALENDAR_SIZE, 12).toInt() -7) / 2);
+    defaultSize->setCurrentIndex((appsettings->value(this, GC_FONT_DEFAULT_SIZE, 10).toInt() -7) / 2);
+    titlesSize->setCurrentIndex((appsettings->value(this, GC_FONT_TITLES_SIZE, 10).toInt() -7) / 2);
+    chartmarkersSize->setCurrentIndex((appsettings->value(this, GC_FONT_CHARTMARKERS_SIZE, 8).toInt() -7) / 2);
+    chartlabelsSize->setCurrentIndex((appsettings->value(this, GC_FONT_CHARTLABELS_SIZE, 8).toInt() -7) / 2);
+    calendarSize->setCurrentIndex((appsettings->value(this, GC_FONT_CALENDAR_SIZE, 8).toInt() -7) / 2);
 #else
-    defaultSize->setCurrentIndex((appsettings->value(this, GC_FONT_DEFAULT_SIZE, 12).toInt() -6) / 2);
-    titlesSize->setCurrentIndex((appsettings->value(this, GC_FONT_TITLES_SIZE, 12).toInt() -6) / 2);
-    chartmarkersSize->setCurrentIndex((appsettings->value(this, GC_FONT_CHARTMARKERS_SIZE, 12).toInt() -6) / 2);
-    chartlabelsSize->setCurrentIndex((appsettings->value(this, GC_FONT_CHARTLABELS_SIZE, 12).toInt() -6) / 2);
-    calendarSize->setCurrentIndex((appsettings->value(this, GC_FONT_CALENDAR_SIZE, 12).toInt() -6) / 2);
+    defaultSize->setCurrentIndex((appsettings->value(this, GC_FONT_DEFAULT_SIZE, 10).toInt() -6) / 2);
+    titlesSize->setCurrentIndex((appsettings->value(this, GC_FONT_TITLES_SIZE, 10).toInt() -6) / 2);
+    chartmarkersSize->setCurrentIndex((appsettings->value(this, GC_FONT_CHARTMARKERS_SIZE, 8).toInt() -6) / 2);
+    chartlabelsSize->setCurrentIndex((appsettings->value(this, GC_FONT_CHARTLABELS_SIZE, 8).toInt() -6) / 2);
+    calendarSize->setCurrentIndex((appsettings->value(this, GC_FONT_CALENDAR_SIZE, 8).toInt() -6) / 2);
 #endif
 
     QGridLayout *grid = new QGridLayout;
@@ -1226,6 +1243,12 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
     grid->addWidget(lineWidth, 0,4);
     grid->addWidget(antiAliasLabel, 1,3);
     grid->addWidget(antiAliased, 1,4);
+#ifndef Q_OS_MAC
+    grid->addWidget(rideScrollLabel, 2,3);
+    grid->addWidget(rideScroll, 2,4);
+    grid->addWidget(rideHeadLabel, 3,3);
+    grid->addWidget(rideHead, 3,4);
+#endif
 
     grid->addWidget(markerLabel, 2,0);
     grid->addWidget(chartLabel, 3,0);
@@ -1243,7 +1266,8 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
     grid->addWidget(chartlabelsSize, 3,2, Qt::AlignVCenter|Qt::AlignLeft);
     grid->addWidget(calendarSize, 4,2, Qt::AlignVCenter|Qt::AlignLeft);
 
-    grid->addWidget(applyTheme, 4,4);
+    grid->addWidget(chromeLabel, 5, 0);
+    grid->addWidget(chromeCombo, 5, 1, Qt::AlignVCenter|Qt::AlignLeft);
 
     grid->setColumnStretch(0,1);
     grid->setColumnStretch(1,4);
@@ -1256,6 +1280,7 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
     colorTab = new QTabWidget(this);
     colorTab->addTab(themes, tr("Theme"));
     colorTab->addTab(colors, tr("Colors"));
+    colorTab->setCornerWidget(applyTheme);
 
     mainLayout->addWidget(colorTab);
 
@@ -1341,7 +1366,7 @@ ColorsPage::applyThemeClicked()
                             // we make it barely distinguishable from background
                 {
                     QColor bg = theme.colors[0];
-                    if(bg == QColor(Qt::black)) color = bg.lighter(110);
+                    if(bg == QColor(Qt::black)) color = QColor(30,30,30);
                     else color = bg.darker(110);
                 }
                 break;
@@ -1389,8 +1414,23 @@ ColorsPage::applyThemeClicked()
 void
 ColorsPage::saveClicked()
 {
+    // chrome style only has 2 types for now
+    switch(chromeCombo->currentIndex()) {
+    default:
+    case 0:
+        appsettings->setValue(GC_CHROME, "Mac");
+        break;
+    case 1:
+        appsettings->setValue(GC_CHROME, "Flat");
+        break;
+    }
+
     appsettings->setValue(GC_LINEWIDTH, lineWidth->value());
     appsettings->setValue(GC_ANTIALIAS, antiAliased->isChecked());
+#ifndef Q_OS_MAC
+    appsettings->setValue(GC_RIDESCROLL, rideScroll->isChecked());
+    appsettings->setValue(GC_RIDEHEAD, rideHead->isChecked());
+#endif
 
     // run down and get the current colors and save
     for (int i=0; colorSet[i].name != ""; i++) {
@@ -2912,7 +2952,9 @@ CPPage::addClicked()
     }
 
     //int index = ranges->invisibleRootItem()->childCount();
-    int index = zonePage->zones.addZoneRange(dateEdit->date(), cpEdit->value(), wEdit->value());
+    int wp = wEdit->value() ? wEdit->value() : 20000;
+    if (wp < 1000) wp *= 1000; // entered in kJ we want joules
+    int index = zonePage->zones.addZoneRange(dateEdit->date(), cpEdit->value(), wp);
 
     // new item
     QTreeWidgetItem *add = new QTreeWidgetItem;
@@ -2926,8 +2968,6 @@ CPPage::addClicked()
     add->setText(1, QString("%1").arg(cpEdit->value()));
 
     // W'
-    int wp = wEdit->value();
-    if (wp < 1000) wp *= 1000; // entered in kJ we want joules
     add->setText(2, QString("%1").arg(wp));
 
 }
@@ -3177,6 +3217,7 @@ HrZonePage::saveClicked()
 HrSchemePage::HrSchemePage(HrZonePage* zonePage) : zonePage(zonePage)
 {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
+    mainLayout->setSpacing(5);
 
     addButton = new QPushButton(tr("+"));
     deleteButton = new QPushButton(tr("-"));
@@ -3356,6 +3397,7 @@ LTPage::LTPage(HrZonePage* zonePage) : zonePage(zonePage)
     active = false;
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
+    mainLayout->setSpacing(5);
 
     addButton = new QPushButton(tr("+"));
     deleteButton = new QPushButton(tr("-"));

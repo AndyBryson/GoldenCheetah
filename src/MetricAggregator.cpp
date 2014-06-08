@@ -465,7 +465,7 @@ MetricAggregator::getRideMetrics(QString filename)
 }
 
 void
-MetricAggregator::refreshCPModelMetrics()
+MetricAggregator::refreshCPModelMetrics(bool bg)
 {
     // this needs to be done once all the other metrics
     // Calculate a *monthly* estimate of CP, W' etc using
@@ -512,13 +512,18 @@ MetricAggregator::refreshCPModelMetrics()
 
     // if we have a progress dialog lets update the bar to show
     // progress for the model parameters
-    QProgressDialog *bar = new QProgressDialog(tr("Update Model Estimates"), tr("Abort"), 0, (lastYear*12 + lastMonth) - (year*12 + month));
-    bar->setWindowFlags(bar->windowFlags() | Qt::FramelessWindowHint);
-    bar->setWindowModality(Qt::WindowModal);
-    bar->setMinimumDuration(0);
-    bar->setValue(0);
-    bar->show(); // lets hide until elapsed time is > 6 seconds
-    QApplication::processEvents();
+#if (!defined Q_OS_MAC) || (defined QT_NOBUG39038) || (QT_VERSION < 0x050300) // QTBUG 39038 !!!
+    QProgressDialog *bar;
+    if (!bg) {
+        bar = new QProgressDialog(tr("Update Model Estimates"), tr("Abort"), 1, (lastYear*12 + lastMonth) - (year*12 + month));
+        bar->setWindowFlags(bar->windowFlags() | Qt::FramelessWindowHint);
+        bar->setWindowModality(Qt::WindowModal);
+        bar->setMinimumDuration(0);
+        bar->setValue(1);
+        bar->show(); // lets hide until elapsed time is > 6 seconds
+        QApplication::processEvents();
+    }
+#endif
 
     QList< QVector<float> > months;
 
@@ -602,8 +607,12 @@ MetricAggregator::refreshCPModelMetrics()
             month ++;
         }
 
+#if (!defined Q_OS_MAC) || (defined QT_NOBUG39038) || (QT_VERSION < 0x050300) // QTBUG 39038 !!!
         // show some progress
-        bar->setValue(count);
+        if (!bg) bar->setValue(count);
+#endif
     }
-    delete bar;
+#if (!defined Q_OS_MAC) || (defined QT_NOBUG39038) || (QT_VERSION < 0x050300) // QTBUG 39038 !!!
+    if (!bg) delete bar;
+#endif
 }

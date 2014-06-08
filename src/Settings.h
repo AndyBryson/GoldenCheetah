@@ -85,7 +85,10 @@
 #define GC_BLANK_DIARY    "blank/diary"
 #define GC_LINEWIDTH      "linewidth"
 #define GC_ANTIALIAS      "antialias"
+#define GC_CHROME         "chrome" // mac or flat only so far
 #define GC_RIDEBG         "rideBG"
+#define GC_RIDESCROLL     "rideScroll"
+#define GC_RIDEHEAD       "rideHead"
 #define GC_DROPSHADOW     "dropshadow"
 #define GC_SHADEZONES     "shadezones"
 #define GC_PROXYTYPE      "proxy/type"
@@ -239,4 +242,9 @@ extern int OperatingSystem;
 #define OSX     3
 #define OPENBSD 4
 
+#if QT_VERSION > 0x050000
+#define OS_STYLE "Fusion"
+#else
+#define OS_STYLE "Plastique"
+#endif
 #endif // _GC_Settings_h

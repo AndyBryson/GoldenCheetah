@@ -26,6 +26,7 @@
 #include "TimeUtils.h"
 #include "Units.h"
 #include "Zones.h"
+#include "PDModel.h"
 #include "MetricAggregator.h"
 #include "DBAccess.h"
 #include <QtGui>
@@ -108,6 +109,8 @@ RideSummaryWindow::RideSummaryWindow(Context *context, bool ridesummary) :
 
     }
     connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(this, SIGNAL(doRefresh()), this, SLOT(refresh()));
+
     setChartLayout(vlayout);
     configChanged(); // set colors
 }
@@ -536,50 +539,46 @@ RideSummaryWindow::htmlSummary()
         summary += "</table></td>";
     }
 
-//XXX TOO SLOW -- NEED TO THINK ABOUT DOING THIS IN BACKGROUND
-#if 0
-    // now add in the model parameters if we are not in ridesummary mode...
-    // if we're summarising a range we need to get the model parameters refreshed
-    if (!ridesummary && bestsCache == NULL) {
+    // get the PDEStimates for this athlete
+    if (context->athlete->PDEstimates.count() == 0) {
 
-        // update the model if neccessary
-        bestsCache = new RideFileCache(context, current.from, current.to, filtered, filters, true);
+        // ugh .. refresh in background
+        WPrimeString = CPString = FTPString = PMaxString = "-";
+        QFuture<void> future = QtConcurrent::run(this, &RideSummaryWindow::getPDEstimates);
 
-        // use sensible intervals for parameter selection
-        cpModel = ecp->deriveExtendedCP_5_3_Parameters(true, bestsCache,
-                  RideFile::watts, 20.0f/60.0f, 90.0f/60.0f, 120.0f/60.0f, 
-                  300.0f/60.0f, 600.0f/60.0f, 3000.0f/60.0f, 4000.0f/60.0f, 
-                  30000.0f/60.0f);
+    } else {
 
-        // lets get a table going
-        summary += "<td align=\"center\" valign=\"top\" width=\"%1%%\"><table>"
-            "<tr><td align=\"center\" colspan=2><h3>%2</h3></td></tr>";
-        summary = summary.arg(90 / columnNames.count()+1);
-        summary = summary.arg(tr("Model"));
-
-        // W;
-        summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
-                .arg("W' (kJ)")
-                .arg(cpModel.etau * cpModel.ecp * 60.0f / 1000.0, 0, 'f', 1);
-
-        // CP;
-        summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
-                .arg("CP (watts)")
-                .arg(int(cpModel.ecp));
-
-        // FTP/MMP60;
-        summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
-                .arg("FTP / MMP60 (watts)")
-                .arg(int(cpModel.mmp60));
-
-        // Pmax;
-        summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
-                .arg("P-max (watts)")
-                .arg(int(cpModel.pMax));
-
-        summary += "</table></td>";
+        // set from cached values
+        getPDEstimates();
     }
-#endif
+
+    // lets get a table going
+    summary += "<td align=\"center\" valign=\"top\" width=\"%1%%\"><table>"
+        "<tr><td align=\"center\" colspan=2><h3>%2</h3></td></tr>";
+    summary = summary.arg(90 / columnNames.count()+1);
+    summary = summary.arg(tr("Model"));
+
+    // W;
+    summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
+            .arg("W' (kJ)")
+            .arg(WPrimeString);
+
+    // CP;
+    summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
+            .arg("CP (watts)")
+            .arg(CPString);
+
+    // FTP/MMP60;
+    summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
+            .arg("FTP (watts)")
+            .arg(FTPString);
+
+    // Pmax;
+    summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
+            .arg("P-max (watts)")
+            .arg(PMaxString);
+
+    summary += "</table></td>";
 
     summary += "</tr></table>";
 
@@ -956,6 +955,75 @@ RideSummaryWindow::htmlSummary()
 
     summary += tr("<br>FTP, TSS, NP and IF are trademarks of Peaksware LLC</center>");
     return summary;
+}
+
+void
+RideSummaryWindow::getPDEstimates()
+{
+    bool ping = false;
+    double lowWPrime=0, highWPrime=0,
+           lowCP=0, highCP=0,
+           lowFTP=0, highFTP=0,
+           lowPMax=0, highPMax=0;
+
+    // refresh if needed
+    if (context->athlete->PDEstimates.count() == 0) {
+        ping = true;
+        context->athlete->metricDB->refreshCPModelMetrics(true); //true = bg ...
+    }
+
+    // loop through and get ...
+    foreach(PDEstimate est, context->athlete->PDEstimates) {
+
+        // We only use the extended model for now
+        if (est.model != "Ext" ) continue;
+
+        // summarising a season or date range
+        if (!ridesummary && (est.from > myDateRange.to || est.to < myDateRange.from)) continue;
+
+        // it definitely wasnt during our period
+        if (!ridesummary && !((est.from >= myDateRange.from && est.from <= myDateRange.to) || (est.to >= myDateRange.from && est.to <= myDateRange.to) ||
+            (est.from <= myDateRange.from && est.to >= myDateRange.to))) continue;
+
+
+        // summarising a ride
+        if (ridesummary && (!myRideItem || (myRideItem->dateTime.date() < est.from || myRideItem->dateTime.date() > est.to))) continue;
+
+        // set low
+        if (!lowWPrime || est.WPrime < lowWPrime) lowWPrime = est.WPrime;
+        if (!lowCP || est.CP < lowCP) lowCP = est.CP;
+        if (!lowFTP || est.FTP < lowFTP) lowFTP = est.FTP;
+        if (!lowPMax || est.PMax < lowPMax) lowPMax = est.PMax;
+
+        // set high
+        if (!highWPrime || est.WPrime > highWPrime) highWPrime = est.WPrime;
+        if (!highCP || est.CP > highCP) highCP = est.CP;
+        if (!highFTP || est.FTP > highFTP) highFTP = est.FTP;
+        if (!highPMax || est.PMax > highPMax) highPMax = est.PMax;
+    }
+
+    // ok, so lets set the string to either
+    // N/A => when its not available
+    // low - high => when its a range
+    // val => when low = high
+    if (!lowWPrime && !highWPrime) WPrimeString = "N/A";
+    else if (lowWPrime != highWPrime) WPrimeString = QString ("%1 - %2").arg(lowWPrime/1000, 0, 'f', 1).arg(highWPrime/1000, 0, 'f', 1);
+    else WPrimeString = QString("%1").arg(highWPrime/1000, 0, 'f', 1);
+
+    if (!lowCP && !highCP) CPString = "N/A";
+    else if (lowCP != highCP) CPString = QString ("%1 - %2").arg(lowCP).arg(highCP);
+    else CPString = QString("%1").arg(highCP);
+
+    if (!lowFTP && !highFTP) FTPString = "N/A";
+    else if (lowFTP != highFTP) FTPString = QString ("%1 - %2").arg(lowFTP).arg(highFTP);
+    else FTPString = QString("%1").arg(highFTP);
+
+    if (!lowPMax && !highPMax) PMaxString = "N/A";
+    else if (lowPMax != highPMax) PMaxString = QString ("%1 - %2").arg(lowPMax).arg(highPMax);
+    else PMaxString = QString("%1").arg(highPMax);
+
+    // now refresh !
+    if (ping) emit doRefresh();
 }
 
 QString

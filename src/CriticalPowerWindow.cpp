@@ -61,11 +61,19 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     rPercent->setText(tr("Percentage of Best"));
     rHeat = new QCheckBox(this);
     rHeat->setText(tr("Show Heat"));
+    rDelta = new QCheckBox(this);
+    rDelta->setText(tr("Delta compare"));
+    rDelta->hide();
+    rDeltaPercent = new QCheckBox(this);
+    rDeltaPercent->setText(tr("as percentage"));
+    rDeltaPercent->hide();
 
     QVBoxLayout *checks = new QVBoxLayout;
     checks->addStretch();
     checks->addWidget(rPercent);
     checks->addWidget(rHeat);
+    checks->addWidget(rDelta);
+    checks->addWidget(rDeltaPercent);
     checks->addStretch();
 
     revealLayout->addStretch();
@@ -449,6 +457,8 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     connect(shadeIntervalsCheck, SIGNAL(stateChanged(int)), this, SLOT(shadeIntervalsChanged(int)));
     connect(showHeatCheck, SIGNAL(stateChanged(int)), this, SLOT(showHeatChanged(int)));
     connect(rHeat, SIGNAL(stateChanged(int)), this, SLOT(rHeatChanged(int)));
+    connect(rDelta, SIGNAL(stateChanged(int)), this, SLOT(rDeltaChanged()));
+    connect(rDeltaPercent, SIGNAL(stateChanged(int)), this, SLOT(rDeltaChanged()));
     connect(showHeatByDateCheck, SIGNAL(stateChanged(int)), this, SLOT(showHeatByDateChanged(int)));
     connect(showPercentCheck, SIGNAL(stateChanged(int)), this, SLOT(showPercentChanged(int)));
     connect(showBestCheck, SIGNAL(stateChanged(int)), this, SLOT(showBestChanged(int)));
@@ -458,7 +468,8 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     connect(dateSetting, SIGNAL(useThruToday()), this, SLOT(useThruToday()));
     connect(dateSetting, SIGNAL(useStandardRange()), this, SLOT(useStandardRange()));
 
-    modelParametersChanged();
+    // set widgets and model parameters
+    modelChanged();
 
     configChanged(); // get colors set
 }
@@ -733,12 +744,23 @@ CriticalPowerWindow::forceReplot()
         // hide in compare mode
         helperWidget()->hide();
 
+        rPercent->hide();
+        rHeat->hide();
+        rDelta->show();
+        rDeltaPercent->show();
+
     } else {
 
         // show helper if we're showing power
         CriticalSeriesType series = static_cast<CriticalSeriesType>(seriesCombo->itemData(seriesCombo->currentIndex()).toInt());
         if ((series == watts || series == wattsKg) && modelCombo->currentIndex() >= 1) helperWidget()->show();
         else helperWidget()->hide();
+
+        // these are allowed outside of compare mode
+        rPercent->show();
+        rHeat->show();
+        rDelta->hide();
+        rDeltaPercent->hide();
     }
 
     if (rangemode) {
@@ -1076,9 +1098,18 @@ CriticalPowerWindow::event(QEvent *event)
     // nasty nasty nasty hack to move widgets as soon as the widget geometry
     // is set properly by the layout system, by default the width is 100 and 
     // we wait for it to be set properly then put our helper widget on the RHS
-    if (event->type() == QEvent::Resize && geometry().width() != 100 && firstShow) {
-        firstShow = false;
-        helperWidget()->move(mainWidget()->geometry().width()-275, 50);
+    if (event->type() == QEvent::Resize && geometry().width() != 100) {
+
+        // put somewhere nice on first show
+        if (firstShow) {
+            firstShow = false;
+            helperWidget()->move(mainWidget()->geometry().width()-275, 50);
+        }
+
+        // if off the screen move on screen
+        if (helperWidget()->geometry().x() > geometry().width()) {
+            helperWidget()->move(mainWidget()->geometry().width()-275, 50);
+        }
     }
     return QWidget::event(event);
 }
@@ -1511,6 +1542,16 @@ void
 CriticalPowerWindow::rHeatChanged(int check)
 {
     showHeatCheck->setChecked(check);
+}
+
+void
+CriticalPowerWindow::rDeltaChanged()
+{
+    cpPlot->setShowDelta(rDelta->isChecked(), rDeltaPercent->isChecked());
+
+    // redraw
+    if (rangemode) dateRangeChanged(DateRange());
+    else cpPlot->setRide(currentRide);
 }
 
 void
