@@ -483,7 +483,7 @@ MetricAggregator::refreshCPModelMetrics(bool bg)
 
     // what dates have any power data ?
     QSqlQuery query(dbaccess->connection());
-    bool rc = query.exec("SELECT ride_date FROM metrics WHERE ZData LIKE '%P%' ORDER BY ride_date;");
+    bool rc = query.exec("SELECT ride_date FROM metrics WHERE present LIKE '%P%' ORDER BY ride_date;");
     bool first = true;
     while (rc && query.next()) {
         if (first) {
@@ -494,8 +494,11 @@ MetricAggregator::refreshCPModelMetrics(bool bg)
         }
     }
 
-    // if we don't have 2 rides or more then skip this!
-    if (to == QDate()) return;
+    // if we don't have 2 rides or more then skip this but add a blank estimate
+    if (to == QDate()) {
+        context->athlete->PDEstimates << PDEstimate();
+        return;
+    }
 
     // run through each month with a rolling bests
     int year = from.year();
@@ -513,7 +516,7 @@ MetricAggregator::refreshCPModelMetrics(bool bg)
     // if we have a progress dialog lets update the bar to show
     // progress for the model parameters
 #if (!defined Q_OS_MAC) || (defined QT_NOBUG39038) || (QT_VERSION < 0x050300) // QTBUG 39038 !!!
-    QProgressDialog *bar;
+    QProgressDialog *bar = NULL;
     if (!bg) {
         bar = new QProgressDialog(tr("Update Model Estimates"), tr("Abort"), 1, (lastYear*12 + lastMonth) - (year*12 + month));
         bar->setWindowFlags(bar->windowFlags() | Qt::FramelessWindowHint);
@@ -526,6 +529,7 @@ MetricAggregator::refreshCPModelMetrics(bool bg)
 #endif
 
     QList< QVector<float> > months;
+    QList< QVector<float> > monthsKG;
 
     // set up the models we support
     CP2Model p2model(context);
@@ -539,18 +543,29 @@ MetricAggregator::refreshCPModelMetrics(bool bg)
     models << &multimodel;
     models << &extmodel;
 
+
     // loop through
     while (year < lastYear || (year == lastYear && month <= lastMonth)) {
 
         QDate firstOfMonth = QDate(year, month, 01);
         QDate lastOfMonth = firstOfMonth.addMonths(1).addDays(-1);
 
+        // let others know where we got to...
+        emit modelProgress(year, month);
+
         // months is a rolling 3 months sets of bests
-        months << RideFileCache::meanMaxPowerFor(context, firstOfMonth, lastOfMonth);
-        if (months.count() > 2) months.removeFirst();
+        QVector<float> wpk; // for getting the wpk values
+        months << RideFileCache::meanMaxPowerFor(context, wpk, firstOfMonth, lastOfMonth);
+        monthsKG << wpk;
+
+        if (months.count() > 2) {
+            months.removeFirst();
+            monthsKG.removeFirst();
+        }
 
         // create a rolling merge of all those months
         QVector<float> rollingBests = months[0];
+        QVector<float> rollingBestsKG = monthsKG[0];
 
         switch(months.count()) {
             case 1 : // first time through we are done!
@@ -558,18 +573,32 @@ MetricAggregator::refreshCPModelMetrics(bool bg)
 
             case 2 : // second time through just apply month(1)
                 {
+                    // watts
                     if (months[1].size() > rollingBests.size()) rollingBests.resize(months[1].size());
                     for (int i=0; i<months[1].size(); i++)
                         if (months[1][i] > rollingBests[i]) rollingBests[i] = months[1][i];
+
+                    // wattsKG
+                    if (monthsKG[1].size() > rollingBestsKG.size()) rollingBestsKG.resize(monthsKG[1].size());
+                    for (int i=0; i<monthsKG[1].size(); i++)
+                        if (monthsKG[1][i] > rollingBestsKG[i]) rollingBestsKG[i] = monthsKG[1][i];
                 }
                 break;
 
             case 3 : // third time through resize to largest and compare to 1 and 2 XXX not used as limits to 2 month window
                 {
+
+                    // watts
                     if (months[1].size() > rollingBests.size()) rollingBests.resize(months[1].size());
                     if (months[2].size() > rollingBests.size()) rollingBests.resize(months[2].size());
                     for (int i=0; i<months[1].size(); i++) if (months[1][i] > rollingBests[i]) rollingBests[i] = months[1][i];
                     for (int i=0; i<months[2].size(); i++) if (months[2][i] > rollingBests[i]) rollingBests[i] = months[2][i];
+
+                    // wattsKG
+                    if (monthsKG[1].size() > rollingBestsKG.size()) rollingBestsKG.resize(monthsKG[1].size());
+                    if (monthsKG[2].size() > rollingBestsKG.size()) rollingBestsKG.resize(monthsKG[2].size());
+                    for (int i=0; i<monthsKG[1].size(); i++) if (monthsKG[1][i] > rollingBestsKG[i]) rollingBestsKG[i] = monthsKG[1][i];
+                    for (int i=0; i<monthsKG[2].size(); i++) if (monthsKG[2][i] > rollingBestsKG[i]) rollingBestsKG[i] = monthsKG[2][i];
                 }
         }
 
@@ -577,13 +606,15 @@ MetricAggregator::refreshCPModelMetrics(bool bg)
         if (rollingBests.size()) {
 
             // we now have the data
-            foreach (PDModel *model, models) {
+            foreach(PDModel *model, models) {
+
+                PDEstimate add;
 
                 // set the data
                 model->setData(rollingBests);
-
-                PDEstimate add;
                 model->saveParameters(add.parameters); // save the computed parms
+
+                add.wpk = false;
                 add.from = firstOfMonth;
                 add.to = lastOfMonth;
                 add.model = model->code();
@@ -592,9 +623,33 @@ MetricAggregator::refreshCPModelMetrics(bool bg)
                 add.PMax = model->hasPMax() ? model->PMax() : 0;
                 add.FTP = model->hasFTP() ? model->FTP() : 0;
 
-                context->athlete->PDEstimates << add;
+                if (add.CP && add.WPrime) add.EI = add.WPrime / add.CP ;
 
-                //qDebug()<<model->code()<< "W'="<< model->WPrime() <<"3p CP="<< model->CP() <<"3p pMax="<<model->PMax();
+                // so long as the model derived values are sensible ...
+                if (add.WPrime > 10000 && add.CP > 100 && add.PMax > 100 && add.FTP > 100)
+                    context->athlete->PDEstimates << add;
+
+                //qDebug()<<add.from<<model->code()<< "W'="<< model->WPrime() <<"CP="<< model->CP() <<"pMax="<<model->PMax();
+
+                // set the wpk data
+                model->setData(rollingBestsKG);
+                model->saveParameters(add.parameters); // save the computed parms
+
+                add.wpk = true;
+                add.from = firstOfMonth;
+                add.to = lastOfMonth;
+                add.model = model->code();
+                add.WPrime = model->hasWPrime() ? model->WPrime() : 0;
+                add.CP = model->hasCP() ? model->CP() : 0;
+                add.PMax = model->hasPMax() ? model->PMax() : 0;
+                add.FTP = model->hasFTP() ? model->FTP() : 0;
+                if (add.CP && add.WPrime) add.EI = add.WPrime / add.CP ;
+
+                // so long as the model derived values are sensible ...
+                if (add.WPrime > 100.0f && add.CP > 1.0f && add.PMax > 1.0f && add.FTP > 1.0f)
+                    context->athlete->PDEstimates << add;
+
+                //qDebug()<<add.from<<model->code()<< "KG W'="<< model->WPrime() <<"CP="<< model->CP() <<"pMax="<<model->PMax();
             }
         }
 
@@ -615,4 +670,11 @@ MetricAggregator::refreshCPModelMetrics(bool bg)
 #if (!defined Q_OS_MAC) || (defined QT_NOBUG39038) || (QT_VERSION < 0x050300) // QTBUG 39038 !!!
     if (!bg) delete bar;
 #endif
+
+    // add a dummy entry if we have no estimates to stop constantly trying to refresh
+    if (context->athlete->PDEstimates.count() == 0) {
+        context->athlete->PDEstimates << PDEstimate();
+    }
+
+    emit modelProgress(0, 0); // all done
 }

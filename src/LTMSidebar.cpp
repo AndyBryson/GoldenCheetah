@@ -114,13 +114,44 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
 #endif
     eventsWidget->addWidget(eventTree);
 
+    // charts
+    chartsWidget = new GcSplitterItem(tr("Charts"), iconFromPNG(":images/sidebar/charts.png"), this);
+
+    //XXX Chart Widget Actions Pending
+    //XXXQAction *moreChartAct = new QAction(iconFromPNG(":images/sidebar/extra.png"), tr("Menu"), this);
+    //XXXchartsWidget->addAction(moreChartAct);
+    //XXXconnect(moreEventAct, SIGNAL(triggered(void)), this, SLOT(eventPopup(void)));
+
+    chartTree = new QTreeWidget;
+    chartTree->setFrameStyle(QFrame::NoFrame);
+    allCharts = chartTree->invisibleRootItem();
+    allCharts->setText(0, tr("Events"));
+    chartTree->setColumnCount(1);
+    chartTree->setSelectionMode(QAbstractItemView::SingleSelection);
+    chartTree->header()->hide();
+    chartTree->setIndentation(5);
+    chartTree->expandItem(allCharts);
+    chartTree->setContextMenuPolicy(Qt::CustomContextMenu);
+    chartTree->horizontalScrollBar()->setDisabled(true);
+    chartTree->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+#ifdef Q_OS_MAC
+    chartTree->setAttribute(Qt::WA_MacShowFocusRect, 0);
+#endif
+#ifdef Q_OS_WIN
+    cde = QStyleFactory::create(OS_STYLE);
+    chartTree->verticalScrollBar()->setStyle(cde);
+#endif
+    chartsWidget->addWidget(chartTree);
+
+    // setup for first time
+    presetsChanged();
+
     // filters
 #ifdef GC_HAVE_LUCENE
     filtersWidget = new GcSplitterItem(tr("Filters"), iconFromPNG(":images/toolbar/filter3.png"), this);
     QAction *moreFilterAct = new QAction(iconFromPNG(":images/sidebar/extra.png"), tr("Menu"), this);
     filtersWidget->addAction(moreFilterAct);
     connect(moreFilterAct, SIGNAL(triggered(void)), this, SLOT(filterPopup(void)));
-
 
     filterTree = new QTreeWidget;
     filterTree->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -163,6 +194,7 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
 #ifdef GC_HAVE_LUCENE
     splitter->addWidget(filtersWidget);
 #endif
+    splitter->addWidget(chartsWidget); // for charts that 'use sidebar chart' charts ! (confusing or what?!)
 
     GcSplitterItem *summaryWidget = new GcSplitterItem(tr("Summary"), iconFromPNG(":images/sidebar/dashboard.png"), this);
 
@@ -203,12 +235,38 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
     connect(context->athlete, SIGNAL(namedSearchesChanged()), this, SLOT(resetFilters()));
 
     connect(this, SIGNAL(dateRangeChanged(DateRange)), this, SLOT(setSummary(DateRange)));
-
-    // let everyone know what date range we are starting with
-    dateRangeTreeWidgetSelectionChanged();
+    connect(context, SIGNAL(presetsChanged()), this, SLOT(presetsChanged()));
+    connect(chartTree,SIGNAL(itemSelectionChanged()), this, SLOT(presetTreeWidgetSelectionChanged()));
 
     // setup colors
     configChanged();
+}
+
+void
+LTMSidebar::presetsChanged()
+{
+    // rebuild the preset chart list as the presets have changed
+    chartTree->clear();
+    foreach(LTMSettings chart, context->athlete->presets) {
+        QTreeWidgetItem *add;
+        add = new QTreeWidgetItem(chartTree->invisibleRootItem());
+        add->setFlags(add->flags() | Qt::ItemIsEditable);
+        add->setText(0, chart.name);
+    }
+    chartTree->setCurrentItem(chartTree->invisibleRootItem()->child(0));
+}
+
+void
+LTMSidebar::presetTreeWidgetSelectionChanged()
+{
+    if (!chartTree->selectedItems().isEmpty()) {
+        QTreeWidgetItem *which = chartTree->selectedItems().first();
+        if (which != allDateRanges) {
+            int index = allCharts->indexOfChild(which);
+            if (index >=0 && index < context->athlete->presets.count())
+                context->notifyPresetSelected(index);
+        }
+    }
 }
 
 void
@@ -216,6 +274,7 @@ LTMSidebar::configChanged()
 {
     seasonsWidget->setStyleSheet(GCColor::stylesheet());
     eventsWidget->setStyleSheet(GCColor::stylesheet());
+    chartsWidget->setStyleSheet(GCColor::stylesheet());
 #ifdef GC_HAVE_LUCENE
     filtersWidget->setStyleSheet(GCColor::stylesheet());
 #endif
@@ -224,6 +283,12 @@ LTMSidebar::configChanged()
 
     // set or reset the autofilter widgets
     autoFilterChanged();
+
+    // forget what we just used...
+    from = to = QDate();
+
+    // let everyone know what date range we are starting with
+    dateRangeTreeWidgetSelectionChanged();
 
 }
 
@@ -497,14 +562,16 @@ LTMSidebar::setAutoFilterMenu()
     autoFilterMenu->clear();
     autoFilterState.clear();
 
+    // Convert field names for Internal to Display (to work with the translated values)
+    SpecialFields sp;
     foreach(FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
 
         if (field.tab != "" && (field.type == 0 || field.type == 2)) { // we only do text or shorttext fields
 
-            QAction *action = new QAction(field.name, this);
+            QAction *action = new QAction(sp.displayName(field.name), this);
             action->setCheckable(true);
 
-            if (on.contains(field.name)) action->setChecked(true);
+            if (on.contains(sp.displayName(field.name))) action->setChecked(true);
             else action->setChecked(false);
 
             connect(action, SIGNAL(triggered()), this, SLOT(autoFilterChanged()));
@@ -564,11 +631,13 @@ LTMSidebar::autoFilterChanged()
             item->addWidget(tree);
             filterSplitter->addWidget(item);
 
+            // Convert field names for Internal to Display (to work with the translated values)
+            SpecialFields sp;
             // update the values available in the tree
             foreach(FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
-                if (field.name == action->text()) {
+                if (sp.displayName(field.name) == action->text()) {
                     foreach (QString value, context->athlete->metricDB->db()->getDistinctValues(field)) {
-                        if (value == "") value = "(blank)";
+                        if (value == "") value = tr("(blank)");
                         QTreeWidgetItem *add = new QTreeWidgetItem(tree->invisibleRootItem(), 0);
 
                         // No Drag/Drop for autofilters
@@ -718,14 +787,17 @@ LTMSidebar::autoFilterRefresh()
 
         qDeleteAll(tree->invisibleRootItem()->takeChildren());
 
-        // what is the field?
-        QString fieldname = item->splitterHandle->title();
+        // translate fields back from Display Name to internal Name !
+        SpecialFields sp;
 
-            // update the values available in the tree
+        // what is the field?
+        QString fieldname = sp.internalName(item->splitterHandle->title());
+
+        // update the values available in the tree
         foreach(FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
             if (field.name == fieldname) {
                 foreach (QString value, context->athlete->metricDB->db()->getDistinctValues(field)) {
-                    if (value == "") value = "(blank)";
+                    if (value == "") value = tr("(blank)");
                     QTreeWidgetItem *add = new QTreeWidgetItem(tree->invisibleRootItem(), 0);
 
                     // No Drag/Drop for autofilters
@@ -763,12 +835,15 @@ LTMSidebar::autoFilterSelectionChanged()
                 foreach(SummaryMetrics x, allRides) matched << x.getFileName();
             }
 
+            // translate fields back from Display Name to internal Name !
+            SpecialFields sp;
+
             // what is the field?
-            QString fieldname = item->splitterHandle->title();
+            QString fieldname = sp.internalName(item->splitterHandle->title());
 
             // what values are highlighted
             QStringList values;
-            foreach (QTreeWidgetItem *wi, tree->selectedItems()) values << wi->text(0);
+            foreach (QTreeWidgetItem *wi, tree->selectedItems()) values << sp.internalName(wi->text(0));
 
             // get a set of filenames that match
             QSet<QString> matches;
@@ -776,7 +851,7 @@ LTMSidebar::autoFilterSelectionChanged()
 
                 // we use XXX___XXX___XXX because it is not likely to exist
                 QString value = x.getText(fieldname, "XXX___XXX___XXX");
-                if (value == "") value = "(blank)"; // match blanks!
+                if (value == "") value = tr("(blank)"); // match blanks!
 
                 if (values.contains(value)) matches << x.getFileName();
             }
@@ -888,13 +963,6 @@ LTMSidebar::dateRangeChanged(QTreeWidgetItem*item, int)
 void
 LTMSidebar::dateRangeMoved(QTreeWidgetItem*item, int oldposition, int newposition)
 {
-    // no drop in the temporary seasons
-    if (newposition>allDateRanges->childCount()-12) {
-        newposition = allDateRanges->childCount()-12;
-        allDateRanges->removeChild(item);
-        allDateRanges->insertChild(newposition, item);
-    }
-
     // report the move in the seasons
     seasons->seasons.move(oldposition, newposition);
 

@@ -33,11 +33,10 @@
 #ifdef GC_HAVE_QWTPLOT3D
 #include "ModelWindow.h"
 #endif
-#ifdef GC_HAVE_VLC
-#include "VideoWindow.h"
-#endif
 #ifdef Q_OS_MAC
 #include "QtMacVideoWindow.h"
+#else
+#include "VideoWindow.h"
 #endif
 #include "PfPvWindow.h"
 #include "HrPwWindow.h"
@@ -72,6 +71,7 @@ GcWindowRegistry::initialize()
     { VIEW_HOME|VIEW_DIARY, tr("Collection TreeMap"),GcWindowTypes::TreeMap },
     //{ VIEW_HOME, tr("Weekly Summary"),GcWindowTypes::WeeklySummary },// DEPRECATED
     { VIEW_HOME|VIEW_DIARY,  tr("Critical Mean Maximal"),GcWindowTypes::CriticalPowerSummary },
+    //{ VIEW_HOME|VIEW_DIARY,  tr("Performance Manager"),GcWindowTypes::PerformanceManager },
     { VIEW_ANALYSIS, tr("Ride Summary"),GcWindowTypes::RideSummary },
     { VIEW_ANALYSIS, tr("Details"),GcWindowTypes::MetadataWindow },
     { VIEW_ANALYSIS, tr("Summary and Details"),GcWindowTypes::Summary },
@@ -143,10 +143,26 @@ GcWindowRegistry::newGcWindow(GcWinID id, Context *context)
     case GcWindowTypes::GoogleMap: returning = new GoogleMapControl(context); break;
     case GcWindowTypes::Histogram: returning = new HistogramWindow(context); break;
     case GcWindowTypes::Distribution: returning = new HistogramWindow(context, true); break;
-    case GcWindowTypes::PerformanceManager: // retired now returns an LTM
+    case GcWindowTypes::PerformanceManager: 
+            {
+                // the old PMC is deprecated so we return an LTM with PMC curves and default settings
+                returning = new LTMWindow(context);
+
+                // a PMC LTM Setting
+                QString value = "AAAACgBQAE0AQwArACsAAAAIADIAMAAwADkAJXS3AAAAAP8AJXZBAAAAAP8AAAABAAH///////////////8AAAALAAAAAwAAAAIAAAAAEgBzAGsAaQBiAGEAXwBzAHQAcwAAAC4AUwBrAGkAYgBhACAAUwBoAG8AcgB0ACAAVABlAHIAbQAgAFMAdAByAGUAcwBzAAAALgBTAGsAaQBiAGEAIABTAGgAbwByAHQAIABUAGUAcgBtACAAUwB0AHIAZQBzAHMAAAAMAFMAdAByAGUAcwBzAAAAAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAQAAfyr8IRwk//////////8B/////wAA//8AAAAAAAA/8AAAAAAAAAAAAAAB//8AAAAAAAAAAAAAAAAAAAAAAgAADhD/////AAAACv////8AAAAAAAAAAAwAMgAgAFAAYQByAG0AAAAAAAAD5wAADhAAAAAAAgAAAAASAHMAawBpAGIAYQBfAGwAdABzAAAALABTAGsAaQBiAGEAIABMAG8AbgBnACAAVABlAHIAbQAgAFMAdAByAGUAcwBzAAAALABTAGsAaQBiAGEAIABMAG8AbgBnACAAVABlAHIAbQAgAFMAdAByAGUAcwBzAAAADABTAHQAcgBlAHMAcwAAAAAAAQAAAAAAAAAAAAAAAAEAAABYAAAAAwAAAEoAAAAbAAAAFP//////////Af//AAD/////AAAAAAAAP/AAAAAAAAAAAAAAAf//AAAAAAAAAAAAAAAAAAAAAAIAAA4Q/////wAAAAoAAAAAAAAAAAAAAAAMADIAIABQAGEAcgBtAAAAAAAAA+cAAA4QAAAAAAIAAAAAEABzAGsAaQBiAGEAXwBzAGIAAAAoAFMAawBpAGIAYQAgAFMAdAByAGUAcwBzACAAQgBhAGwAYQBuAGMAZQAAACgAUwBrAGkAYgBhACAAUwB0AHIAZQBzAHMAIABCAGEAbABhAG4AYwBlAAAADABTAHQAcgBlAHMAcwAAAAAAAAAAAADAjzgAAAAAAAH////A////wP///8AAAH//AAAAAP//////////Af//VVX//wAAAAAAAAAAP/AAAAAAAAAAAAAAAf//AAAAAAAAAAAAAAAAAQAAAAIAAA4Q/////wAAAAr/////AAAAAAEAAAAMADIAIABQAGEAcgBtAAAAAAAAA+cAAA4QAAAAAAAAAg==";
+
+                // setup and apply the property
+                QByteArray base64(value.toLatin1());
+                QByteArray unmarshall = QByteArray::fromBase64(base64);
+                QDataStream s(&unmarshall, QIODevice::ReadOnly);
+                LTMSettings x;
+                s >> x;
+                returning->setProperty("settings", QVariant().fromValue<LTMSettings>(x));
+            }
+            break;
     case GcWindowTypes::LTM: returning = new LTMWindow(context); break;
 #ifdef GC_HAVE_QWTPLOT3D
-    case GcWindowTypes::Model: returning = new ModelWindow(context, context->athlete->home); break;
+    case GcWindowTypes::Model: returning = new ModelWindow(context); break;
 #else
     case GcWindowTypes::Model: returning = new GcWindow(); break;
 #endif
@@ -159,10 +175,10 @@ GcWindowRegistry::newGcWindow(GcWinID id, Context *context)
     case GcWindowTypes::Summary: returning = new SummaryWindow(context); break;
     case GcWindowTypes::TreeMap: returning = new TreeMapWindow(context); break;
     case GcWindowTypes::WeeklySummary: returning = new SummaryWindow(context); break; // deprecated
-#if defined Q_OS_MAC || defined GC_HAVE_VLC // mac uses Quicktime / Win/Linux uses VLC
-    case GcWindowTypes::VideoPlayer: returning = new VideoWindow(context, context->athlete->home); break;
-#else
+#ifdef GC_VIDEO_NONE
     case GcWindowTypes::VideoPlayer: returning = new GcWindow(); break;
+#else
+    case GcWindowTypes::VideoPlayer: returning = new VideoWindow(context, context->athlete->home); break;
 #endif
     case GcWindowTypes::DialWindow: returning = new DialWindow(context); break;
     case GcWindowTypes::MetadataWindow: returning = new MetadataWindow(context); break;

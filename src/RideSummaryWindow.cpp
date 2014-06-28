@@ -78,10 +78,6 @@ RideSummaryWindow::RideSummaryWindow(Context *context, bool ridesummary) :
     rideSummary->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     rideSummary->setAcceptDrops(false);
 
-    QFont defaultFont; // mainwindow sets up the defaults.. we need to apply
-    rideSummary->settings()->setFontSize(QWebSettings::DefaultFontSize, defaultFont.pointSize()+1);
-    rideSummary->settings()->setFontFamily(QWebSettings::StandardFont, defaultFont.family());
-
     vlayout->addWidget(rideSummary);
 
     if (ridesummary) {
@@ -110,15 +106,36 @@ RideSummaryWindow::RideSummaryWindow(Context *context, bool ridesummary) :
     }
     connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
     connect(this, SIGNAL(doRefresh()), this, SLOT(refresh()));
+    connect(context->athlete->metricDB, SIGNAL(modelProgress(int,int)), this, SLOT(modelProgress(int,int)));
 
     setChartLayout(vlayout);
     configChanged(); // set colors
+}
+
+RideSummaryWindow::~RideSummaryWindow()
+{
+    // cancel background thread if needed
+    future.cancel();
+    future.waitForFinished();
 }
 
 void
 RideSummaryWindow::configChanged()
 {
     setProperty("color", GColor(CPLOTBACKGROUND)); // called on config change
+
+    QFont defaultFont;
+    defaultFont.fromString(appsettings->value(NULL, GC_FONT_DEFAULT, QFont().toString()).toString());
+    defaultFont.setPointSize(appsettings->value(NULL, GC_FONT_DEFAULT_SIZE, 10).toInt());
+
+#ifdef Q_OS_MAC
+    rideSummary->settings()->setFontSize(QWebSettings::DefaultFontSize, defaultFont.pointSize()+1);
+#else
+    rideSummary->settings()->setFontSize(QWebSettings::DefaultFontSize, defaultFont.pointSize()+2);
+#endif
+    rideSummary->settings()->setFontFamily(QWebSettings::StandardFont, defaultFont.family());
+
+
     force = true;
     refresh();
     force = false;
@@ -141,6 +158,32 @@ RideSummaryWindow::setFilter(QStringList list)
     refresh();
 }
 #endif
+
+void 
+RideSummaryWindow::modelProgress(int year, int month)
+{
+    // ignore if not visible!
+    if (!amVisible()) return;
+
+    QString string;
+
+    if (!year && !month) {
+        string = "<h3>Model</h3>";
+    } else {
+
+#if 0 // too much info, just do years ...
+        QString dotstring;
+        if (month < 5) dotstring = ".  ";
+        else if (month < 9) dotstring = ".. ";
+        else dotstring = "...";
+#endif
+
+        string = QString("<h3>Modeling<br>%1</h3>").arg(year);
+    }
+    rideSummary->page()->mainFrame()->evaluateJavaScript(
+        QString("var div = document.getElementById(\"modhead\"); div.innerHTML = '%1'; ").arg(string));;
+
+}
 
 void
 RideSummaryWindow::compareChanged()
@@ -208,14 +251,14 @@ RideSummaryWindow::refresh()
             // comparing intervals
             if (checkcount == 2) {
 
-                setSubTitle(QString("%2 on %1  vs  %4 on %3")
-                            .arg(context->compareIntervals.at(0).data->startTime().toString("dd MMM yy"))
+                setSubTitle(QString(tr("%2 on %1  vs  %4 on %3"))
+                            .arg(context->compareIntervals.at(0).data->startTime().toString(tr("dd MMM yy")))
                             .arg(context->compareIntervals.at(0).name)
-                            .arg(context->compareIntervals.at(versus).data->startTime().toString("dd MMM yy"))
+                            .arg(context->compareIntervals.at(versus).data->startTime().toString(tr("dd MMM yy")))
                             .arg(context->compareIntervals.at(versus).name));
             } else if (context->compareIntervals.count() > 2) {
-                setSubTitle(QString("%2 on %1  vs  %3 others")
-                            .arg(context->compareIntervals.at(0).data->startTime().toString("dd MMM yy"))
+                setSubTitle(QString(tr("%2 on %1  vs  %3 others"))
+                            .arg(context->compareIntervals.at(0).data->startTime().toString(tr("dd MMM yy")))
                             .arg(context->compareIntervals.at(0).name)
                             .arg(checkcount-1));
             } else {
@@ -238,12 +281,12 @@ RideSummaryWindow::refresh()
             // comparing seasons
             if (checkcount == 2) {
 
-                setSubTitle(QString("%1  vs  %2")
+                setSubTitle(QString(tr("%1  vs  %2"))
                             .arg(context->compareDateRanges.at(0).name)
                             .arg(context->compareDateRanges.at(versus).name));
 
             } else if (checkcount > 2) {
-                setSubTitle(QString("%1  vs  %2 others")
+                setSubTitle(QString(tr("%1  vs  %2 others"))
                             .arg(context->compareDateRanges.at(0).name)
                             .arg(checkcount-1));
             } else {
@@ -270,9 +313,9 @@ RideSummaryWindow::refresh()
 
             if (myDateRange.name != "") setSubTitle(myDateRange.name);
             else {
-            setSubTitle(myDateRange.from.toString("dddd MMMM d yyyy") +
+            setSubTitle(myDateRange.from.toString(tr("dddd MMMM d yyyy")) +
                         " - " +
-                        myDateRange.to.toString("dddd MMMM d yyyy"));
+                        myDateRange.to.toString(tr("dddd MMMM d yyyy")));
             }
         }
         rideSummary->page()->mainFrame()->setHtml(htmlSummary());
@@ -348,7 +391,8 @@ RideSummaryWindow::htmlSummary()
         << "skiba_wprime_max";
 
     // show average and max temp if it is available (in ride summary mode)
-    if (ridesummary && (ride->areDataPresent()->temp || ride->getTag("Temperature", "-") != "-")) {
+    if ((ridesummary && (ride->areDataPresent()->temp || ride->getTag("Temperature", "-") != "-")) ||
+       (!ridesummary && SummaryMetrics::getAggregated(context, "average_temp", data, QStringList(), false, true) != "-")) {
         averageColumn << "average_temp";
         maximumColumn << "max_temp";
     }
@@ -479,11 +523,14 @@ RideSummaryWindow::htmlSummary()
 
                  // temperature is a special case, if it is not present fall back to metadata tag
                  // if that is not present then just display '-'
-                 if ((symbol == "average_temp" || symbol == "max_temp") && metrics.getForSymbol(symbol) == RideFile::noTemp)
+
+                 // when summarising a ride temperature is -255 when not present, when aggregating its 0.0
+                 if ((symbol == "average_temp" || symbol == "max_temp") && ridesummary 
+                     && metrics.getForSymbol(symbol) == RideFile::NoTemp) {
 
                     s = s.arg(ride->getTag("Temperature", "-"));
 
-                 else if (m->internalName() == "Pace") { // pace is mm:ss
+                 } else if (m->internalName() == "Pace") { // pace is mm:ss
 
                     double pace;
                     if (ridesummary) pace  = metrics.getForSymbol(symbol) * (useMetricUnits ? 1 : m->conversion()) + (useMetricUnits ? 0 : m->conversionSum());
@@ -543,8 +590,9 @@ RideSummaryWindow::htmlSummary()
     if (context->athlete->PDEstimates.count() == 0) {
 
         // ugh .. refresh in background
+        WPrimeStringWPK = CPStringWPK = FTPStringWPK = PMaxStringWPK = 
         WPrimeString = CPString = FTPString = PMaxString = "-";
-        QFuture<void> future = QtConcurrent::run(this, &RideSummaryWindow::getPDEstimates);
+        future = QtConcurrent::run(this, &RideSummaryWindow::getPDEstimates);
 
     } else {
 
@@ -552,34 +600,56 @@ RideSummaryWindow::htmlSummary()
         getPDEstimates();
     }
 
+    // MODEL 
     // lets get a table going
     summary += "<td align=\"center\" valign=\"top\" width=\"%1%%\"><table>"
-        "<tr><td align=\"center\" colspan=2><h3>%2</h3></td></tr>";
+        "<tr><td align=\"center\" colspan=2><div id=\"modhead\">%2</div></td></tr>";
+
     summary = summary.arg(90 / columnNames.count()+1);
-    summary = summary.arg(tr("Model"));
+    summary = summary.arg(tr("<h3>Model</h3>"));
 
     // W;
-    summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
-            .arg("W' (kJ)")
+    summary += QString("<tr><td>%1:</td><td align=\"right\">%2 kJ</td></tr>")
+            .arg(tr("W'"))
             .arg(WPrimeString);
+    summary += QString("<tr><td></td><td align=\"right\">%1 J/kg</td></tr>")
+            .arg(WPrimeStringWPK);
+
+    // spacer
+    summary += "<tr style=\"height: 3px;\"></tr>";
 
     // CP;
-    summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
-            .arg("CP (watts)")
-            .arg(CPString);
+    summary += QString("<tr><td>%1:</td><td align=\"right\">%2 %3</td></tr>")
+            .arg(tr("CP"))
+            .arg(CPString)
+            .arg(tr("watts"));
+    summary += QString("<tr><td></td><td align=\"right\">%1 %2</td></tr>")
+            .arg(CPStringWPK)
+            .arg(tr("w/kg"));
 
+    // spacer
+    summary += "<tr style=\"height: 3px;\"></tr>";
+
+#if 0 // clutters it up and adds almost nothing
     // FTP/MMP60;
     summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
-            .arg("FTP (watts)")
+            .arg(tr("FTP (watts)"))
             .arg(FTPString);
+    summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
+            .arg(tr("FTP (w/kg)"))
+            .arg(FTPStringWPK);
+#endif
 
     // Pmax;
-    summary += QString("<tr><td>%1:</td><td align=\"right\">%2</td></tr>")
-            .arg("P-max (watts)")
-            .arg(PMaxString);
+    summary += QString("<tr><td>%1:</td><td align=\"right\">%2 %3</td></tr>")
+            .arg(tr("P-max"))
+            .arg(PMaxString)
+            .arg(tr("watts"));
+    summary += QString("<tr><td></td><td align=\"right\">%1 %2</td></tr>")
+            .arg(PMaxStringWPK)
+            .arg(tr("w/kg"));
 
     summary += "</table></td>";
-
     summary += "</tr></table>";
 
     //
@@ -770,7 +840,7 @@ RideSummaryWindow::htmlSummary()
                     RideMetric::computeMetrics(context, &f, context->athlete->zones(), context->athlete->hrZones(), intervalMetrics);
                 if (firstRow) {
                     summary += "<tr>";
-                    summary += "<td align=\"center\" valign=\"bottom\">Interval Name</td>";
+                    summary += "<td align=\"center\" valign=\"bottom\">"+tr("Interval Name")+"</td>";
                     foreach (QString symbol, intervalMetrics) {
                         RideMetricPtr m = metrics.value(symbol);
                         if (!m) continue;
@@ -847,7 +917,7 @@ RideSummaryWindow::htmlSummary()
 
             // "n of x activities" shown in header of list when filtered
             summary += ("<p><h3>" + 
-                        QString("%1 of %2").arg(activities).arg(data.count()) 
+                        QString(tr("%1 of %2")).arg(activities).arg(data.count())
                                            + (data.count() == 1 ? tr(" ride") : tr(" rides")) +
                         "</h3><p>");
         } else {
@@ -886,7 +956,7 @@ RideSummaryWindow::htmlSummary()
             const RideMetric *m = factory.rideMetric(symbol);
 
             QString units = m->units(useMetricUnits);
-            if (units == tr("seconds")) units = "";
+            if (units == "seconds" || units == tr("seconds")) units = "";
             summary += QString("<td align=\"center\">%1</td>").arg(units);
         }
         for (j = 0; j< metricCols; ++j) {
@@ -894,7 +964,7 @@ RideSummaryWindow::htmlSummary()
             const RideMetric *m = factory.rideMetric(symbol);
 
             QString units = m->units(useMetricUnits);
-            if (units == tr("seconds")) units = "";
+            if (units == "seconds" || units == tr("seconds")) units = "";
             summary += QString("<td align=\"center\">%1</td>").arg(units);
         }
         summary += "</tr>";
@@ -916,7 +986,7 @@ RideSummaryWindow::htmlSummary()
 
             // date of ride
             summary += QString("<td align=\"center\">%1</td>")
-                       .arg(rideMetrics.getRideDate().date().toString("dd MMM yyyy"));
+                       .arg(rideMetrics.getRideDate().date().toString(tr("dd MMM yyyy")));
 
             for (j = 0; j< totalCols; ++j) {
                 QString symbol = rtotalColumn[j];
@@ -961,66 +1031,89 @@ void
 RideSummaryWindow::getPDEstimates()
 {
     bool ping = false;
-    double lowWPrime=0, highWPrime=0,
-           lowCP=0, highCP=0,
-           lowFTP=0, highFTP=0,
-           lowPMax=0, highPMax=0;
-
     // refresh if needed
     if (context->athlete->PDEstimates.count() == 0) {
         ping = true;
         context->athlete->metricDB->refreshCPModelMetrics(true); //true = bg ...
     }
 
-    // loop through and get ...
-    foreach(PDEstimate est, context->athlete->PDEstimates) {
+    for (int i=0; i<2; i++) {
 
-        // We only use the extended model for now
-        if (est.model != "Ext" ) continue;
+        // two times, once to get wpk versions
+        // second time to get normal
+        bool wpk = (i==0);
 
-        // summarising a season or date range
-        if (!ridesummary && (est.from > myDateRange.to || est.to < myDateRange.from)) continue;
+        double lowWPrime=0, highWPrime=0,
+               lowCP=0, highCP=0,
+               lowFTP=0, highFTP=0,
+               lowPMax=0, highPMax=0;
 
-        // it definitely wasnt during our period
-        if (!ridesummary && !((est.from >= myDateRange.from && est.from <= myDateRange.to) || (est.to >= myDateRange.from && est.to <= myDateRange.to) ||
-            (est.from <= myDateRange.from && est.to >= myDateRange.to))) continue;
+        // loop through and get ...
+        foreach(PDEstimate est, context->athlete->PDEstimates) {
 
+            // filter is set above
+            if (est.wpk != wpk) continue;
 
-        // summarising a ride
-        if (ridesummary && (!myRideItem || (myRideItem->dateTime.date() < est.from || myRideItem->dateTime.date() > est.to))) continue;
+            // We only use the extended model for now
+            if (est.model != "Ext" ) continue;
 
-        // set low
-        if (!lowWPrime || est.WPrime < lowWPrime) lowWPrime = est.WPrime;
-        if (!lowCP || est.CP < lowCP) lowCP = est.CP;
-        if (!lowFTP || est.FTP < lowFTP) lowFTP = est.FTP;
-        if (!lowPMax || est.PMax < lowPMax) lowPMax = est.PMax;
+            // summarising a season or date range
+            if (!ridesummary && (est.from > myDateRange.to || est.to < myDateRange.from)) continue;
 
-        // set high
-        if (!highWPrime || est.WPrime > highWPrime) highWPrime = est.WPrime;
-        if (!highCP || est.CP > highCP) highCP = est.CP;
-        if (!highFTP || est.FTP > highFTP) highFTP = est.FTP;
-        if (!highPMax || est.PMax > highPMax) highPMax = est.PMax;
+            // it definitely wasnt during our period
+            if (!ridesummary && !((est.from >= myDateRange.from && est.from <= myDateRange.to) || (est.to >= myDateRange.from && est.to <= myDateRange.to) ||
+                (est.from <= myDateRange.from && est.to >= myDateRange.to))) continue;
+
+    
+            // summarising a ride
+            if (ridesummary && (!myRideItem || (myRideItem->dateTime.date() < est.from || myRideItem->dateTime.date() > est.to))) continue;
+
+            // set low
+            if (!lowWPrime || est.WPrime < lowWPrime) lowWPrime = est.WPrime;
+            if (!lowCP || est.CP < lowCP) lowCP = est.CP;
+            if (!lowFTP || est.FTP < lowFTP) lowFTP = est.FTP;
+            if (!lowPMax || est.PMax < lowPMax) lowPMax = est.PMax;
+
+            // set high
+            if (!highWPrime || est.WPrime > highWPrime) highWPrime = est.WPrime;
+            if (!highCP || est.CP > highCP) highCP = est.CP;
+            if (!highFTP || est.FTP > highFTP) highFTP = est.FTP;
+            if (!highPMax || est.PMax > highPMax) highPMax = est.PMax;
+        }
+
+        // ok, so lets set the string to either
+        // N/A => when its not available
+        // low - high => when its a range
+        // val => when low = high
+        double divisor = wpk ? 1.0f : 1000.00f;
+
+        if (!lowWPrime && !highWPrime) WPrimeString = tr("N/A");
+        else if (lowWPrime != highWPrime) WPrimeString = QString ("%1 - %2").arg(lowWPrime/divisor, 0, 'f',  wpk ? 0 : 1).arg(highWPrime/divisor, 0, 'f', wpk ? 0 : 1);
+        else WPrimeString = QString("%1").arg(highWPrime/divisor, 0, 'f', wpk ? 0 : 1);
+
+        if (!lowCP && !highCP) CPString = tr("N/A");
+        else if (lowCP != highCP) CPString = QString ("%1 - %2").arg(lowCP, 0, 'f', wpk ? 2 : 0)
+                                                                .arg(highCP, 0, 'f', wpk ? 2 : 0);
+        else CPString = QString("%1").arg(highCP, 0, 'f', wpk ? 2 : 0);
+
+        if (!lowFTP && !highFTP) FTPString = tr("N/A");
+        else if (lowFTP != highFTP) FTPString = QString ("%1 - %2").arg(lowFTP, 0, 'f', wpk ? 2 : 0)
+                                                                   .arg(highFTP, 0, 'f', wpk ? 2 : 0);
+        else FTPString = QString("%1").arg(highFTP, 0, 'f', wpk ? 2 : 0);
+
+        if (!lowPMax && !highPMax) PMaxString = tr("N/A");
+        else if (lowPMax != highPMax) PMaxString = QString ("%1 - %2").arg(lowPMax, 0, 'f', wpk ? 2 : 0)
+                                                                      .arg(highPMax, 0, 'f', wpk ? 2 : 0);
+        else PMaxString = QString("%1").arg(highPMax, 0, 'f', wpk ? 2 : 0);
+
+        // actually we just set the wPK versions:
+        if (wpk) {
+            WPrimeStringWPK = WPrimeString;
+            CPStringWPK = CPString;
+            FTPStringWPK = FTPString;
+            PMaxStringWPK = PMaxString;
+        }
     }
-
-    // ok, so lets set the string to either
-    // N/A => when its not available
-    // low - high => when its a range
-    // val => when low = high
-    if (!lowWPrime && !highWPrime) WPrimeString = "N/A";
-    else if (lowWPrime != highWPrime) WPrimeString = QString ("%1 - %2").arg(lowWPrime/1000, 0, 'f', 1).arg(highWPrime/1000, 0, 'f', 1);
-    else WPrimeString = QString("%1").arg(highWPrime/1000, 0, 'f', 1);
-
-    if (!lowCP && !highCP) CPString = "N/A";
-    else if (lowCP != highCP) CPString = QString ("%1 - %2").arg(lowCP).arg(highCP);
-    else CPString = QString("%1").arg(highCP);
-
-    if (!lowFTP && !highFTP) FTPString = "N/A";
-    else if (lowFTP != highFTP) FTPString = QString ("%1 - %2").arg(lowFTP).arg(highFTP);
-    else FTPString = QString("%1").arg(highFTP);
-
-    if (!lowPMax && !highPMax) PMaxString = "N/A";
-    else if (lowPMax != highPMax) PMaxString = QString ("%1 - %2").arg(lowPMax).arg(highPMax);
-    else PMaxString = QString("%1").arg(highPMax);
 
     // now refresh !
     if (ping) emit doRefresh();
@@ -1186,7 +1279,8 @@ RideSummaryWindow::htmlCompareSummary() const
                 const RideMetric *m = factory.rideMetric(symbol);
 
                 QString name, units;
-                if (m->units(context->athlete->useMetricUnits) != "seconds") units = m->units(context->athlete->useMetricUnits);
+                if (!(m->units(context->athlete->useMetricUnits) == "seconds" || m->units(context->athlete->useMetricUnits) == tr("seconds")))
+                        units = m->units(context->athlete->useMetricUnits);
                 if (units != "") name = QString("%1 (%2)").arg(m->name()).arg(units);
                 else name = QString("%1").arg(m->name());
 
@@ -1459,7 +1553,8 @@ RideSummaryWindow::htmlCompareSummary() const
                 const RideMetric *m = factory.rideMetric(symbol);
 
                 QString name, units;
-                if (m->units(context->athlete->useMetricUnits) != "seconds") units = m->units(context->athlete->useMetricUnits);
+                if (!(m->units(context->athlete->useMetricUnits) == "seconds" || m->units(context->athlete->useMetricUnits) == tr("seconds")))
+                    units = m->units(context->athlete->useMetricUnits);
                 if (units != "") name = QString("%1 (%2)").arg(m->name()).arg(units);
                 else name = QString("%1").arg(m->name());
 

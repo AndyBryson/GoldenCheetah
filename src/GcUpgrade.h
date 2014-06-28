@@ -19,6 +19,7 @@
 #ifndef Gc_GcUpgrade_h
 #define Gc_GcUpgrade_h
 #include "GoldenCheetah.h"
+#include "RideMetadata.h"
 
 // Build ID History
 //
@@ -34,16 +35,25 @@
 // 3030 - V3.0 SP1 RELEASE (December 2013)
 // 3032 - V3.0 SP2 RELEASE (March 2014)
 // 3040 - V3.1 DEVELOPMENT
+// 3050 - V3.1 DEVELOPMENT (accidentally pushed)
+// 3051 - V3.1 DEVELOPMENT
 
 #define VERSION3_BUILD 3010 // released
 #define VERSION3_SP1   3030 // released
 #define VERSION3_SP2   3032 // released
+#define VERSION31_UPG  3055 // first build with 3.1 upgrade process (doesn't exist yet)
 
-#define VERSION_LATEST 3040
-#define VERSION_STRING "V3.1 (dev)"
+// will keep changing during testing and before final release
+#define VERSION31_BUILD VERSION31_UPG
+
+// these three will change until we release
+#define VERSION_LATEST 3051
+#define VERSION_STRING "V3.1 (Development)"
 
 class GcUpgrade
 {
+    Q_DECLARE_TR_FUNCTIONS(GcUpgrade)
+
 	public:
         GcUpgrade() {}
         int upgrade(const QDir &home);

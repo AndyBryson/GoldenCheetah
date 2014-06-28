@@ -96,6 +96,13 @@ void BingMap::loadRide()
 
 void BingMap::updateFrame()
 {
+    // deleting the web bridge seems to be the only way to
+    // reset state between it and the webpage.
+    delete webBridge;
+    webBridge = new BWebBridge(context, this);
+    connect(context, SIGNAL(intervalsChanged()), webBridge, SLOT(intervalsChanged()));
+    connect(context, SIGNAL(intervalSelected()), webBridge, SLOT(intervalsChanged()));
+
     view->page()->mainFrame()->addToJavaScriptWindowObject("webBridge", webBridge);
 }
 

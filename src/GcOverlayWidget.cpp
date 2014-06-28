@@ -38,7 +38,7 @@ GcOverlayWidget::GcOverlayWidget(Context *context, QWidget *parent) : QWidget(pa
     setAttribute(Qt::WA_TranslucentBackground);
     setMouseTracking(true);
     setFocusPolicy(Qt::ClickFocus);
-    setMinimumSize(200,200);
+    setMinimumSize(250,200);
     setFocus();
     mode = none;
     initial = true;
@@ -94,6 +94,21 @@ GcOverlayWidget::GcOverlayWidget(Context *context, QWidget *parent) : QWidget(pa
     m_showMenu = false;
     m_isEditing = true;
     installEventFilter(parent);
+
+    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+
+    // setup colors
+    configChanged();
+}
+
+void
+GcOverlayWidget::configChanged()
+{
+    if (GCColor::isFlat()) {
+        titleLabel->setStyleSheet(QString("color: %1;").arg(GCColor::invertColor(GColor(CCHROME)).name()));
+    } else {
+        titleLabel->setStyleSheet("color: black;");
+    }
 }
 
 void
@@ -201,13 +216,15 @@ GcOverlayWidget::paintBackground(QPaintEvent *)
     painter.fillRect(title, QColor(Qt::white));
     painter.fillRect(title, isActiveWindow() ? active : inactive);
 
-    QPen black(QColor(100,100,100,200));
-    painter.setPen(black);
-    painter.drawLine(0,22, width()-1, 22);
+    if (!GCColor::isFlat()) {
+        QPen black(QColor(100,100,100,200));
+        painter.setPen(black);
+        painter.drawLine(0,22, width()-1, 22);
 
-    QPen gray(QColor(230,230,230));
-    painter.setPen(gray);
-    painter.drawLine(0,0, width()-1, 0);
+        QPen gray(QColor(230,230,230));
+        painter.setPen(gray);
+        painter.drawLine(0,0, width()-1, 0);
+    }
 
     painter.restore();
 }

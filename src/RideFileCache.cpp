@@ -145,8 +145,7 @@ static long offsetForMeanMax(RideFileCacheHeader head, RideFile::SeriesType seri
     long offset = 0;
 
     switch (series) {
-    case RideFile::aPower : offset += head.wattsKgMeanMaxCount * sizeof(float);
-    case RideFile::wattsKg : offset += head.vamMeanMaxCount * sizeof(float);
+    case RideFile::aPower : offset += head.vamMeanMaxCount * sizeof(float);
     case RideFile::vam : offset += head.npMeanMaxCount * sizeof(float);
     case RideFile::NP : offset += head.xPowerMeanMaxCount * sizeof(float);
     case RideFile::xPower : offset += head.kphMeanMaxCount * sizeof(float);
@@ -158,7 +157,8 @@ static long offsetForMeanMax(RideFileCacheHeader head, RideFile::SeriesType seri
     case RideFile::kph : offset += head.nmMeanMaxCount * sizeof(float);
     case RideFile::nm : offset += head.cadMeanMaxCount * sizeof(float);
     case RideFile::cad : offset += head.hrMeanMaxCount * sizeof(float);
-    case RideFile::hr : offset += head.wattsMeanMaxCount * sizeof(float);
+    case RideFile::hr : offset += head.wattsKgMeanMaxCount * sizeof(float);
+    case RideFile::wattsKg : offset += head.wattsMeanMaxCount * sizeof(float);
     case RideFile::watts : offset += 0;
     default:
         break;
@@ -174,7 +174,6 @@ static long offsetForTiz(RideFileCacheHeader head, RideFile::SeriesType series)
 
     // skip past the mean max arrays
     offset += head.aPowerMeanMaxCount * sizeof(float);
-    offset += head.wattsKgMeanMaxCount * sizeof(float);
     offset += head.vamMeanMaxCount * sizeof(float);
     offset += head.npMeanMaxCount * sizeof(float);
     offset += head.xPowerMeanMaxCount * sizeof(float);
@@ -187,6 +186,7 @@ static long offsetForTiz(RideFileCacheHeader head, RideFile::SeriesType series)
     offset += head.nmMeanMaxCount * sizeof(float);
     offset += head.cadMeanMaxCount * sizeof(float);
     offset += head.hrMeanMaxCount * sizeof(float);
+    offset += head.wattsKgMeanMaxCount * sizeof(float);
     offset += head.wattsMeanMaxCount * sizeof(float);
 
     // skip past the distribution arrays
@@ -233,9 +233,10 @@ static long countForMeanMax(RideFileCacheHeader head, RideFile::SeriesType serie
     return 0;
 }
 
-QVector<float> RideFileCache::meanMaxPowerFor(Context *context, QDate from, QDate to)
+QVector<float> RideFileCache::meanMaxPowerFor(Context *context, QVector<float> &wpk, QDate from, QDate to)
 {
     QVector<float> returning;
+    QVector<float> returningwpk;
     bool first = true;
 
     // look at all the rides
@@ -248,13 +249,15 @@ QVector<float> RideFileCache::meanMaxPowerFor(Context *context, QDate from, QDat
         if (first == true) {
 
             // first time through the whole thing is going to be best
-            returning =  meanMaxPowerFor(context, context->athlete->home.absolutePath() + "/" + rideFileName);
+            returning =  meanMaxPowerFor(context, returningwpk, context->athlete->home.absolutePath() + "/" + rideFileName);
             first = false;
 
         } else {
 
+            QVector<float> thiswpk;
+
             // next time through we should only pick out better times
-            QVector<float> ridebest = meanMaxPowerFor(context, context->athlete->home.absolutePath() + "/" + rideFileName);
+            QVector<float> ridebest = meanMaxPowerFor(context, thiswpk, context->athlete->home.absolutePath() + "/" + rideFileName);
 
             // do we need to increase the returning array?
             if (returning.size() < ridebest.size()) returning.resize(ridebest.size());
@@ -262,13 +265,22 @@ QVector<float> RideFileCache::meanMaxPowerFor(Context *context, QDate from, QDat
             // now update where its a better number
             for (int i=0; i<ridebest.size(); i++)
                 if (ridebest[i] > returning[i]) returning[i] = ridebest[i];
+
+            // do we need to increase the returning array?
+            if (returningwpk.size() < thiswpk.size()) returningwpk.resize(thiswpk.size());
+
+            // now update where its a better number
+            for (int i=0; i<thiswpk.size(); i++)
+                if (thiswpk[i] > returningwpk[i]) returningwpk[i] =thiswpk[i];
         }
     }
 
+    // set aggregated wpk
+    wpk = returningwpk;
     return returning;
 }
 
-QVector<float> RideFileCache::meanMaxPowerFor(Context *, QString fileName)
+QVector<float> RideFileCache::meanMaxPowerFor(Context *, QVector<float>&wpk, QString fileName)
 {
     QTime start;
     start.start();
@@ -304,6 +316,13 @@ QVector<float> RideFileCache::meanMaxPowerFor(Context *, QString fileName)
                 // a little naughty but seems to work ok
                 returning.resize(head.wattsMeanMaxCount);
                 inFile.readRawData((char*)returning.constData(), head.wattsMeanMaxCount * sizeof(float));
+
+                offset = offsetForMeanMax(head, RideFile::wattsKg) + sizeof(head);
+                cacheFile.seek(qint64(offset));
+
+                wpk.resize(head.wattsKgMeanMaxCount);
+                inFile.readRawData((char*)wpk.constData(), head.wattsKgMeanMaxCount * sizeof(float));
+                for(int i=0; i<wpk.size(); i++) wpk[i] = wpk[i] / 100.00f;
 
                 //qDebug()<<"retrieved:"<<head.wattsMeanMaxCount<<"in:"<<start.elapsed()<<"ms";
             }
@@ -1484,6 +1503,7 @@ RideFileCache::serialize(QDataStream *out)
 
     // write meanmax
     out->writeRawData((const char *) wattsMeanMax.data(), sizeof(float) * wattsMeanMax.size());
+    out->writeRawData((const char *) wattsKgMeanMax.data(), sizeof(float) * wattsKgMeanMax.size());
     out->writeRawData((const char *) hrMeanMax.data(), sizeof(float) * hrMeanMax.size());
     out->writeRawData((const char *) cadMeanMax.data(), sizeof(float) * cadMeanMax.size());
     out->writeRawData((const char *) nmMeanMax.data(), sizeof(float) * nmMeanMax.size());
@@ -1496,7 +1516,6 @@ RideFileCache::serialize(QDataStream *out)
     out->writeRawData((const char *) xPowerMeanMax.data(), sizeof(float) * xPowerMeanMax.size());
     out->writeRawData((const char *) npMeanMax.data(), sizeof(float) * npMeanMax.size());
     out->writeRawData((const char *) vamMeanMax.data(), sizeof(float) * vamMeanMax.size());
-    out->writeRawData((const char *) wattsKgMeanMax.data(), sizeof(float) * wattsKgMeanMax.size());
     out->writeRawData((const char *) aPowerMeanMax.data(), sizeof(float) * aPowerMeanMax.size());
 
     // write dist
@@ -1556,6 +1575,7 @@ RideFileCache::readCache()
 
         // read in the arrays
         inFile.readRawData((char *) wattsMeanMax.data(), sizeof(float) * wattsMeanMax.size());
+        inFile.readRawData((char *) wattsKgMeanMax.data(), sizeof(float) * wattsKgMeanMax.size());
         inFile.readRawData((char *) hrMeanMax.data(), sizeof(float) * hrMeanMax.size());
         inFile.readRawData((char *) cadMeanMax.data(), sizeof(float) * cadMeanMax.size());
         inFile.readRawData((char *) nmMeanMax.data(), sizeof(float) * nmMeanMax.size());
@@ -1568,7 +1588,6 @@ RideFileCache::readCache()
         inFile.readRawData((char *) xPowerMeanMax.data(), sizeof(float) * xPowerMeanMax.size());
         inFile.readRawData((char *) npMeanMax.data(), sizeof(float) * npMeanMax.size());
         inFile.readRawData((char *) vamMeanMax.data(), sizeof(float) * vamMeanMax.size());
-        inFile.readRawData((char *) wattsKgMeanMax.data(), sizeof(float) * wattsKgMeanMax.size());
         inFile.readRawData((char *) aPowerMeanMax.data(), sizeof(float) * aPowerMeanMax.size());
 
 

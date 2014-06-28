@@ -29,6 +29,7 @@
 #include <qwt_axis_id.h>
 
 #include "LTMTool.h"
+#include "AllPlot.h" // for curve colors widget
 #include "LTMSettings.h"
 #include "LTMCanvasPicker.h"
 #include "MetricAggregator.h"
@@ -60,6 +61,7 @@ class LTMPlot : public QwtPlot
         void pointHover(QwtPlotCurve*, int);
         void pointClicked(QwtPlotCurve*, int); // point clicked
         void configUpdate();
+        bool eventFilter(QObject *, QEvent *);
 
     protected:
         friend class ::LTMPlotBackground;
@@ -82,6 +84,7 @@ class LTMPlot : public QwtPlot
         // qwt picker
         LTMToolTip *picker;
         LTMCanvasPicker *_canvasPicker; // allow point selection/hover
+        CurveColors *curveColors;
 
     private:
         Context *context;
@@ -93,8 +96,12 @@ class LTMPlot : public QwtPlot
         QDate start, end;
         QwtPlotCurve *highlighter;
 
+        // keeping track of axes
         QHash<QString, QwtPlotCurve*> curves; // metric symbol with curve object
         QHash<QString, QwtAxisId> axes;             // units and associated axis
+        QList<QObject*> axesObject;
+        QList<QwtAxisId> axesId;
+
         QList<QwtPlotMarker*> labels;                // labels
         LTMScaleDraw *scale;
         QwtPlotGrid *grid;
@@ -120,7 +127,7 @@ class LTMPlot : public QwtPlot
         StressCalculator *cogganPMC, *skibaPMC;
 
         QList<QwtAxisId> supportedAxes;
-        bool first;
+        bool first, isolation;
         int MAXX;
 };
 
@@ -179,6 +186,7 @@ class LTMScaleDraw: public QwtScaleDraw
 
         case LTM_TOD:
             break;
+
         }
     }
 
@@ -190,13 +198,13 @@ class LTMScaleDraw: public QwtScaleDraw
         switch (groupBy) {
         case LTM_DAY:
             upTime = baseTime.addDays((int)v);
-            label = upTime.toString("MMM dd\nyyyy");
+            label = upTime.toString(QObject::tr("MMM dd\nyyyy")); /* 2 line display of date - keep \n in translation */
             break;
 
         case LTM_WEEK:
             {
             QDate week = baseTime.date().addDays((int)v*7);
-            label = week.toString("MMM dd\nyyyy");
+            label = week.toString(QObject::tr("MMM dd\nyyyy")); /* 2 line display of date - keep \n in translation */
             }
             break;
 
@@ -216,6 +224,11 @@ class LTMScaleDraw: public QwtScaleDraw
         case LTM_TOD:
             label = QString("%1:00").arg((int)v);
             break;
+
+        case LTM_ALL:
+            label = QString(QObject::tr("All"));
+            break;
+
         }
         return label;
     }

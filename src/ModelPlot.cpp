@@ -145,7 +145,7 @@ class ModelDataProvider : public Function
 
     public:
 
-        ModelDataProvider (BasicModelPlot &plot, ModelSettings *settings);
+        ModelDataProvider (ModelPlot &plot, ModelSettings *settings);
         void setData(RideFile *ride, int x, int y, int z, int col); // set the maps and return mesh dimension
 
         // return z value for x,y - std qwt3plot method
@@ -179,7 +179,7 @@ class ModelDataProvider : public Function
         double maxz, minz;
         double cranklength; // used for CPV/AEPF calculation
         bool useMetricUnits;
-        BasicModelPlot &plot;
+        ModelPlot &plot;
 };
 
 double
@@ -314,7 +314,7 @@ ModelDataProvider::describeType(int type, bool longer)
  * Edit it with caution, there be dragons here.
  *
  *----------------------------------------------------------------------*/
-ModelDataProvider::ModelDataProvider (BasicModelPlot &plot, ModelSettings *settings) : Function(plot), plot(plot)
+ModelDataProvider::ModelDataProvider (ModelPlot &plot, ModelSettings *settings) : Function(plot), plot(plot)
 {
     // get application settings
     cranklength = appsettings->value(NULL, GC_CRANKLENGTH, 0.0).toDouble() / 1000.0;
@@ -772,6 +772,21 @@ ModelDataProvider::ModelDataProvider (BasicModelPlot &plot, ModelSettings *setti
     plot.coordinates()->axes[Z3].setTicOrientation(-1, 0, 0);
     plot.coordinates()->axes[Z4].setTicOrientation(-1, 0, 0);
 
+    // use the cplotmarker colors for the ticks etc
+    QColor p = GColor(CPLOTMARKER);
+    plot.coordinates()->axes[Z1].setColor(p.red(), p.green(), p.blue());
+    plot.coordinates()->axes[Z2].setColor(p.red(), p.green(), p.blue());
+    plot.coordinates()->axes[Z3].setColor(p.red(), p.green(), p.blue());
+    plot.coordinates()->axes[Z4].setColor(p.red(), p.green(), p.blue());
+    plot.coordinates()->axes[X1].setColor(p.red(), p.green(), p.blue());
+    plot.coordinates()->axes[X2].setColor(p.red(), p.green(), p.blue());
+    plot.coordinates()->axes[X3].setColor(p.red(), p.green(), p.blue());
+    plot.coordinates()->axes[X4].setColor(p.red(), p.green(), p.blue());
+    plot.coordinates()->axes[Y1].setColor(p.red(), p.green(), p.blue());
+    plot.coordinates()->axes[Y2].setColor(p.red(), p.green(), p.blue());
+    plot.coordinates()->axes[Y3].setColor(p.red(), p.green(), p.blue());
+    plot.coordinates()->axes[Y4].setColor(p.red(), p.green(), p.blue());
+
     // now, at last we can draw the axes markers. phew.
     plot.coordinates()->axes[Z1].draw();
     plot.coordinates()->axes[Z2].draw();
@@ -798,7 +813,13 @@ ModelDataProvider::ModelDataProvider (BasicModelPlot &plot, ModelSettings *setti
  *
  *----------------------------------------------------------------------*/
 
-BasicModelPlot::BasicModelPlot(Context *context, ModelSettings *settings) : context(context)
+ModelPlot::ModelPlot(Context *context, QWidget *parent, ModelSettings *settings) : 
+#if QWT3D_MINOR_VERSION > 2
+    GridPlot(parent),
+#else
+    SurfacePlot(parent),
+#endif
+    context(context)
 {
     diag_=0;
     currentStyle = STYLE_BAR;
@@ -858,7 +879,7 @@ BasicModelPlot::BasicModelPlot(Context *context, ModelSettings *settings) : cont
 }
 
 void
-BasicModelPlot::configChanged()
+ModelPlot::configChanged()
 {
     // setColors bg
     QColor rgba = GColor(CPLOTBACKGROUND);
@@ -879,7 +900,7 @@ BasicModelPlot::configChanged()
 }
 
 void
-BasicModelPlot::setStyle(int index)
+ModelPlot::setStyle(int index)
 {
     if (currentStyle == STYLE_BAR) degrade(bar);
     else degrade(water);
@@ -919,7 +940,7 @@ BasicModelPlot::setStyle(int index)
 }
 
 void
-BasicModelPlot::setData(ModelSettings *settings)
+ModelPlot::setData(ModelSettings *settings)
 {
     delete modelDataProvider;
     settings->colorProvider = modelDataColor;
@@ -939,7 +960,7 @@ BasicModelPlot::setData(ModelSettings *settings)
 }
 
 void
-BasicModelPlot::setFrame(bool frame)
+ModelPlot::setFrame(bool frame)
 {
     if (intervals_ && frame == true) {
         intervals_ |= SHOW_FRAME;
@@ -951,7 +972,7 @@ BasicModelPlot::setFrame(bool frame)
 }
 
 void
-BasicModelPlot::setLegend(bool legend, int coltype)
+ModelPlot::setLegend(bool legend, int coltype)
 {
     if (legend == true && coltype != MODEL_NONE) {
         showColorLegend(true);
@@ -961,7 +982,7 @@ BasicModelPlot::setLegend(bool legend, int coltype)
 }
 
 void
-BasicModelPlot::setGrid(bool grid)
+ModelPlot::setGrid(bool grid)
 {
     if (grid == true)
         coordinates()->setGridLines(true, true, Qwt3D::BACK | Qwt3D::LEFT | Qwt3D::FLOOR);
@@ -972,7 +993,7 @@ BasicModelPlot::setGrid(bool grid)
 }
 
 void
-BasicModelPlot::setZPane(int z)
+ModelPlot::setZPane(int z)
 {
     //zpane = (modelDataProvider->maxz-modelDataProvider->minz) / 100 * z;
     zpane = (modelDataProvider->getMaxz()-modelDataProvider->getMinz()) / 100 * z;
@@ -981,82 +1002,12 @@ BasicModelPlot::setZPane(int z)
 }
 
 void
-BasicModelPlot::resetViewPoint()
+ModelPlot::resetViewPoint()
 {
     setRotation(45, 0, 30); // seems most pleasing
     setShift(0,0,0);        // centre so movement feels natural
     setViewportShift(0,0);
     setZoom(0.8); // zoom in close but leave space for the axis labels
-}
-
-
-/*----------------------------------------------------------------------
- * MODEL PLOT
- * Nothing special - just a framed BasicModelPlot
- *----------------------------------------------------------------------*/
-ModelPlot::ModelPlot(Context *context, ModelSettings *settings) : QFrame(context->mainWindow), context(context)
-{
-    // the distinction between a model plot and a basic model plot
-    // is only to provide a frame for the qwt3d plot (it looks odd
-    // when compared to the other plots without one)
-    layout = new QVBoxLayout;
-    setLineWidth(1);
-    setFrameStyle(QFrame::NoFrame);
-    setContentsMargins(0,0,0,0);
-    basicModelPlot = new BasicModelPlot(context, settings);
-    layout->addWidget(basicModelPlot);
-    layout->setContentsMargins(2,2,2,2);
-    setLayout(layout);
-
-    connect(context, SIGNAL(configChanged()), basicModelPlot, SLOT(configChanged()));
-}
-
-void
-ModelPlot::setStyle(int index)
-{
-    basicModelPlot->setStyle(index);
-}
-
-void
-ModelPlot::setResolution(int val)
-{
-    basicModelPlot->setResolution(val);
-}
-
-void
-ModelPlot::setData(ModelSettings *settings)
-{
-    basicModelPlot->setData(settings);
-}
-
-void
-ModelPlot::resetViewPoint()
-{
-    basicModelPlot->resetViewPoint();
-}
-
-void
-ModelPlot::setGrid(bool grid)
-{
-    basicModelPlot->setGrid(grid);
-}
-
-void
-ModelPlot::setLegend(bool legend, int coltype)
-{
-    basicModelPlot->setLegend(legend, coltype);
-}
-
-void
-ModelPlot::setFrame(bool frame)
-{
-    basicModelPlot->setFrame(frame);
-}
-
-void
-ModelPlot::setZPane(int z)
-{
-    basicModelPlot->setZPane(z);
 }
 
 
@@ -1075,7 +1026,7 @@ Water::Water()
 {
 }
 
-Water::Water(BasicModelPlot *model) : model(model) {}
+Water::Water(ModelPlot *model) : model(model) {}
 
 void Water::drawBegin()
 {
@@ -1161,7 +1112,8 @@ void Water::drawEnd()
         glVertex3d(maxx,maxy,minz);
         glEnd();
 
-        glColor3d(0,0,0);
+        QColor x = GColor(CPLOTMARKER);
+        glColor3d(x.red(),x.green(),x.blue());
         glBegin(GL_LINES);
         glVertex3d(minx,miny,z); glVertex3d(minx,maxy, z);
         glVertex3d(minx,maxy,z); glVertex3d(maxx,maxy, z);
@@ -1191,7 +1143,7 @@ Bar::Bar()
 {
 }
 
-Bar::Bar(BasicModelPlot *model) : model(model) {}
+Bar::Bar(ModelPlot *model) : model(model) {}
 
 void Bar::drawBegin()
 {
@@ -1276,7 +1228,8 @@ void Bar::drawEnd()
         glVertex3d(maxx,maxy,minz);
         glEnd();
 
-        glColor3d(0,0,0);
+        QColor x = GColor(CPLOTMARKER);
+        glColor3d(x.red(),x.green(),x.blue());
         glBegin(GL_LINES);
         glVertex3d(minx,miny,z); glVertex3d(minx,maxy, z);
         glVertex3d(minx,maxy,z); glVertex3d(maxx,maxy, z);
@@ -1468,7 +1421,8 @@ void Bar::draw(Qwt3D::Triple const& pos)
     glVertex3d(pos.x+model->diag_,pos.y-model->diag_,z);
     glEnd();
 
-    glColor3d(0,0,0);
+    QColor x = GColor(CPLOTMARKER);
+    glColor3d(x.red(),x.green(),x.blue());
     glBegin(GL_LINES);
     glVertex3d(pos.x-model->diag_,pos.y-model->diag_,gminz); glVertex3d(pos.x+model->diag_,pos.y-model->diag_,gminz);
     glVertex3d(pos.x-model->diag_,pos.y-model->diag_,z); glVertex3d(pos.x+model->diag_,pos.y-model->diag_,z);

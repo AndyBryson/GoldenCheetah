@@ -34,6 +34,7 @@
 #include <QFileDialog>
 #include <QtGui>
 #include <QTableWidget>
+#include <QButtonGroup>
 #include <QStackedWidget>
 #include <QTextEdit>
 #include <QCheckBox>
@@ -78,11 +79,9 @@ class LTMTool : public QWidget
         SearchFilterBox *searchBox;
 #endif
 
-        // preset charts
-        QList<LTMSettings> presets;
-
         // basic tab: accessed by LTMWindow hence public
         QComboBox *groupBy;
+        QCheckBox *usePreset;
         QCheckBox *shadeZones;
         QCheckBox *showLegend;
         QCheckBox *showData;
@@ -112,8 +111,13 @@ class LTMTool : public QWidget
         void clearFilter();
         void setFilter(QStringList);
 
+        void presetsChanged();   // presets changed in the athlete class
+        void usePresetChanged(); // we changed the checkbox
+
         void exportClicked();
         void importClicked();
+        void editingStarted();
+        void editingFinished();
         void upClicked();
         void downClicked();
         void renameClicked();
@@ -123,7 +127,6 @@ class LTMTool : public QWidget
     private:
 
         // Helper function for default charts translation
-        void translateDefaultCharts(QList<LTMSettings>&charts);
         QwtPlotCurve::CurveStyle curveStyle(RideMetric::MetricType);
         QwtSymbol::Style symbolStyle(RideMetric::MetricType);
 
@@ -132,6 +135,7 @@ class LTMTool : public QWidget
         bool active; // ignore season changed signals since we triggered them
 
         bool _amFiltered; // is a filter appling?
+        bool editing;
         QStringList filenames; // filters
 
         QTabWidget *tabs;
@@ -178,6 +182,7 @@ class EditMetricDetailDialog : public QDialog
         MetricDetail *metricDetail;
 
         QRadioButton *chooseMetric, *chooseBest, *chooseEstimate;
+        QButtonGroup *group;
         QWidget *bestWidget, *estimateWidget;
         QStackedWidget *typeStack;
 
@@ -197,6 +202,7 @@ class EditMetricDetailDialog : public QDialog
         QComboBox *estimateSelect;  // select w', cp, ftp, pmax .. whichever is suported by model
         QDoubleSpinBox *estimateDuration;
         QComboBox *estimateDurationUnits;
+        QRadioButton *abs, *wpk;
 
         QComboBox *curveStyle,
                   *curveSymbol;

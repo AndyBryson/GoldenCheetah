@@ -127,7 +127,8 @@ LTMWindow::LTMWindow(Context *context) :
             << tr("Weeks")
             << tr("Months")
             << tr("Years")
-            << tr("Time Of Day");
+            << tr("Time Of Day")
+            << tr("All");
     rGroupBy->setStrings(strings);
     rGroupBy->setValue(0);
 
@@ -179,7 +180,6 @@ LTMWindow::LTMWindow(Context *context) :
     connect(context, SIGNAL(homeFilterChanged()), this, SLOT(filterChanged()));
     connect(ltmTool->groupBy, SIGNAL(currentIndexChanged(int)), this, SLOT(groupBySelected(int)));
     connect(rGroupBy, SIGNAL(valueChanged(int)), this, SLOT(rGroupBySelected(int)));
-    //!!! connect(ltmTool->saveButton, SIGNAL(clicked(bool)), this, SLOT(saveClicked(void)));
     connect(ltmTool->applyButton, SIGNAL(clicked(bool)), this, SLOT(applyClicked(void)));
     connect(ltmTool->shadeZones, SIGNAL(stateChanged(int)), this, SLOT(shadeZonesClicked(int)));
     connect(ltmTool->showData, SIGNAL(stateChanged(int)), this, SLOT(showDataClicked(int)));
@@ -202,6 +202,7 @@ LTMWindow::LTMWindow(Context *context) :
     connect(context, SIGNAL(rideAdded(RideItem*)), this, SLOT(refresh(void)));
     connect(context, SIGNAL(rideDeleted(RideItem*)), this, SLOT(refresh(void)));
     connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(presetSelected(int)), this, SLOT(presetSelected(int)));
 
     configChanged();
 }
@@ -245,6 +246,42 @@ LTMWindow::compareChanged()
 
 void
 LTMWindow::rideSelected() { } // deprecated
+
+void
+LTMWindow::presetSelected(int index)
+{
+    // apply a preset if we are configured to do that...
+    if (ltmTool->usePreset->isChecked()) {
+
+        // save chart setup
+        int groupBy = settings.groupBy;
+        bool legend = settings.legend;
+        bool events = settings.events;
+        bool stack = settings.stack;
+        bool shadeZones = settings.shadeZones;
+        QDateTime start = settings.start;
+        QDateTime end = settings.end;
+
+        // apply preset
+        settings = context->athlete->presets[index];
+
+        // now get back the local chart setup
+        settings.ltmTool = ltmTool;
+        settings.data = &results;
+        settings.bests = &bestsresults;
+        settings.measures = &measures;
+        settings.groupBy = groupBy;
+        settings.legend = legend;
+        settings.events = events;
+        settings.stack = stack;
+        settings.shadeZones = shadeZones;
+        settings.start = start;
+        settings.end = end;
+
+        ltmTool->applySettings();
+        refresh();
+    }
+}
 
 void
 LTMWindow::refreshPlot()
@@ -783,11 +820,12 @@ LTMWindow::applyClicked()
         QDateTime end = settings.end;
 
         // apply preset
-        settings = ltmTool->presets[selected];
+        settings = context->athlete->presets[selected];
 
         // now get back the local chart setup
         settings.ltmTool = ltmTool;
         settings.data = &results;
+        settings.bests = &bestsresults;
         settings.measures = &measures;
         settings.groupBy = groupBy;
         settings.legend = legend;
@@ -799,18 +837,6 @@ LTMWindow::applyClicked()
 
         ltmTool->applySettings();
         refresh();
-    }
-}
-
-void
-LTMWindow::saveClicked()
-{
-    EditChartDialog editor(context, &settings, ltmTool->presets);
-    if (editor.exec()) {
-        ltmTool->presets.append(settings);
-        settings.writeChartXML(context->athlete->home, ltmTool->presets);
-        //ltmTool->presetPicker->insertItem(ltmTool->presets.count()-1, settings.name, ltmTool->presets.count()-1);
-        //ltmTool->presetPicker->setCurrentIndex(ltmTool->presets.count()-1);
     }
 }
 
@@ -834,13 +860,24 @@ LTMWindow::groupForDate(QDate date)
 void
 LTMWindow::pointClicked(QwtPlotCurve*curve, int index)
 {
-    // get the date range for this point
-    QDate start, end;
-    LTMScaleDraw *lsd = new LTMScaleDraw(settings.start,
-                        groupForDate(settings.start.date()),
-                        settings.groupBy);
-    lsd->dateRange((int)round(curve->sample(index).x()), start, end);
-    ltmPopup->setData(settings, start, end);
+    // initialize date and time to sensefull boundaries
+    QDate start = QDate(1900,1,1);
+    QDate end   = QDate(2999,12,31);
+    QTime time = QTime(0, 0, 0, 0);
+
+    // now fill the correct values for context
+    if (settings.groupBy != LTM_TOD) {
+      // get the date range for this point (for all date-dependent grouping)
+      LTMScaleDraw *lsd = new LTMScaleDraw(settings.start,
+                          groupForDate(settings.start.date()),
+                          settings.groupBy);
+      lsd->dateRange((int)round(curve->sample(index).x()), start, end); }
+    else {
+      // special treatment for LTM_TOD as time dependent grouping
+      time = QTime((int)round(curve->sample(index).x()), 0, 0, 0);
+    }
+    // feed the popup with data
+    ltmPopup->setData(settings, start, end, time);
     popup->show();
 }
 
@@ -900,6 +937,9 @@ LTMWindow::refreshDataTable()
     case LTM_TOD :
         summary += tr("time of day");
         break;
+    case LTM_ALL :
+        summary += tr("All");
+        break;
     }
     summary += "</h3><p>";
 
@@ -915,6 +955,9 @@ LTMWindow::refreshDataTable()
 
         // ignore estimates for now XXX just to stop it crashing
         if (metricDetail.type == METRIC_ESTIMATE) continue;
+
+        // do we aggregate zero values ?
+        bool aggZero = metricDetail.metric ? metricDetail.metric->aggregateZero() : false;
 
         QList<SummaryMetrics> *data = NULL; // source data (metrics, bests etc)
         GroupedData a; // aggregated data
@@ -966,6 +1009,12 @@ LTMWindow::refreshDataTable()
             // check values are bounded to stop QWT going berserk
             if (isnan(value) || isinf(value)) value = 0;
 
+            // set aggZero to false and value to zero if is temperature and -255
+            if (metricDetail.metric && metricDetail.metric->symbol() == "average_temp" && value == RideFile::NoTemp) {
+                value = 0;
+                aggZero = false;
+            }
+
             // Special computed metrics (LTS/STS) have a null metric pointer
             if (metricDetail.type != METRIC_BEST && metricDetail.metric) {
                 // convert from stored metric value to imperial
@@ -996,7 +1045,9 @@ LTMWindow::refreshDataTable()
 
                     a.y[n] = value;
                     a.x[n] = currentDay - groupForDate(settings.start.date());
-                    secondsPerGroupBy = seconds; // reset for new group
+
+                    if (value || aggZero) secondsPerGroupBy = seconds; // reset for new group
+
                 } else {
                     // sum totals, average averages and choose best for Peaks
                     int type = metricDetail.metric ? metricDetail.metric->type() : RideMetric::Average;
@@ -1018,7 +1069,7 @@ LTMWindow::refreshDataTable()
                         // average should be calculated taking into account
                         // the duration of the ride, otherwise high value but
                         // short rides will skew the overall average
-                        a.y[n] = ((a.y[n]*secondsPerGroupBy)+(seconds*value)) / (secondsPerGroupBy+seconds);
+                        if (value || aggZero) a.y[n] = ((a.y[n]*secondsPerGroupBy)+(seconds*value)) / (secondsPerGroupBy+seconds);
                         break;
                         }
                     case RideMetric::Low:
@@ -1047,8 +1098,10 @@ LTMWindow::refreshDataTable()
 
         // fill in the remainder if data doesn't extend to
         // the period we are summarising
-        for (int n=0; n < aggregates[0].x.count(); n++) {
-            aggregates[0].x[n] = n;
+        if (settings.groupBy != LTM_ALL) {
+            for (int n=0; n < aggregates[0].x.count(); n++) {
+                aggregates[0].x[n] = n;
+            }
         }
 
         // formatting ...
@@ -1077,7 +1130,7 @@ LTMWindow::refreshDataTable()
             summary += "<td align=\"center\" valign=\"top\">"
                        "<b>%1</b></td>";
             QString units = settings.metrics[i].uunits;
-            if (units == tr("seconds")) units = tr("hours");
+            if (units == "seconds" || units == tr("seconds")) units = tr("hours");
             if (units == settings.metrics[i].uname) units = "";
             summary = summary.arg(units != "" ? QString("(%1)").arg(units) : "");
         }
@@ -1114,7 +1167,7 @@ LTMWindow::refreshDataTable()
 
                     // handle precision of 1 for seconds converted to hours
                     int precision = m->precision();
-                    if (settings.metrics[j].uunits == "seconds") precision=1;
+                    if (settings.metrics[j].uunits == "seconds" || settings.metrics[j].uunits == tr("seconds")) precision=1;
 
                     // we have a metric so lets be precise ...
                     QString v = QString("%1").arg(aggregates[j].y[i] * (context->athlete->useMetricUnits ? 1 : m->conversion())

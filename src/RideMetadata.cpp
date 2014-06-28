@@ -27,6 +27,7 @@
 #include "Settings.h"
 #include "Colors.h"
 #include "Units.h"
+#include "TabView.h"
 
 #include <QXmlDefaultHandler>
 #include <QtGui>
@@ -53,17 +54,11 @@ RideMetadata::RideMetadata(Context *context, bool singlecolumn) :
     // setup the tabs widget
     tabs = new QTabWidget(this);
     tabs->setMovable(true);
-#ifdef WIN32
-    tabs->setStyleSheet("QTabWidget::pane { "
-		    " margin: 0px,0px,0px,0px;"
-		    " border: 0px;"
-		    " border-top: 0px; }");
-#endif
 
     // better styling on Linux with fusion controls
-#if (defined Q_OS_LINUX) && (QT_VERSION >= 0x050000)
-    QStyle *fusion = QStyleFactory::create("fusion");
-    setStyle(fusion);
+#ifndef Q_OS_MAC
+    QStyle *fusion = QStyleFactory::create(OS_STYLE);
+    tabs->setStyle(fusion);
 #endif
     mainLayout->addWidget(tabs);
 
@@ -282,6 +277,9 @@ RideMetadata::configUpdate()
 
     // when constructing we have not registered
     // the properties nor selected a ride
+#ifndef Q_OS_MAC
+    tabs->setStyleSheet(TabView::ourStyleSheet());
+#endif
 
     metadataChanged(); // re-read the values!
 }
@@ -464,6 +462,9 @@ FormField::FormField(FieldDefinition field, RideMetadata *meta) : definition(fie
     case FIELD_TEXTBOX : // textbox
         widget = new QTextEdit(this);
 
+        // use special style sheet ..
+        dynamic_cast<QTextEdit*>(widget)->setObjectName("metadata"); 
+
         // rich text hangs 'fontd' for some users
         dynamic_cast<QTextEdit*>(widget)->setAcceptRichText(false); 
         dynamic_cast<QTextEdit*>(widget)->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding); 
@@ -496,7 +497,7 @@ FormField::FormField(FieldDefinition field, RideMetadata *meta) : definition(fie
             connect(enabled, SIGNAL(stateChanged(int)), this, SLOT(stateChanged(int)));
             units = meta->sp.rideMetric(field.name)->units(meta->context->athlete->useMetricUnits);
 
-            if (units == "seconds") {
+            if (units == "seconds" || units == tr("seconds")) {
                 // we need to use a TimeEdit instead
                 delete widget;
                 widget = new QTimeEdit(this);

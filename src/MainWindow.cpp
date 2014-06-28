@@ -115,19 +115,19 @@ MainWindow::MainWindow(const QDir &home)
 
     // bootstrap
     Context *context = new Context(this);
+    GCColor *GCColorSet = new GCColor(context); // get/keep colorset, before athlete...
     context->athlete = new Athlete(context, home);
 
     setWindowIcon(QIcon(":images/gc.png"));
     setWindowTitle(context->athlete->home.dirName());
     setContentsMargins(0,0,0,0);
     setAcceptDrops(true);
-    GCColor *GCColorSet = new GCColor(context); // get/keep colorset
-    GCColorSet->colorSet(); // shut up the compiler
 
     #ifdef GC_HAVE_WFAPI
     WFApi *w = WFApi::getInstance(); // ensure created on main thread
     w->apiVersion();//shutup compiler
     #endif
+    GCColorSet->colorSet(); // shut up the compiler
     Library::initialise(context->athlete->home);
     QNetworkProxyQuery npq(QUrl("http://www.google.com"));
     QList<QNetworkProxy> listOfProxies = QNetworkProxyFactory::systemProxyForQuery(npq);
@@ -156,20 +156,20 @@ MainWindow::MainWindow(const QDir &home)
     /*----------------------------------------------------------------------
      *  GUI setup
      *--------------------------------------------------------------------*/
-
     // need to restore geometry before setUnifiedToolBar.. on Mac
+    QRect screenSize = desktop->availableGeometry();
     appsettings->setValue(GC_SETTINGS_LAST, context->athlete->home.dirName());
-    QVariant geom = appsettings->value(this, GC_SETTINGS_MAIN_GEOM);
+    QVariant geom = appsettings->value(this, GC_SETTINGS_MAIN_GEOM, QVariant());
+
     if (geom == QVariant()) {
 
         // first run -- lets set some sensible defaults...
         // lets put it in the middle of screen 1
-        QRect size = desktop->availableGeometry();
-        struct SizeSettings app = GCColor::defaultSizes(size.height(), size.width());
+        struct SizeSettings app = GCColor::defaultSizes(screenSize.height(), screenSize.width());
 
         // center on the available screen (minus toolbar/sidebar)
-        move((size.width()-size.x())/2 - app.width/2,
-             (size.height()-size.y())/2 - app.height/2);
+        move((screenSize.width()-screenSize.x())/2 - app.width/2,
+             (screenSize.height()-screenSize.y())/2 - app.height/2);
 
         // set to the right default
         resize(app.width, app.height);
@@ -181,21 +181,22 @@ MainWindow::MainWindow(const QDir &home)
         appsettings->setValue(GC_FONT_CHARTLABELS_SIZE, app.labelFont);
         appsettings->setValue(GC_FONT_CALENDAR_SIZE, app.calendarFont);
 
-        // set the default fontsize
-        QFont font;
-        font.setPointSize(app.defaultFont);
-        QApplication::setFont(font);
-
     } else {
 
-        QRect size = desktop->availableGeometry();
-
-        // ensure saved geometry isn't greater than current screen size
-        if ((geom.toRect().height() >= size.height()) || (geom.toRect().width() >= size.width()))
-            setGeometry(size.x()+30,size.y()+30,size.width()-60,size.height()-60);
-        else
-            setGeometry(geom.toRect());
+        QRect appsize = geom.toRect();
+        setGeometry(appsize);
     }
+
+    // just check the geometry is ok, otherwise just make
+    // it slightly smaller than the screensize
+    if (geometry().x() < 0 || geometry().y() < 0 || 
+       (geometry().y()+geometry().height()) > screenSize.height() || (geometry().x()+geometry().width()) > screenSize.width()) {
+        setGeometry(screenSize.x()+50,screenSize.y()+50,screenSize.width()-150,screenSize.height()-150);
+    }
+
+    // always attempt to center on the available screen (minus toolbar/sidebar)
+    move(((screenSize.width()-screenSize.x())/2) - (geometry().width()/2),
+        ((screenSize.height()-screenSize.y())/2) - (geometry().height()/2));
 
 
     /*----------------------------------------------------------------------
@@ -534,8 +535,9 @@ MainWindow::MainWindow(const QDir &home)
      * Application Menus
      *--------------------------------------------------------------------*/
 #ifdef WIN32
+    QString menuColorString = (GCColor::isFlat() ? GColor(CCHROME).name() : "rgba(225,225,225)");
     menuBar()->setStyleSheet(QString("QMenuBar { color: black; background: %1; }"
-		    	     "QMenuBar::item { color: black; background: %1; }").arg(GColor(CCHROME).name()));
+                             "QMenuBar::item { color: black; background: %1; }").arg(menuColorString));
     menuBar()->setContentsMargins(0,0,0,0);
 #endif
 
@@ -914,11 +916,11 @@ MainWindow::resizeEvent(QResizeEvent*)
 {
 #ifdef Q_OS_MAC
     if (head) {
-        appsettings->setValue(GC_SETTINGS_MAIN_GEOM, geometry());
         head->updateGeometry();
         repaint();
     }
 #endif
+    appsettings->setValue(GC_SETTINGS_MAIN_GEOM, geometry());
 }
 
 void
@@ -975,6 +977,7 @@ MainWindow::closeEvent(QCloseEvent* event)
         }
 #endif
     }
+    appsettings->setValue(GC_SETTINGS_MAIN_GEOM, geometry());
 }
 
 MainWindow::~MainWindow()
@@ -1027,7 +1030,16 @@ void MainWindow::showWorkoutWizard()
 
 void MainWindow::resetWindowLayout()
 {
-    currentTab->resetLayout();
+    QMessageBox msgBox;
+    msgBox.setText(tr("You are about to reset all charts to the default setup"));
+    msgBox.setInformativeText(tr("Do you want to continue?"));
+    msgBox.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
+    msgBox.setDefaultButton(QMessageBox::Cancel);
+    msgBox.setIcon(QMessageBox::Warning);
+    msgBox.exec();
+
+    if(msgBox.clickedButton() == msgBox.button(QMessageBox::Ok))
+        currentTab->resetLayout();
 }
 
 void MainWindow::manualProcess(QString name)
@@ -1813,8 +1825,9 @@ MainWindow::configChanged()
 
 // Windows
 #ifdef WIN32
+    QString menuColorString = (GCColor::isFlat() ? GColor(CCHROME).name() : "rgba(225,225,225)");
     menuBar()->setStyleSheet(QString("QMenuBar { color: black; background: %1; }"
-		    	     "QMenuBar::item { color: black; background: %1; }").arg(GColor(CCHROME).name()));
+                             "QMenuBar::item { color: black; background: %1; }").arg(menuColorString));
 #endif
 
 // Mac
@@ -1852,6 +1865,12 @@ MainWindow::configChanged()
         tabbarPalette.setBrush(backgroundRole(), QColor("#B3B4B6"));
     tabbar->setPalette(tabbarPalette);
 #endif
+
+    // set the default fontsize
+    QFont font;
+    font.fromString(appsettings->value(NULL, GC_FONT_DEFAULT, QFont().toString()).toString());
+    font.setPointSize(appsettings->value(NULL, GC_FONT_DEFAULT_SIZE, 10).toInt());
+    QApplication::setFont(font); // set default font
 
     head->updateGeometry();
     repaint();

@@ -82,7 +82,7 @@ void GCColor::setupColors()
         { tr("Long Term Stress"), "COLORLTS", Qt::green },
         { tr("Stress Balance"), "COLORSB", Qt::black },
         { tr("Daily Stress"), "COLORDAILYSTRESS", Qt::red },
-        { tr("Bike Score"), "COLORBIKESCORE", Qt::gray },
+        { "Bike Score (TM)", "COLORBIKESCORE", Qt::gray },
         { tr("Calendar Text"), "COLORCALENDARTEXT", Qt::black },
         { tr("Power Zone 1 Shading"), "COLORZONE1", QColor(255,0,255) },
         { tr("Power Zone 2 Shading"), "COLORZONE2", QColor(42,0,255) },
@@ -139,7 +139,7 @@ void GCColor::setupColors()
 #ifdef Q_OS_MAC
         { tr("Toolbar and Sidebar"), "CCHROME", QColor(213,213,213) },
 #else
-        { tr("Toolbar and Sidebar"), "CCHROME", QColor(197,197,197) },
+        { tr("Toolbar and Sidebar"), "CCHROME", QColor(108,108,108) },
 #endif
 #endif
         { "", "", QColor(0,0,0) },
@@ -266,6 +266,12 @@ GCColor::getColor(int colornum)
     return ColorList[colornum].color;
 }
 
+void
+GCColor::setColor(int colornum, QColor color)
+{
+    ColorList[colornum].color = color;
+}
+
 Themes &
 GCColor::themes()
 {
@@ -370,6 +376,10 @@ GCColor::stylesheet()
     QColor fgColor = GCColor::invertColor(bgColor);
     return QString("QTreeView { color: %2; background: %1; }"
                    "QTableWidget { color: %2; background: %1; }"
+#ifndef Q_OS_MAC
+                   "QHeaderView { background-color: %1; color: %2; }"
+                   "QHeaderView::section { background-color: %1; color: %2; border: 0px ; }"
+#endif
                    "QTableWidget::item:hover { color: black; background: lightGray; }"
                    "QTreeView::item:hover { color: black; background: lightGray; }").arg(bgColor.name()).arg(fgColor.name());
 }
@@ -556,6 +566,90 @@ Themes::Themes()
     themes << add;
     colors.clear();
 
+}
+
+void
+GCColor::applyTheme(int index)
+{
+    // now get the theme selected
+    ColorTheme theme = GCColor::themes().themes[index];
+
+    for (int i=0; ColorList[i].name != ""; i++) {
+
+        QColor color;
+
+        // apply theme to color
+        switch(i) {
+
+        case CPLOTBACKGROUND:
+        case CRIDEPLOTBACKGROUND:
+        case CTRAINPLOTBACKGROUND:
+            color = theme.colors[0]; // background color
+            break;
+
+        // fg color theme.colors[1] not used YET XXX
+
+        case CPLOTSYMBOL:
+        case CRIDEPLOTXAXIS:
+        case CRIDEPLOTYAXIS:
+        case CPLOTMARKER:
+            color = theme.colors[2]; // accent color
+            break;
+
+        case CPLOTSELECT:
+        case CPLOTTRACKER:
+        case CINTERVALHIGHLIGHTER:
+            color = theme.colors[3]; // select color
+            break;
+
+
+        case CPLOTGRID: // grid doesn't have a theme color
+                        // we make it barely distinguishable from background
+            {
+                QColor bg = theme.colors[0];
+                if(bg == QColor(Qt::black)) color = QColor(30,30,30);
+                else color = bg.darker(110);
+            }
+            break;
+
+        case CCP:
+        case CWBAL:
+        case CRIDECP:
+            color = theme.colors[4];
+            break;
+
+        case CHEARTRATE:
+            color = theme.colors[5];
+            break;
+
+        case CSPEED:
+            color = theme.colors[6];
+            break;
+
+        case CPOWER:
+            color = theme.colors[7];
+            break;
+
+        case CCADENCE:
+            color = theme.colors[8];
+            break;
+
+        case CTORQUE:
+            color = theme.colors[9];
+            break;
+
+        default:
+            color = DefaultColorList[i].color;
+        }
+
+        // theme applied !
+        ColorList[i].color = color;
+
+        QString colorstring = QString("%1:%2:%3").arg(color.red())
+                                                 .arg(color.green())
+                                                 .arg(color.blue());
+        appsettings->setValue(ColorList[i].setting, colorstring);
+    }
 }
 
 //

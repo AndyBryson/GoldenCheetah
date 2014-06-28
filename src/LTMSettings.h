@@ -47,6 +47,7 @@ class RideMetric;
 #define LTM_MONTH   3
 #define LTM_YEAR    4
 #define LTM_TOD     5
+#define LTM_ALL     6
 
 // type of metric
 #define METRIC_DB        1
@@ -62,6 +63,7 @@ class RideMetric;
 #define ESTIMATE_FTP     2
 #define ESTIMATE_PMAX    3
 #define ESTIMATE_BEST    4
+#define ESTIMATE_EI      5
 
 // We catalogue each metric and the curve settings etc here
 class MetricDetail {
@@ -82,6 +84,7 @@ class MetricDetail {
     int estimate; // 0-4 for W', CP, FTP, PMAX
     int estimateDuration;       // n x units below for seconds
     int estimateDuration_units; // 1=secs, 60=mins, 3600=hours
+    bool wpk; // absolute or wpk 
 
     // for METRICS
     QString symbol;

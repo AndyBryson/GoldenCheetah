@@ -41,7 +41,7 @@
 // PDModel estimate support
 #include "PDModel.h"
 
-LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mainWindow), settings(settings), context(context), active(false), _amFiltered(false)
+LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mainWindow), settings(settings), context(context), active(false), _amFiltered(false), editing(false)
 {
     setStyleSheet("QFrame { FrameStyle = QFrame::NoFrame };"
                   "QWidget { background = Qt::white; border:0 px; margin: 2px; };");
@@ -66,11 +66,6 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
     basicsettingsLayout->addRow(new QLabel(tr(""))); // spacing
 #endif
 
-    // read charts.xml and translate etc
-    LTMSettings reader;
-    reader.readChartXML(context->athlete->home, presets);
-    translateDefaultCharts(presets);
-
     // Basic Controls
     QWidget *basic = new QWidget(this);
     basic->setContentsMargins(0,0,0,0);
@@ -94,6 +89,7 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
     groupBy->addItem(tr("Months"), LTM_MONTH);
     groupBy->addItem(tr("Years"), LTM_YEAR);
     groupBy->addItem(tr("Time Of Day"), LTM_TOD);
+    groupBy->addItem(tr("All"), LTM_ALL);
     groupBy->setCurrentIndex(0);
     basicsettingsLayout->addRow(new QLabel(tr("Group by")), groupBy);
     basicsettingsLayout->addRow(new QLabel(tr(""))); // spacing
@@ -157,13 +153,6 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
     charts->setEditTriggers(QAbstractItemView::SelectedClicked); // allow edit
     charts->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     charts->setIndentation(0);
-    foreach(LTMSettings chart, presets) {
-        QTreeWidgetItem *add;
-        add = new QTreeWidgetItem(charts->invisibleRootItem());
-        add->setFlags(add->flags() | Qt::ItemIsEditable);
-        add->setText(0, chart.name);
-    }
-    charts->setCurrentItem(charts->invisibleRootItem()->child(0));
 
     applyButton = new QPushButton(tr("Apply")); // connected in LTMWindow.cpp
     QHBoxLayout *buttons = new QHBoxLayout;
@@ -181,6 +170,8 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
     connect(deleteButton, SIGNAL(clicked()), this, SLOT(deleteClicked()));
     connect(importButton, SIGNAL(clicked()), this, SLOT(importClicked()));
     connect(exportButton, SIGNAL(clicked()), this, SLOT(exportClicked()));
+    connect(charts, SIGNAL(itemChanged(QTreeWidgetItem*,int)), this, SLOT(editingFinished()));
+    connect(charts, SIGNAL(itemClicked(QTreeWidgetItem*,int)), this, SLOT(editingStarted()));
 
     tabs = new QTabWidget(this);
 
@@ -1065,12 +1056,17 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
     deleteCustomButton = new QPushButton("- ");
     connect(deleteCustomButton, SIGNAL(clicked()), this, SLOT(deleteMetric()));
 
+    usePreset = new QCheckBox(tr("Use sidebar chart settings"));
+    usePreset->setChecked(false);
+
 #ifndef Q_OS_MAC
     addCustomButton->setFixedSize(20,20);
     deleteCustomButton->setFixedSize(20,20);
 #endif
     QHBoxLayout *customButtons = new QHBoxLayout;
     customButtons->setSpacing(2);
+    customButtons->addWidget(usePreset);
+    customButtons->addStretch();
     customButtons->addWidget(editCustomButton);
     customButtons->addStretch();
     customButtons->addWidget(addCustomButton);
@@ -1085,6 +1081,42 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
     connect(dateSetting, SIGNAL(useStandardRange()), this, SIGNAL(useStandardRange()));
     connect(dateSetting, SIGNAL(useCustomRange(DateRange)), this, SIGNAL(useCustomRange(DateRange)));
     connect(dateSetting, SIGNAL(useThruToday()), this, SIGNAL(useThruToday()));
+
+    // watch for changes to the preset charts
+    connect(context, SIGNAL(presetsChanged()), this, SLOT(presetsChanged()));
+    connect(usePreset, SIGNAL(stateChanged(int)), this, SLOT(usePresetChanged()));
+
+    // set the show/hide for preset selection
+    usePresetChanged();
+    
+    // but setup for the first time
+    presetsChanged();
+}
+
+void
+LTMTool::usePresetChanged()
+{
+    customTable->setEnabled(!usePreset->isChecked());
+    editCustomButton->setEnabled(!usePreset->isChecked());
+    addCustomButton->setEnabled(!usePreset->isChecked());
+    deleteCustomButton->setEnabled(!usePreset->isChecked());
+}
+
+void
+LTMTool::presetsChanged()
+{
+    // rebuild the preset chart list as the presets have changed
+    charts->clear();
+    foreach(LTMSettings chart, context->athlete->presets) {
+        QTreeWidgetItem *add;
+        add = new QTreeWidgetItem(charts->invisibleRootItem());
+        add->setFlags(add->flags() | Qt::ItemIsEditable);
+        add->setText(0, chart.name);
+    }
+
+    // select the first one, if there are any
+    if (context->athlete->presets.count())
+        charts->setCurrentItem(charts->invisibleRootItem()->child(0));
 }
 
 void
@@ -1221,18 +1253,14 @@ void
 LTMTool::addCurrent()
 {
     // give the chart a name
-    if (settings->name == "") settings->name = QString("Chart %1").arg(presets.count()+1);
+    if (settings->name == "") settings->name = QString(tr("Chart %1")).arg(context->athlete->presets.count()+1);
 
     // add the current chart to the presets with a name using the chart title
-    presets.append(*settings);
+    context->athlete->presets.append(*settings);
 
-    // add to the list
-    QTreeWidgetItem *add;
-    add = new QTreeWidgetItem(charts->invisibleRootItem());
-    add->setFlags(add->flags() | Qt::ItemIsEditable);
-    add->setText(0, settings->name);
-
-    // save charts.xml
+    // tree will now be refreshed
+    editing = false;
+    context->notifyPresetsChanged();
 }
 
 // set the estimateSelection based upon what is available
@@ -1249,6 +1277,7 @@ EditMetricDetailDialog::modelChanged()
     qobject_cast<QStandardItemModel *>(estimateSelect->model())->item(2)->setEnabled(models[currentIndex]->hasFTP());
     qobject_cast<QStandardItemModel *>(estimateSelect->model())->item(3)->setEnabled(models[currentIndex]->hasPMax());
     qobject_cast<QStandardItemModel *>(estimateSelect->model())->item(4)->setEnabled(true);
+    qobject_cast<QStandardItemModel *>(estimateSelect->model())->item(5)->setEnabled(true);
 
     // switch to other estimate if wanted estimate is not selected
     if (ce < 0 || !qobject_cast<QStandardItemModel *>(estimateSelect->model())->item(ce)->isEnabled())
@@ -1292,6 +1321,7 @@ EditMetricDetailDialog::estimateName()
                                                   .arg(estimateDurationUnits->currentText());
             }
             break;
+        case 5 : name = "Endurance Index"; break;
     }
 
     // now the model
@@ -1311,12 +1341,35 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
     // choose the type
-    chooseMetric = new QRadioButton(tr("Metric"));
-    chooseMetric->setChecked(metricDetail->type != 5 && metricDetail->type != 6);
-    chooseBest = new QRadioButton(tr("Best"));
-    chooseBest->setChecked(metricDetail->type == 5);
-    chooseEstimate = new QRadioButton(tr("Estimate"));
-    chooseEstimate->setChecked(metricDetail->type == 6);
+    chooseMetric = new QRadioButton(tr("Metric"), this);
+    chooseBest = new QRadioButton(tr("Best"), this);
+    chooseEstimate = new QRadioButton(tr("Estimate"), this);
+
+    // put them into a button group because we
+    // also have radio buttons for watts per kilo / absolute
+    group = new QButtonGroup(this);
+    group->addButton(chooseMetric);
+    group->addButton(chooseBest);
+    group->addButton(chooseEstimate);
+
+    // uncheck them all
+    chooseMetric->setChecked(false);
+    chooseBest->setChecked(false);
+    chooseEstimate->setChecked(false);
+
+    // which one ?
+    switch (metricDetail->type) {
+    default:
+        chooseMetric->setChecked(true);
+        break;
+    case 5:
+        chooseBest->setChecked(true);
+        break;
+    case 6:
+        chooseEstimate->setChecked(true);
+        break;
+    }
+
     QVBoxLayout *radioButtons = new QVBoxLayout;
     radioButtons->addStretch();
     radioButtons->addWidget(chooseMetric);
@@ -1396,6 +1449,7 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     estimateSelect->addItem("FTP");
     estimateSelect->addItem("p-Max");
     estimateSelect->addItem("Best Power");
+    estimateSelect->addItem("Endurance Index");
 
     int n=0;
     modelSelect->setCurrentIndex(0); // default to 2parm model
@@ -1426,10 +1480,23 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     estbestLayout->addWidget(estimateDuration);
     estbestLayout->addWidget(estimateDurationUnits);
 
+    // estimate as absolute or watts per kilo ?
+    abs = new QRadioButton(tr("Absolute"), this);
+    wpk = new QRadioButton(tr("Per Kilogram"), this);
+    wpk->setChecked(metricDetail->wpk);
+    abs->setChecked(!metricDetail->wpk);
+
+    QHBoxLayout *estwpk = new QHBoxLayout;
+    estwpk->addStretch();
+    estwpk->addWidget(abs);
+    estwpk->addWidget(wpk);
+    estwpk->addStretch();
+
     estimateLayout->addStretch();
     estimateLayout->addWidget(modelSelect);
     estimateLayout->addWidget(estimateSelect);
     estimateLayout->addLayout(estbestLayout);
+    estimateLayout->addLayout(estwpk);
     estimateLayout->addStretch();
 
     // metric selection tree
@@ -1630,6 +1697,8 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
 
     // when stuff changes rebuild name
     connect(chooseBest, SIGNAL(toggled(bool)), this, SLOT(bestName()));
+    connect(chooseEstimate, SIGNAL(toggled(bool)), this, SLOT(estimateName()));
+    connect(chooseMetric, SIGNAL(toggled(bool)), this, SLOT(metricSelected()));
     connect(duration, SIGNAL(valueChanged(double)), this, SLOT(bestName()));
     connect(durationUnits, SIGNAL(currentIndexChanged(int)), this, SLOT(bestName()));
     connect(dataSeries, SIGNAL(currentIndexChanged(int)), this, SLOT(bestName()));
@@ -1696,9 +1765,15 @@ EditMetricDetailDialog::bestName()
 void
 EditMetricDetailDialog::metricSelected()
 {
+    // only in metric mode
+    if (!chooseMetric->isChecked()) return;
+
     // user selected a different metric
     // so update accordingly
     int index = metricTree->invisibleRootItem()->indexOfChild(metricTree->currentItem());
+
+    // out of bounds !
+    if (index < 0 || index >= ltmTool->metrics.count()) return;
 
     userName->setText(ltmTool->metrics[index].uname);
     userUnits->setText(ltmTool->metrics[index].uunits);
@@ -1803,9 +1878,10 @@ EditMetricDetailDialog::applyClicked()
         case 2 :
         default: metricDetail->duration_units = 3600; break;
     }
+    metricDetail->wpk = wpk->isChecked();
     metricDetail->series = seriesList.at(dataSeries->currentIndex());
     metricDetail->model = models[modelSelect->currentIndex()]->code();
-    metricDetail->estimate = estimateSelect->currentIndex(); // 0 - 3
+    metricDetail->estimate = estimateSelect->currentIndex(); // 0 - 5
     metricDetail->smooth = curveSmooth->isChecked();
     metricDetail->trend = curveTrend->isChecked();
     metricDetail->topN = showBest->value();
@@ -1906,46 +1982,6 @@ LTMTool::setFilter(QStringList files)
         emit filterChanged();
 }
 
-void
-LTMTool::translateDefaultCharts(QList<LTMSettings>&charts)
-{
-    // Map default (english) chart name to external (Localized) name
-    // New default charts need to be added to this list to be translated
-    QMap<QString, QString> chartNameMap;
-	chartNameMap.insert("PMC", tr("PMC"));
-	chartNameMap.insert("Track Weight", tr("Track Weight"));
-	chartNameMap.insert("Time In Power Zone (Stacked)", tr("Time In Power Zone (Stacked)"));
-	chartNameMap.insert("Time In Power Zone (Bar)", tr("Time In Power Zone (Bar)"));
-	chartNameMap.insert("Time In HR Zone", tr("Time In HR Zone"));
-	chartNameMap.insert("Power Distribution", tr("Power Distribution"));
-	chartNameMap.insert("KPI Tracker", tr("KPI Tracker"));
-	chartNameMap.insert("Critical Power Trend", tr("Critical Power Trend"));
-	chartNameMap.insert("Aerobic Power", tr("Aerobic Power"));
-	chartNameMap.insert("Aerobic WPK", tr("Aerobic WPK"));
-	chartNameMap.insert("Power Variance", tr("Power Variance"));
-	chartNameMap.insert("Power Profile", tr("Power Profile"));
-	chartNameMap.insert("Anaerobic Power", tr("Anaerobic Power"));
-	chartNameMap.insert("Anaerobic WPK", tr("Anaerobic WPK"));
-	chartNameMap.insert("Power & Speed Trend", tr("Power & Speed Trend"));
-	chartNameMap.insert("Cardiovascular Response", tr("Cardiovascular Response"));
-	chartNameMap.insert("Tempo & Threshold Time", tr("Tempo & Threshold Time"));
-	chartNameMap.insert("Training Mix", tr("Training Mix"));
-	chartNameMap.insert("Time & Distance", tr("Time & Distance"));
-	chartNameMap.insert("Skiba Power", tr("Skiba Power"));
-	chartNameMap.insert("Daniels Power", tr("Daniels Power"));
-	chartNameMap.insert("PM Ramp & Peak", tr("PM Ramp & Peak"));
-	chartNameMap.insert("Skiba PM", tr("Skiba PM"));
-	chartNameMap.insert("Daniels PM", tr("Daniels PM"));
-	chartNameMap.insert("Device Reliability", tr("Device Reliability"));
-	chartNameMap.insert("Withings Weight", tr("Withings Weight"));
-	chartNameMap.insert("Stress and Distance", tr("Stress and Distance"));
-	chartNameMap.insert("Calories vs Duration", tr("Calories vs Duration"));
-
-    for(int i=0; i<charts.count(); i++) {
-        // Replace chart name for localized version, default to english name
-        charts[i].name = chartNameMap.value(charts[i].name, charts[i].name);
-    }
-}
 
 // metricDetails gives access to the metric details catalog by symbol
 MetricDetail*
@@ -1988,13 +2024,25 @@ LTMTool::translateMetrics(Context *context, LTMSettings *settings) // settings o
     delete ltmTool;
 }
 
-//void
-//LTMTool::okClicked()
-//{
-    //// take the edited versions of the name first
-    //for(int i=0; i<charts->invisibleRootItem()->childCount(); i++)
-        //(presets)[i].name = charts->invisibleRootItem()->child(i)->text(0);
-//}
+void
+LTMTool::editingStarted()
+{
+    editing = true; // also set from renameClicked
+}
+
+void
+LTMTool::editingFinished()
+{
+    if (!editing) return;
+
+    // take the edited versions of the name first
+    for(int i=0; i<charts->invisibleRootItem()->childCount(); i++)
+        (context->athlete->presets)[i].name = charts->invisibleRootItem()->child(i)->text(0);
+
+    // let everyone know once we're done
+    editing = false;
+    context->notifyPresetsChanged();
+}
 
 void
 LTMTool::importClicked()
@@ -2023,13 +2071,11 @@ LTMTool::importClicked()
             imported = handler.getSettings();
 
             // now append to the QList and QTreeWidget
-            presets += imported;
-            foreach (LTMSettings chart, imported) {
-                QTreeWidgetItem *add;
-                add = new QTreeWidgetItem(charts->invisibleRootItem());
-                add->setFlags(add->flags() | Qt::ItemIsEditable);
-                add->setText(0, chart.name);
-            }
+            context->athlete->presets += imported;
+
+            // notify we changed and tree updates
+            editing = false;
+            context->notifyPresetsChanged();
 
         } else {
             // oops non existant - does this ever happen?
@@ -2059,7 +2105,7 @@ LTMTool::exportClicked()
             if (msgBox.exec() != QMessageBox::Ok)
                 return;
         }
-        LTMChartParser::serialize(filenames[0], presets);
+        LTMChartParser::serialize(filenames[0], context->athlete->presets);
     }
 }
 
@@ -2071,12 +2117,16 @@ LTMTool::upClicked()
         if (index == 0) return; // its at the top already
 
         // movin on up!
-        QTreeWidgetItem *moved;
-        charts->invisibleRootItem()->insertChild(index-1, moved=charts->invisibleRootItem()->takeChild(index));
-        charts->setCurrentItem(moved);
-        LTMSettings save = (presets)[index];
-        presets.removeAt(index);
-        presets.insert(index-1, save);
+        LTMSettings save = (context->athlete->presets)[index];
+        context->athlete->presets.removeAt(index);
+        context->athlete->presets.insert(index-1, save);
+
+        // notify we changed
+        editing = false;
+        context->notifyPresetsChanged();
+
+        // reselect
+        charts->setCurrentItem(charts->invisibleRootItem()->child(index-1));
     }
 }
 
@@ -2088,12 +2138,16 @@ LTMTool::downClicked()
         if (index == (charts->invisibleRootItem()->childCount()-1)) return; // its at the bottom already
 
         // movin on up!
-        QTreeWidgetItem *moved;
-        charts->invisibleRootItem()->insertChild(index+1, moved=charts->invisibleRootItem()->takeChild(index));
-        charts->setCurrentItem(moved);
-        LTMSettings save = (presets)[index];
-        presets.removeAt(index);
-        presets.insert(index+1, save);
+        LTMSettings save = (context->athlete->presets)[index];
+        context->athlete->presets.removeAt(index);
+        context->athlete->presets.insert(index+1, save);
+
+        // notify we changed
+        editing = false;
+        context->notifyPresetsChanged();
+
+        // reselect
+        charts->setCurrentItem(charts->invisibleRootItem()->child(index+1));
     }
 }
 
@@ -2101,7 +2155,10 @@ void
 LTMTool::renameClicked()
 {
     // which one is selected?
-    if (charts->currentItem()) charts->editItem(charts->currentItem(), 0);
+    if (charts->currentItem()) {
+        editing = true;
+        charts->editItem(charts->currentItem(), 0);
+    }
 }
 
 void
@@ -2113,10 +2170,14 @@ LTMTool::deleteClicked()
         return;
 
     } else if (charts->currentItem()) {
+
         int index = charts->invisibleRootItem()->indexOfChild(charts->currentItem());
 
         // zap!
-        presets.removeAt(index);
-        delete charts->invisibleRootItem()->takeChild(index);
+        context->athlete->presets.removeAt(index);
+
+        // notify we changed
+        editing = false;
+        context->notifyPresetsChanged();
     }
 }

@@ -164,8 +164,8 @@ PowerHist::configChanged()
         }
     }
 
-    double width = appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble();
-    if (appsettings->value(this, GC_ANTIALIAS, false).toBool()==true) {
+    double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
+    if (appsettings->value(this, GC_ANTIALIAS, true).toBool()==true) {
         curve->setRenderHint(QwtPlotItem::RenderAntialiased);
         curveSelected->setRenderHint(QwtPlotItem::RenderAntialiased);
         curveHover->setRenderHint(QwtPlotItem::RenderAntialiased);
@@ -1167,7 +1167,7 @@ PowerHist::setDataFromCompare()
     // not for metric plots sonny
     if (source == Metric) return;
 
-    double width = appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble();
+    double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
 
     // set all the curves based upon whats in the compare intervals array
     // first lets clear the old data
@@ -1247,7 +1247,7 @@ PowerHist::setDataFromCompare()
         QwtPlotCurve *newCurve = new QwtPlotCurve("");
         newCurve->setStyle(QwtPlotCurve::Steps);
 
-        if (appsettings->value(this, GC_ANTIALIAS, false).toBool()==true)
+        if (appsettings->value(this, GC_ANTIALIAS, true).toBool()==true)
             newCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
 
         // curve has no brush .. too confusing...
@@ -1288,7 +1288,7 @@ PowerHist::setComparePens()
     if ((!rangemode && !context->isCompareIntervals) ||
         (rangemode && !context->isCompareDateRanges)) return;
 
-    double width = appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble();
+    double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
     for (int i=0; (!rangemode && i<context->compareIntervals.count()) ||
                   (rangemode && i<context->compareDateRanges.count()); i++) {
 
@@ -1326,7 +1326,7 @@ PowerHist::setDataFromCompare(QString totalMetric, QString distMetric)
     // set the data for each compare date range using
     // the metric results in the compare data range
     // and create the HistData and curves associated
-    double width = appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble();
+    double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
 
     // remove old data and curves
     compareData.clear();
@@ -1352,7 +1352,7 @@ PowerHist::setDataFromCompare(QString totalMetric, QString distMetric)
         QwtPlotCurve *newCurve = new QwtPlotCurve("");
         newCurve->setStyle(QwtPlotCurve::Steps);
 
-        if (appsettings->value(this, GC_ANTIALIAS, false).toBool()==true)
+        if (appsettings->value(this, GC_ANTIALIAS, true).toBool()==true)
             newCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
 
         // curve has no brush .. too confusing...
@@ -1415,13 +1415,14 @@ PowerHist::setData(QList<SummaryMetrics>&results, QString totalMetric, QString d
         double v = x.getForSymbol(distMetric, context->athlete->useMetricUnits);
 
         // ignore no temp files
-        if ((distMetric == "average_temp" || distMetric == "max_temp") && v == RideFile::noTemp) continue;
+        if ((distMetric == "average_temp" || distMetric == "max_temp") && v == RideFile::NoTemp) continue;
 
         // clean up dodgy values
         if (isnan(v) || isinf(v)) v = 0;
 
         // seconds to minutes
-        if (m->units(context->athlete->useMetricUnits) == tr("seconds")) v /= 60;
+        if (m->units(context->athlete->useMetricUnits) == "seconds" ||
+            m->units(context->athlete->useMetricUnits) == tr("seconds")) v /= 60;
 
         // apply multiplier
         v *= multiplier;
@@ -1455,13 +1456,14 @@ PowerHist::setData(QList<SummaryMetrics>&results, QString totalMetric, QString d
         double v = x.getForSymbol(distMetric, context->athlete->useMetricUnits);
 
         // ignore no temp files
-        if ((distMetric == "average_temp" || distMetric == "max_temp") && v == RideFile::noTemp) continue;
+        if ((distMetric == "average_temp" || distMetric == "max_temp") && v == RideFile::NoTemp) continue;
 
         // clean up dodgy values
         if (isnan(v) || isinf(v)) v = 0;
 
         // seconds to minutes
-        if (m->units(context->athlete->useMetricUnits) == tr("seconds")) v /= 60;
+        if (m->units(context->athlete->useMetricUnits) == "seconds" ||
+            m->units(context->athlete->useMetricUnits) == tr("seconds")) v /= 60;
 
         // apply multiplier
         v *= multiplier;
@@ -1476,7 +1478,8 @@ PowerHist::setData(QList<SummaryMetrics>&results, QString totalMetric, QString d
         double t = x.getForSymbol(totalMetric, context->athlete->useMetricUnits);
 
         // totalise in minutes
-        if (tm->units(context->athlete->useMetricUnits) == tr("seconds")) t /= 60;
+        if (tm->units(context->athlete->useMetricUnits) == "seconds" ||
+            tm->units(context->athlete->useMetricUnits) == tr("seconds")) t /= 60;
 
         // sum up
         data->metricArray[(int)(v)-min] += t;
@@ -1498,9 +1501,9 @@ PowerHist::setData(QList<SummaryMetrics>&results, QString totalMetric, QString d
 
     // and the plot itself
     QString yunits = tm->units(context->athlete->useMetricUnits);
-    if (yunits == tr("seconds")) yunits = tr("minutes");
+    if (yunits == "seconds" || yunits == tr("seconds")) yunits = tr("minutes");
     QString xunits = m->units(context->athlete->useMetricUnits);
-    if (xunits == tr("seconds")) xunits = tr("minutes");
+    if (xunits == "seconds" || xunits == tr("seconds")) xunits = tr("minutes");
 
     if (tm->units(context->athlete->useMetricUnits) != "")
         setAxisTitle(yLeft, QString(tr("Total %1 (%2)")).arg(tm->name()).arg(yunits));

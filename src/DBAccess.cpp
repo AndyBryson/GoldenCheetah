@@ -94,8 +94,12 @@
 // 73  11  May 2014 Mark Liversedge    Default color of 1,1,1 now uses CPLOTMARKER for ride color, change version to force rebuild
 // 74  20  May 2014 Mark Liversedge    Added Athlete Weight
 // 75  25  May 2014 Mark Liversedge    W' work calculation changed to only include energy above CP
+// 76  14  Jun 2014 Mark Liversedge    Add new 'present' field that uses Data tag data
+// 77  18  Jun 2014 Mark Liversedge    Add TSS per hour metric
+// 78  19  Jun 2014 Mark Liversedge    Do not include zeroes in average L/R pedal smoothness/torque effectiveness
+// 79  20  Jun 2014 Mark Liversedge    Change the way average temperature is handled
 
-int DBSchemaVersion = 75;
+int DBSchemaVersion = 79;
 
 DBAccess::DBAccess(Context* context) : context(context), db(NULL)
 {
@@ -188,6 +192,7 @@ bool DBAccess::createMetricsTable()
                                     "timestamp integer,"
                                     "crc integer,"
                                     "ride_date date,"
+                                    "present varchar,"
                                     "color varchar,"
                                     "fingerprint integer";
 
@@ -428,7 +433,7 @@ bool DBAccess::importRide(SummaryMetrics *summaryMetrics, RideFile *ride, QColor
     }
 
     // construct an insert statement
-    QString insertStatement = "insert into metrics ( filename, identifier, crc, timestamp, ride_date, color, fingerprint ";
+    QString insertStatement = "insert into metrics ( filename, identifier, crc, timestamp, ride_date, present, color, fingerprint ";
     const RideMetricFactory &factory = RideMetricFactory::instance();
     for (int i=0; i<factory.metricCount(); i++)
         insertStatement += QString(", X%1 ").arg(factory.metricName(i));
@@ -446,7 +451,7 @@ bool DBAccess::importRide(SummaryMetrics *summaryMetrics, RideFile *ride, QColor
         }
     }
 
-    insertStatement += " ) values (?,?,?,?,?,?,?"; // filename, identifier, crc, timestamp, ride_date, color, fingerprint
+    insertStatement += " ) values (?,?,?,?,?,?,?,?"; // filename, identifier, crc, timestamp, ride_date, present, color, fingerprint
     for (int i=0; i<factory.metricCount(); i++)
         insertStatement += ",?";
     foreach(FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
@@ -465,6 +470,7 @@ bool DBAccess::importRide(SummaryMetrics *summaryMetrics, RideFile *ride, QColor
 	query.addBindValue((int)computeFileCRC(fullPath));
 	query.addBindValue(timestamp.toTime_t());
     query.addBindValue(summaryMetrics->getRideDate());
+    query.addBindValue(ride->getTag("Data", ""));
     query.addBindValue(color.name());
     query.addBindValue((int)fingerprint);
 

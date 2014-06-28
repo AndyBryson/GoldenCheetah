@@ -90,6 +90,8 @@ GeneralPage::GeneralPage(Context *context) : context(context)
     QLabel *crankLengthLabel = new QLabel(tr("Crank Length:"));
     QVariant crankLength = appsettings->value(this, GC_CRANKLENGTH);
     crankLengthCombo = new QComboBox();
+    crankLengthCombo->addItem("150");
+    crankLengthCombo->addItem("155");
     crankLengthCombo->addItem("160");
     crankLengthCombo->addItem("162.5");
     crankLengthCombo->addItem("165");
@@ -101,17 +103,19 @@ GeneralPage::GeneralPage(Context *context) : context(context)
     crankLengthCombo->addItem("180");
     crankLengthCombo->addItem("182.5");
     crankLengthCombo->addItem("185");
-    if(crankLength.toString() == "160") crankLengthCombo->setCurrentIndex(0);
-    if(crankLength.toString() == "162.5") crankLengthCombo->setCurrentIndex(1);
-    if(crankLength.toString() == "165") crankLengthCombo->setCurrentIndex(2);
-    if(crankLength.toString() == "167.5") crankLengthCombo->setCurrentIndex(3);
-    if(crankLength.toString() == "170") crankLengthCombo->setCurrentIndex(4);
-    if(crankLength.toString() == "172.5") crankLengthCombo->setCurrentIndex(5);
-    if(crankLength.toString() == "175") crankLengthCombo->setCurrentIndex(6);
-    if(crankLength.toString() == "177.5") crankLengthCombo->setCurrentIndex(7);
-    if(crankLength.toString() == "180") crankLengthCombo->setCurrentIndex(8);
-    if(crankLength.toString() == "182.5") crankLengthCombo->setCurrentIndex(9);
-    if(crankLength.toString() == "185") crankLengthCombo->setCurrentIndex(10);
+    if(crankLength.toString() == "150") crankLengthCombo->setCurrentIndex(0);
+    if(crankLength.toString() == "155") crankLengthCombo->setCurrentIndex(1);
+    if(crankLength.toString() == "160") crankLengthCombo->setCurrentIndex(2);
+    if(crankLength.toString() == "162.5") crankLengthCombo->setCurrentIndex(3);
+    if(crankLength.toString() == "165") crankLengthCombo->setCurrentIndex(4);
+    if(crankLength.toString() == "167.5") crankLengthCombo->setCurrentIndex(5);
+    if(crankLength.toString() == "170") crankLengthCombo->setCurrentIndex(6);
+    if(crankLength.toString() == "172.5") crankLengthCombo->setCurrentIndex(7);
+    if(crankLength.toString() == "175") crankLengthCombo->setCurrentIndex(8);
+    if(crankLength.toString() == "177.5") crankLengthCombo->setCurrentIndex(9);
+    if(crankLength.toString() == "180") crankLengthCombo->setCurrentIndex(10);
+    if(crankLength.toString() == "182.5") crankLengthCombo->setCurrentIndex(11);
+    if(crankLength.toString() == "185") crankLengthCombo->setCurrentIndex(12);
 
     configLayout->addWidget(crankLengthLabel, 1,0, Qt::AlignRight);
     configLayout->addWidget(crankLengthCombo, 1,1, Qt::AlignLeft);
@@ -206,6 +210,7 @@ GeneralPage::GeneralPage(Context *context) : context(context)
     athleteLabel = new QLabel(tr("Athlete Library:"));
     athleteDirectory = new QLineEdit;
     athleteDirectory->setText(athleteDir.toString() == "0" ? "" : athleteDir.toString());
+    athleteWAS = athleteDirectory->text(); // remember what we started with ...
     athleteBrowseButton = new QPushButton(tr("Browse"));
     athleteBrowseButton->setFixedWidth(120);
 
@@ -218,7 +223,9 @@ GeneralPage::GeneralPage(Context *context) : context(context)
     //
     // Workout directory (train view)
     //
-    QVariant workoutDir = appsettings->value(this, GC_WORKOUTDIR);
+    QVariant workoutDir = appsettings->value(this, GC_WORKOUTDIR, "");
+    // fix old bug..
+    if (workoutDir == "0") workoutDir = "";
     workoutLabel = new QLabel(tr("Workout Library:"));
     workoutDirectory = new QLineEdit;
     workoutDirectory->setText(workoutDir.toString());
@@ -713,7 +720,8 @@ RiderPage::RiderPage(QWidget *parent, Context *context) : QWidget(parent), conte
     weightlabel = new QLabel(weighttext);
 
     nickname = new QLineEdit(this);
-    nickname->setText(appsettings->cvalue(context->athlete->cyclist, GC_NICKNAME).toString());
+    nickname->setText(appsettings->cvalue(context->athlete->cyclist, GC_NICKNAME, "").toString());
+    if (nickname->text() == "0") nickname->setText("");
 
     dob = new QDateEdit(this);
     dob->setDate(appsettings->cvalue(context->athlete->cyclist, GC_DOB).toDate());
@@ -863,7 +871,7 @@ DevicePage::DevicePage(QWidget *parent, Context *context) : QWidget(parent), con
     deviceList->setEditTriggers(QAbstractItemView::NoEditTriggers);
     deviceList->setSelectionMode(QAbstractItemView::SingleSelection);
 
-    multiCheck = new QCheckBox("Allow multiple devices in Train View", this);
+    multiCheck = new QCheckBox(tr("Allow multiple devices in Train View"), this);
     multiCheck->setChecked(appsettings->value(this, TRAIN_MULTI, false).toBool());
 
     mainLayout->addWidget(deviceList);
@@ -1150,7 +1158,7 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
 
     QLabel *antiAliasLabel = new QLabel(tr("Antialias"));
     antiAliased = new QCheckBox;
-    antiAliased->setChecked(appsettings->value(this, GC_ANTIALIAS, false).toBool());
+    antiAliased->setChecked(appsettings->value(this, GC_ANTIALIAS, true).toBool());
 #ifndef Q_OS_MAC
     QLabel *rideScrollLabel = new QLabel(tr("Ride Scrollbar"));
     rideScroll = new QCheckBox;
@@ -1164,7 +1172,7 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
     lineWidth->setMinimum(0.5);
     lineWidth->setSingleStep(0.5);
     applyTheme = new QPushButton(tr("Apply Theme"));
-    lineWidth->setValue(appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble());
+    lineWidth->setValue(appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble());
 
     QLabel *lineWidthLabel = new QLabel(tr("Line Width"));
     QLabel *defaultLabel = new QLabel(tr("Default"));
@@ -1543,9 +1551,8 @@ IntervalMetricsPage::IntervalMetricsPage(QWidget *parent) :
         if (selectedMetrics.contains(symbol))
             continue;
         QSharedPointer<RideMetric> m(factory.newMetric(symbol));
-        QString name = m->name();
-        name.replace(tr("&#8482;"), tr(" (TM)"));
-        QListWidgetItem *item = new QListWidgetItem(name);
+        QTextEdit name(m->name()); // process html encoding of(TM)
+        QListWidgetItem *item = new QListWidgetItem(name.toPlainText());
         item->setData(Qt::UserRole, symbol);
         availList->addItem(item);
     }
@@ -1553,9 +1560,8 @@ IntervalMetricsPage::IntervalMetricsPage(QWidget *parent) :
         if (!factory.haveMetric(symbol))
             continue;
         QSharedPointer<RideMetric> m(factory.newMetric(symbol));
-        QString name = m->name();
-        name.replace(tr("&#8482;"), tr(" (TM)"));
-        QListWidgetItem *item = new QListWidgetItem(name);
+        QTextEdit name(m->name());  // process html encoding of(TM)
+        QListWidgetItem *item = new QListWidgetItem(name.toPlainText());
         item->setData(Qt::UserRole, symbol);
         selectedList->addItem(item);
     }
@@ -1736,9 +1742,8 @@ BestsMetricsPage::BestsMetricsPage(QWidget *parent) :
         if (selectedMetrics.contains(symbol))
             continue;
         QSharedPointer<RideMetric> m(factory.newMetric(symbol));
-        QString name = m->name();
-        name.replace(tr("&#8482;"), tr(" (TM)"));
-        QListWidgetItem *item = new QListWidgetItem(name);
+        QTextEdit name(m->name()); //  process html encoding of(TM)
+        QListWidgetItem *item = new QListWidgetItem(name.toPlainText());
         item->setData(Qt::UserRole, symbol);
         availList->addItem(item);
     }
@@ -1746,9 +1751,8 @@ BestsMetricsPage::BestsMetricsPage(QWidget *parent) :
         if (!factory.haveMetric(symbol))
             continue;
         QSharedPointer<RideMetric> m(factory.newMetric(symbol));
-        QString name = m->name();
-        name.replace(tr("&#8482;"), tr(" (TM)"));
-        QListWidgetItem *item = new QListWidgetItem(name);
+        QTextEdit name(m->name()); //  process html encoding of(TM)
+        QListWidgetItem *item = new QListWidgetItem(name.toPlainText());
         item->setData(Qt::UserRole, symbol);
         selectedList->addItem(item);
     }
@@ -1925,9 +1929,8 @@ SummaryMetricsPage::SummaryMetricsPage(QWidget *parent) :
         if (selectedMetrics.contains(symbol))
             continue;
         QSharedPointer<RideMetric> m(factory.newMetric(symbol));
-        QString name = m->name();
-        name.replace(tr("&#8482;"), tr(" (TM)"));
-        QListWidgetItem *item = new QListWidgetItem(name);
+        QTextEdit name(m->name()); //  process html encoding of(TM)
+        QListWidgetItem *item = new QListWidgetItem(name.toPlainText());
         item->setData(Qt::UserRole, symbol);
         availList->addItem(item);
     }
@@ -1935,9 +1938,8 @@ SummaryMetricsPage::SummaryMetricsPage(QWidget *parent) :
         if (!factory.haveMetric(symbol))
             continue;
         QSharedPointer<RideMetric> m(factory.newMetric(symbol));
-        QString name = m->name();
-        name.replace(tr("&#8482;"), tr(" (TM)"));
-        QListWidgetItem *item = new QListWidgetItem(name);
+        QTextEdit name(m->name()); //  process html encoding of(TM)
+        QListWidgetItem *item = new QListWidgetItem(name.toPlainText());
         item->setData(Qt::UserRole, symbol);
         selectedList->addItem(item);
     }
@@ -2708,7 +2710,7 @@ SchemePage::addClicked()
     // are we at maximum already?
     if (scheme->invisibleRootItem()->childCount() == 10) {
         QMessageBox err;
-        err.setText("Maximum of 10 zones reached.");
+        err.setText(tr("Maximum of 10 zones reached."));
         err.setIcon(QMessageBox::Warning);
         err.exec();
         return;
@@ -2995,6 +2997,8 @@ CPPage::defaultClicked()
         font.setWeight(QFont::Normal);
         ranges->currentItem()->setFont(0, font);
         ranges->currentItem()->setFont(1, font);
+        ranges->currentItem()->setFont(2, font);
+
 
         // set the range to use defaults on the scheme page
         zonePage->zones.setScheme(zonePage->schemePage->getScheme());
@@ -3070,7 +3074,7 @@ CPPage::addZoneClicked()
     // are we at maximum already?
     if (zones->invisibleRootItem()->childCount() == 10) {
         QMessageBox err;
-        err.setText("Maximum of 10 zones reached.");
+        err.setText(tr("Maximum of 10 zones reached."));
         err.setIcon(QMessageBox::Warning);
         err.exec();
         return;
@@ -3147,6 +3151,7 @@ CPPage::zonesChanged()
             font.setWeight(QFont::Black);
             ranges->currentItem()->setFont(0, font);
             ranges->currentItem()->setFont(1, font);
+            ranges->currentItem()->setFont(2, font);
 
             // show the default button to undo
             defaultButton->show();
@@ -3593,6 +3598,9 @@ LTPage::defaultClicked()
         font.setWeight(QFont::Normal);
         ranges->currentItem()->setFont(0, font);
         ranges->currentItem()->setFont(1, font);
+        ranges->currentItem()->setFont(2, font);
+        ranges->currentItem()->setFont(3, font);
+
 
         // set the range to use defaults on the scheme page
         zonePage->zones.setScheme(zonePage->schemePage->getScheme());
@@ -3766,6 +3774,8 @@ LTPage::zonesChanged()
             font.setWeight(QFont::Black);
             ranges->currentItem()->setFont(0, font);
             ranges->currentItem()->setFont(1, font);
+            ranges->currentItem()->setFont(2, font);
+            ranges->currentItem()->setFont(3, font);
 
             // show the default button to undo
             defaultButton->show();

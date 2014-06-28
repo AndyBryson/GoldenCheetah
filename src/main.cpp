@@ -19,6 +19,7 @@
 #include <QApplication>
 #include <QtGui>
 #include <QFile>
+#include <QWebSettings>
 #include "ChooseCyclistDialog.h"
 #include "MainWindow.h"
 #include "Settings.h"
@@ -177,7 +178,7 @@ main(int argc, char *argv[])
 #elif defined(Q_OS_WIN)
 #if QT_VERSION > 0x050000 // windows and qt5
         QStringList paths=QStandardPaths::standardLocations(QStandardPaths::DataLocation);
-	    QString libraryPath = paths.at(0) + "/GoldenCheetah";
+        QString libraryPath = paths.at(0); 
 #else // windows not qt5
         QString libraryPath=QDesktopServices::storageLocation(QDesktopServices::DataLocation) + "/GoldenCheetah";
 #endif // qt5
@@ -188,11 +189,11 @@ main(int argc, char *argv[])
 
         // or did we override in settings?
         QString sh;
-        if ((sh=appsettings->value(NULL, GC_HOMEDIR).toString()) != "") localLibraryPath = sh;
+        if ((sh=appsettings->value(NULL, GC_HOMEDIR, "").toString()) != QString("")) localLibraryPath = sh;
 
         // lets try the local library we've worked out...
         QDir home = QDir();
-        if(home.exists(localLibraryPath)) {
+        if(QDir(localLibraryPath).exists() || home.exists(localLibraryPath)) {
 
             home.cd(localLibraryPath);
 
@@ -319,6 +320,9 @@ main(int argc, char *argv[])
 
         // close trainDB
         delete trainDB;
+
+        // clear web caches (stop warning of WebKit leaks)
+        QWebSettings::clearMemoryCaches();
 
     } while (restarting);
 

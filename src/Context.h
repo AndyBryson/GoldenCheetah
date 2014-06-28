@@ -85,6 +85,10 @@ class Context : public QObject
                                     // when config has changed - and to get a
                                     // signal emitted to notify its children
 
+        // preset charts
+        void notifyPresetsChanged() { emit presetsChanged(); }
+        void notifyPresetSelected(int n) { emit presetSelected(n); }
+
         // filters
         void setHomeFilter(QStringList&f) { homeFilters=f; ishomefiltered=true; emit homeFilterChanged(); }
         void clearHomeFilter() { homeFilters.clear(); ishomefiltered=false; emit homeFilterChanged(); }
@@ -132,6 +136,8 @@ class Context : public QObject
         void homeFilterChanged();
 
         void configChanged();
+        void presetsChanged();
+        void presetSelected(int);
 
         void rideSelected(RideItem*);
         void rideAdded(RideItem *);

@@ -136,14 +136,17 @@ class PDModel : public QObject, public QwtSyntheticPointData
 class PDEstimate
 {
     public:
-        PDEstimate() : WPrime(0), CP(0), FTP(0), PMax(0) {}
+        PDEstimate() : WPrime(0), CP(0), FTP(0), PMax(0), EI(0), wpk(false) {}
 
         QDate from, to;
         QString model;
-        int WPrime,
+        double WPrime,
             CP,
             FTP,
-            PMax;
+            PMax,
+            EI;
+
+        bool wpk;
 
         QList<double> parameters; // parameters are stored/retrieved from here
                                   // so we can run the model using pre-computed

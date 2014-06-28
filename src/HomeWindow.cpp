@@ -46,7 +46,7 @@ HomeWindow::HomeWindow(Context *context, QString name, QString /* windowtitle */
     cl->setSpacing(0);
     cl->setContentsMargins(0,0,0,0);
 
-    QLabel *titleLabel = new QLabel("Title", this);
+    QLabel *titleLabel = new QLabel(tr("Title"), this);
     QHBoxLayout *hl = new QHBoxLayout;
     hl->setSpacing(5);
     hl->setContentsMargins(0,0,0,0);
@@ -70,12 +70,6 @@ HomeWindow::HomeWindow(Context *context, QString name, QString /* windowtitle */
     QFont bigandbold;
     bigandbold.setPointSize(bigandbold.pointSize() + 2);
     bigandbold.setWeight(QFont::Bold);
-
-    QHBoxLayout *titleBar = new QHBoxLayout;
-
-    QLabel *space = new QLabel("", this);
-    space->setFixedHeight(20);
-    titleBar->addWidget(space);
 
     style = new QStackedWidget(this);
     style->setAutoFillBackground(false);
@@ -441,7 +435,7 @@ HomeWindow::appendChart(GcWinID id)
     // returns null if cancelled or closed
     if (newone) {
         addChart(newone);
-        //newone->show() //Crash on QT5
+        newone->show(); //Crash on QT5
     }
 
     // now wipe it

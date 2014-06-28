@@ -350,7 +350,7 @@ CPPlot::plotModel()
 
             // create curve
             modelCurve = new QwtPlotCurve("Model");
-            if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
+            if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true)
                 modelCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
 
             // set the point data
@@ -358,7 +358,7 @@ CPPlot::plotModel()
 
             // curve cosmetics
             QPen pen(GColor(CCP));
-            double width = appsettings->value(this, GC_LINEWIDTH, 1.0).toDouble();
+            double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
             pen.setWidth(width);
             if (showBest) pen.setStyle(Qt::DashLine);
             modelCurve->setPen(pen);
@@ -372,70 +372,95 @@ CPPlot::plotModel()
             if (rideSeries == RideFile::watts) {
 
                 //WPrime
-                if (pdModel->hasWPrime()) cpw->wprimeValue->setText(QString("%1 kJ").arg(pdModel->WPrime() / 1000.0, 0, 'f', 1));
-                else cpw->wprimeValue->setText("n/a");
+                if (pdModel->hasWPrime()) cpw->wprimeValue->setText(QString(tr("%1 kJ")).arg(pdModel->WPrime() / 1000.0, 0, 'f', 1));
+                else cpw->wprimeValue->setText(tr("n/a"));
 
                 //CP
-                cpw->cpValue->setText(QString("%1 w").arg(pdModel->CP(), 0, 'f', 0));
+                cpw->cpValue->setText(QString(tr("%1 w")).arg(pdModel->CP(), 0, 'f', 0));
 
                 //FTP and FTP ranking
                 if (pdModel->hasFTP()) {
-                    cpw->ftpValue->setText(QString("%1 w").arg(pdModel->FTP(), 0, 'f', 0));
+                    cpw->ftpValue->setText(QString(tr("%1 w")).arg(pdModel->FTP(), 0, 'f', 0));
 
                     // Reference 6.25W/kg -> untrained 2.5W/kg
                     int _ftpLevel = 15 * (pdModel->FTP() / appsettings->cvalue(context->athlete->cyclist, GC_WEIGHT).toDouble() - 2.5) / (6.25-2.5) ;
-                    cpw->ftpRank->setText(QString("%1").arg(_ftpLevel));
+                    if (_ftpLevel > 0 && _ftpLevel < 16) // check bounds
+                        cpw->ftpRank->setText(QString("%1").arg(_ftpLevel));
+                    else
+                        cpw->ftpRank->setText(tr("n/a"));
 
                 } else {
-                    cpw->ftpValue->setText("n/a");
-                    cpw->ftpRank->setText("n/a");
+
+                    cpw->ftpValue->setText(tr("n/a"));
+                    cpw->ftpRank->setText(tr("n/a"));
                 }
 
                 // P-MAX and P-MAX ranking
                 if (pdModel->hasPMax()) {
-                    cpw->pmaxValue->setText(QString("%1 w").arg(pdModel->PMax(), 0, 'f', 0));
+                    cpw->pmaxValue->setText(QString(tr("%1 w")).arg(pdModel->PMax(), 0, 'f', 0));
 
                     // Reference 22.5W/kg -> untrained 8W/kg
                     int _pMaxLevel = 15 * (pdModel->PMax() / appsettings->cvalue(context->athlete->cyclist, GC_WEIGHT).toDouble() - 8) / (23-8) ;
-                    cpw->pmaxRank->setText(QString("%1").arg(_pMaxLevel));
+                    if (_pMaxLevel > 0 && _pMaxLevel < 16) // check bounds
+                        cpw->pmaxRank->setText(QString("%1").arg(_pMaxLevel));
+                    else
+                        cpw->pmaxRank->setText(tr("n/a"));
+
                 } else  {
-                    cpw->pmaxValue->setText("n/a");
-                    cpw->pmaxRank->setText("n/a");
+                    cpw->pmaxValue->setText(tr("n/a"));
+                    cpw->pmaxRank->setText(tr("n/a"));
+                }
+
+                // Endurance Index
+                if (pdModel->hasWPrime() && pdModel->WPrime() && pdModel->hasCP() && pdModel->CP()) {
+                    cpw->eiValue->setText(QString("%1").arg(pdModel->WPrime() / pdModel->CP(), 0, 'f', 0));
                 }
 
             } else {
 
                 //WPrime
-                if (pdModel->hasWPrime()) cpw->wprimeValue->setText(QString("%1 kJ/kg").arg(pdModel->WPrime() / 1000.0, 0, 'f', 2));
-                else cpw->wprimeValue->setText("n/a");
+                if (pdModel->hasWPrime()) cpw->wprimeValue->setText(QString(tr("%1 J/kg")).arg(pdModel->WPrime(), 0, 'f', 0));
+                else cpw->wprimeValue->setText(tr("n/a"));
 
                 //CP
-                cpw->cpValue->setText(QString("%1 w/kg").arg(pdModel->CP(), 0, 'f', 2));
+                cpw->cpValue->setText(QString(tr("%1 w/kg")).arg(pdModel->CP(), 0, 'f', 2));
 
                 //FTP and FTP ranking
                 if (pdModel->hasFTP()) {
-                    cpw->ftpValue->setText(QString("%1 w/kg").arg(pdModel->FTP(), 0, 'f', 2));
+                    cpw->ftpValue->setText(QString(tr("%1 w/kg")).arg(pdModel->FTP(), 0, 'f', 2));
 
                     // Reference 6.25W/kg -> untrained 2.5W/kg
                     int _ftpLevel = 15 * (pdModel->FTP() - 2.5) / (6.25-2.5) ;
-                    cpw->ftpRank->setText(QString("%1").arg(_ftpLevel));
+                    if (_ftpLevel > 0 && _ftpLevel < 16) // check bounds
+                        cpw->ftpRank->setText(QString("%1").arg(_ftpLevel));
+                    else
+                        cpw->ftpRank->setText(tr("n/a"));
 
                 } else {
-                    cpw->ftpValue->setText("n/a");
-                    cpw->ftpRank->setText("n/a");
+                    cpw->ftpValue->setText(tr("n/a"));
+                    cpw->ftpRank->setText(tr("n/a"));
                 }
 
                 // P-MAX and P-MAX ranking
                 if (pdModel->hasPMax()) {
-                    cpw->pmaxValue->setText(QString("%1 w/kg").arg(pdModel->PMax(), 0, 'f', 2));
+                    cpw->pmaxValue->setText(QString(tr("%1 w/kg")).arg(pdModel->PMax(), 0, 'f', 2));
 
                     // Reference 22.5W/kg -> untrained 8W/kg
                     int _pMaxLevel = 15 * (pdModel->PMax() - 8) / (23-8) ;
-                    cpw->pmaxRank->setText(QString("%1").arg(_pMaxLevel));
+                    if (_pMaxLevel > 0 && _pMaxLevel < 16) // check bounds
+                        cpw->pmaxRank->setText(QString("%1").arg(_pMaxLevel));
+                    else
+                        cpw->pmaxRank->setText(tr("n/a"));
                 } else  {
-                    cpw->pmaxValue->setText("n/a");
-                    cpw->pmaxRank->setText("n/a");
+                    cpw->pmaxValue->setText(tr("n/a"));
+                    cpw->pmaxRank->setText(tr("n/a"));
                 }
+
+                // Endurance Index
+                if (pdModel->hasWPrime() && pdModel->WPrime() && pdModel->hasCP() && pdModel->CP()) {
+                    cpw->eiValue->setText(QString("%1").arg(pdModel->WPrime() / pdModel->CP(), 0, 'f', 0));
+                }
+
             }
         }
     }
@@ -448,7 +473,7 @@ CPPlot::plotModel()
         // heat curve
         heatCurve = new QwtPlotCurve("heat");
 
-        if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true) heatCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
+        if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true) heatCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
 
         heatCurve->setBrush(QBrush(GColor(CCP).darker(200)));
         heatCurve->setPen(QPen(Qt::NoPen));
@@ -468,8 +493,15 @@ CPPlot::plotModel()
 
         heatCurve->setSamples(time, heat);
         heatCurve->setYAxis(yRight);
+        setAxisScale(yRight, 0, 100);  // fine if only heat is shown and percentage Scale will be fixed if shown
+        if (showPercent) setAxisTitle(yRight, tr("Percent of Best / Heat Rides"));
+        else setAxisTitle(yRight, tr("Heat Rides"));
         heatCurve->attach(this);
     }
+
+    setAxisVisible(yRight, showHeat || (showPercent && rideCurve));
+
+   // setAxisVisible(yRight, showHeat || showPercent);
 
     //
     // HEAT AGE
@@ -479,7 +511,7 @@ CPPlot::plotModel()
         // HeatCurveByDate
         heatAgeCurve = new CpPlotCurve("heat by date");
 
-        if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
+        if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true)
             heatAgeCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
 
         heatAgeCurve->setPenWidth(1);
@@ -561,7 +593,7 @@ CPPlot::plotModel(QVector<double> vector, QColor plotColor, PDModel *baseline)
 
     // create curve
     QwtPlotCurve *curve = new QwtPlotCurve("Model");
-    if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
+    if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true)
         curve->setRenderHint(QwtPlotItem::RenderAntialiased);
 
     if (baseline) {
@@ -577,7 +609,7 @@ CPPlot::plotModel(QVector<double> vector, QColor plotColor, PDModel *baseline)
 
     // curve cosmetics
     QPen pen(plotColor);
-    double width = appsettings->value(this, GC_LINEWIDTH, 1.0).toDouble();
+    double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
     pen.setWidth(width);
     if (showBest) pen.setStyle(Qt::DashLine);
     curve->setPen(pen);
@@ -703,7 +735,7 @@ CPPlot::plotBests()
             // no zones wanted
             QwtPlotCurve *curve = new QwtPlotCurve(tr("Bests"));
 
-            if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
+            if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true)
                 curve->setRenderHint(QwtPlotItem::RenderAntialiased);
 
             // lets make it the right colour for the date series
@@ -771,7 +803,7 @@ CPPlot::plotBests()
             }
 
             fill.setAlpha(64);
-            line.setWidth(appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble());
+            line.setWidth(appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble());
 
             curve->setPen(line);
             if (rideSeries == RideFile::watts || rideSeries == RideFile::wattsKg)
@@ -826,11 +858,11 @@ CPPlot::plotBests()
 
                 // set the pen color and line width etc
                 QColor color = zoneColor(zone, n_zones);
-                if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
+                if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true)
                     curve->setRenderHint(QwtPlotItem::RenderAntialiased);
                 QPen pen(color.darker(200));
                 pen.setColor(GColor(CCP)); //XXX color ?
-                double width = appsettings->value(this, GC_LINEWIDTH, 1.0).toDouble();
+                double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
                 pen.setWidth(width);
                 curve->setPen(pen);
 
@@ -960,7 +992,7 @@ CPPlot::plotRide(RideItem *rideItem)
     // curve that gets any special colour treatment.
     QPen ridePen;
     ridePen.setColor(GColor(CRIDECP));
-    double width = appsettings->value(this, GC_LINEWIDTH, 1.0).toDouble();
+    double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
     ridePen.setWidth(width);
     rideCurve->setPen(ridePen);
 
@@ -1003,12 +1035,19 @@ CPPlot::plotRide(RideItem *rideItem)
             else max = max * 1.05f;
             setAxisScale(yRight, 0, max); // always 100
 
+            // set the right titles in case both Heat and Percent of best is show
+            if (showHeat) setAxisTitle(yRight, tr("Percent of Best / Heat Rides"));
+            else setAxisTitle(yRight, tr("Percent of Best"));
+
         } else {
 
             // JUST A NORMAL CURVE
             rideCurve->setYAxis(yLeft);
             rideCurve->setSamples(timeArray.data() + 1, rideCache->meanMaxArray(rideSeries).constData() + 1,
                                   maxNonZero > 0 ? maxNonZero-1 : 0);
+
+            // Set the YAxis Title if Heat is active
+            if (showHeat) setAxisTitle(yRight, tr("Heat Rides"));
         }
     }
 
@@ -1129,7 +1168,7 @@ CPPlot::pointHover(QwtPlotCurve *curve, int index)
             int index = xvalue * 60;
             if (index >= 0 && bestsCache && getBests().count() > index) {
                 QDate date = getBestDates()[index];
-                dateStr = date.toString("\nddd, dd MMM yyyy");
+                dateStr = date.toString(tr("\nddd, dd MMM yyyy"));
             }
         }
 
@@ -1138,6 +1177,9 @@ CPPlot::pointHover(QwtPlotCurve *curve, int index)
             || (!rangemode && context->isCompareIntervals)) && showDelta && showDeltaPercent)
             || (curve == rideCurve && showPercent)) units = QString("%");
         else units = RideFile::unitName(rideSeries, context);
+
+        // no units for Heat Curve
+        if (curve == heatCurve) units = QString(tr("Rides"));
 
         // output the tooltip
         text = QString("%1\n%3 %4%5")
@@ -1162,11 +1204,11 @@ CPPlot::exportBests(QString filename)
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) return; // couldn't open file
 
     // do we want to export the model estimate too ?
-    bool model = (pdModel && (rideSeries == RideFile::wattsKg || rideSeries == RideFile::watts));
+    bool expmodel = (model && pdModel && (rideSeries == RideFile::wattsKg || rideSeries == RideFile::watts));
 
     // open stream and write header
     QTextStream stream(&f);
-    stream << "seconds, value," << (model ? " model, date" : " date") << endl;
+    stream << "seconds, value," << (expmodel ? " model, date" : " date") << endl;
 
     // output a row for each second
     foreach(QwtPlotCurve *bestsCurve, bestsCurves) {
@@ -1175,7 +1217,7 @@ CPPlot::exportBests(QString filename)
         for (size_t i=0; i<bestsCurve->data()->size(); i++) {
             double xvalue = bestsCurve->sample(i).x();
             double yvalue = bestsCurve->sample(i).y();
-            double modelvalue = model ? pdModel->y(xvalue) : 0;
+            double modelvalue = expmodel ? pdModel->y(xvalue) : 0;
 
             int index = xvalue * 60.00f;
             QDate date;
@@ -1184,7 +1226,7 @@ CPPlot::exportBests(QString filename)
             }
 
             // values
-            if (model) stream << int(xvalue * 60.00f) << "," << yvalue << "," << modelvalue << "," << date.toString() << endl;
+            if (expmodel) stream << int(xvalue * 60.00f) << "," << yvalue << "," << modelvalue << "," << date.toString() << endl;
             else stream << int(xvalue * 60.00f) << "," << yvalue << "," << date.toString() << endl;
         }
     }
@@ -1310,7 +1352,7 @@ CPPlot::refreshReferenceLines(RideItem *rideItem)
                     QwtPlotMarker *referenceLine = new QwtPlotMarker;
                     QPen p;
                     p.setColor(GColor(CPLOTMARKER));
-                    double width = appsettings->value(this, GC_LINEWIDTH, 1.0).toDouble();
+                    double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
                     p.setWidth(width);
                     p.setStyle(Qt::DashLine);
                     referenceLine->setLinePen(p);
@@ -1576,7 +1618,7 @@ CPPlot::plotCentile(RideItem *rideItem)
             QColor std = GColor(CRIDECP);
             QPen pen(QColor(250-(i*20),std.green(),std.blue()));
             pen.setStyle(Qt::DashLine); // Qt::SolidLine
-            double width = appsettings->value(this, GC_LINEWIDTH, 1.0).toDouble();
+            double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
             pen.setWidth(width);
             rideCurve->setPen(pen);
             rideCurve->attach(this);
@@ -1875,12 +1917,12 @@ CPPlot::plotCache(QVector<double> vector, QColor intervalColor)
 
     // create a curve!
     QwtPlotCurve *curve = new QwtPlotCurve();
-    if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
+    if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true)
         curve->setRenderHint(QwtPlotItem::RenderAntialiased);
 
     // set its color - based upon index in intervals!
     QPen pen(intervalColor);
-    double width = appsettings->value(this, GC_LINEWIDTH, 1.0).toDouble();
+    double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
     pen.setWidth(width);
     //pen.setStyle(Qt::DotLine);
     intervalColor.setAlpha(64);

@@ -211,6 +211,14 @@ RideNavigator::resetView()
     active = true;
 
     QList<QString> cols = _columns.split("|", QString::SkipEmptyParts);
+    int widco = _widths.split("|", QString::SkipEmptyParts).count();
+
+    // something is wrong with the config ? reset 
+    if (widco != cols.count() || widco <= 1) {
+        _columns = QString(tr("*|Workout Code|TSS|Date|"));
+        _widths = QString("0|80|50|50|");
+        cols = _columns.split("|", QString::SkipEmptyParts);
+    }
 
     // to account for translations
     QMap <QString, QString> internalNameMap;
@@ -502,7 +510,7 @@ RideNavigator::eventFilter(QObject *object, QEvent *e)
         case QEvent::ContextMenu:
         {
             //borderMenu(((QMouseEvent *)e)->pos());
-            borderMenu(mapFromGlobal(QCursor::pos()));
+            borderMenu(tableView->mapFromGlobal(QCursor::pos()));
             return true; // I'll take that thanks
             break;
         }
@@ -907,8 +915,6 @@ void
 RideNavigator::dropEvent(QDropEvent *event)
 {
     QString name = event->mimeData()->data("application/x-columnchooser");
-    // fugly, but it works for BikeScore with the (TM) in it...
-    if (name == "BikeScore?") name = QTextEdit("BikeScore&#8482;").toPlainText();
     tableView->setColumnHidden(logicalHeadings.indexOf(name), false);
     tableView->setColumnWidth(logicalHeadings.indexOf(name), 50);
     tableView->header()->moveSection(tableView->header()->visualIndex(logicalHeadings.indexOf(name)), 1);
@@ -1181,7 +1187,9 @@ ColumnChooser::buttonClicked(QString name)
     // setup the drag data
     QMimeData *mimeData = new QMimeData;
     QByteArray empty;
-    mimeData->setData("application/x-columnchooser", name.toLatin1());
+    //  Use UTF-8 in Mime Date to cover also special characters,
+    //  but the Receiver of the mimeData has to be able to handle Utf8() or translate
+    mimeData->setData("application/x-columnchooser", name.toUtf8());
 
     // create a drag event
     QDrag *drag = new QDrag(this);
@@ -1204,10 +1212,14 @@ RideNavigator::showTreeContextMenuPopup(const QPoint &pos)
 
 RideTreeView::RideTreeView()
 {
+#if (defined WIN32) && (QT_VERSION > 0x050000) && (QT_VERSION < 0x050301) 
+    // don't allow ride drop on Windows with QT5 until 5.3.1 when they fixed the bug
+#else
     setDragDropMode(QAbstractItemView::InternalMove);
     setDragEnabled(true);
     setDragDropOverwriteMode(false);
     setDropIndicatorShown(true);
+#endif
 #ifdef Q_OS_MAC
     setAttribute(Qt::WA_MacShowFocusRect, 0);
 #endif

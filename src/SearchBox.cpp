@@ -68,13 +68,51 @@ SearchBox::SearchBox(Context *context, QWidget *parent, bool nochooser)
     searchButton->setCursor(Qt::ArrowCursor);
     connect(searchButton, SIGNAL(clicked()), this, SLOT(toggleMode()));
 
-    int frameWidth = style()->pixelMetric(QStyle::PM_DefaultFrameWidth);
 #ifdef Q_OS_MAC
     setAttribute(Qt::WA_MacShowFocusRect, 0);
 #endif
     setObjectName("SearchBox");
+    setPlaceholderText(tr("Search..."));
+    mode = Search;
+    setDragEnabled(true);
+    checkMenu();
+    connect(this, SIGNAL(returnPressed()), this, SLOT(searchSubmit()));
+    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+
+    // set colors and curviness
+    configChanged();
+}
+
+void
+SearchBox::configChanged()
+{
+    int frameWidth = style()->pixelMetric(QStyle::PM_DefaultFrameWidth);
     QColor color = QPalette().color(QPalette::Highlight);
-    setStyleSheet(QString( //"QLineEdit { padding-right: %1px; } "
+
+    // flat mode has square corners
+    if (GCColor::isFlat()) {
+
+        setStyleSheet(QString( //"QLineEdit { padding-right: %1px; } "
+                          "QLineEdit#SearchBox {"
+                          "    border-radius: 3px; "
+                          "    border: 1px solid rgba(127,127,127,127);"
+                          "    padding: 0px %1px;"
+                          "}"
+                          "QLineEdit#SearchBox:focus {"
+                          "    border-radius: 3px; "
+#ifdef WIN32
+                          "    border: 1px solid rgba(%2,%3,%4,255);"
+#else
+                          "    border: 2px solid rgba(%2,%3,%4,255);"
+#endif
+                          "    padding: 0px %5px;"
+                          "}"
+                 ).arg(clearButton->sizeHint().width() + frameWidth + 12)
+                  .arg(color.red()).arg(color.green()).arg(color.blue())
+                  .arg(clearButton->sizeHint().width() + frameWidth + 12));
+
+    } else { 
+        setStyleSheet(QString( //"QLineEdit { padding-right: %1px; } "
                           "QLineEdit#SearchBox {"
                           "    border-radius: 10px; "
                           "    border: 1px solid rgba(127,127,127,127);"
@@ -93,13 +131,7 @@ SearchBox::SearchBox(Context *context, QWidget *parent, bool nochooser)
                   .arg(color.red()).arg(color.green()).arg(color.blue())
                   .arg(clearButton->sizeHint().width() + frameWidth + 12));
 
-    setPlaceholderText(tr("Search..."));
-    mode = Search;
-    setDragEnabled(true);
-    checkMenu();
-    connect(this, SIGNAL(returnPressed()), this, SLOT(searchSubmit()));
-
-
+    }
 }
 
 void SearchBox::resizeEvent(QResizeEvent *)
@@ -231,7 +263,7 @@ void SearchBox::setBad(QStringList errors)
     pal.setColor(QPalette::Text, Qt::red);
     setPalette(pal);
 
-    setToolTip(errors.join(" and "));
+    setToolTip(errors.join(tr(" and ")));
 }
 
 void SearchBox::setGood()
@@ -259,8 +291,14 @@ void
 SearchBox::dropEvent(QDropEvent *event)
 {
     QString name = event->mimeData()->data("application/x-columnchooser");
-    // fugly, but it works for BikeScore with the (TM) in it...
-    if (name == "BikeScore?") name = QString("BikeScore&#8482;").replace("&#8482;", QChar(0x2122));
+    // fugly, but it works for BikeScore with the (TM) in it... so...
+    // independent of Latin1 or UTF-8 coming from "Column Chooser" the "TM" special sign is not recognized by the parser,
+    // so strip the "TM" off for this case (only)
+    if (name.startsWith("BikeScore")) name = QString("BikeScore");
+
+    //  Always use the "internalNames" in Filter expressions
+    SpecialFields sp;
+    name = sp.internalName(name);
 
     // we do very little to the name, just space to _ and lower case it for now...
     name.replace(' ', '_');

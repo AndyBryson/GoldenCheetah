@@ -51,6 +51,7 @@ static RideFile::SeriesType nameToSeries(QString name)
     if (!name.compare("xPower", Qt::CaseInsensitive)) return RideFile::xPower;
     if (!name.compare("VAM", Qt::CaseInsensitive)) return RideFile::vam;
     if (!name.compare("wpk", Qt::CaseInsensitive)) return RideFile::wattsKg;
+    if (!name.compare("lrbalance", Qt::CaseInsensitive)) return RideFile::lrbalance;
 
     return RideFile::none;
 
@@ -137,7 +138,7 @@ void Leaf::validateFilter(DataFilter *df, Leaf *leaf)
             // a lookup at execution time
             QString lookup = df->lookupMap.value(*(leaf->lvalue.n), "");
             if (lookup == "") {
-                DataFiltererrors << QString("%1 is unknown").arg(*(leaf->lvalue.n));
+                DataFiltererrors << QString(QObject::tr("%1 is unknown")).arg(*(leaf->lvalue.n));
             }
         }
         break;
@@ -150,10 +151,10 @@ void Leaf::validateFilter(DataFilter *df, Leaf *leaf)
             QString symbol = *(leaf->series->lvalue.n); 
 
             if (leaf->function == "best" && !bestValidSymbols.exactMatch(symbol)) 
-                DataFiltererrors << QString("invalid data series for best(): %1").arg(symbol);
+                DataFiltererrors << QString(QObject::tr("invalid data series for best(): %1")).arg(symbol);
 
             if (leaf->function == "tiz" && !tizValidSymbols.exactMatch(symbol)) 
-                DataFiltererrors << QString("invalid data series for tiz(): %1").arg(symbol);
+                DataFiltererrors << QString(QObject::tr("invalid data series for tiz(): %1")).arg(symbol);
 
             // now set the series type
             leaf->seriesType = nameToSeries(symbol);
@@ -167,13 +168,13 @@ void Leaf::validateFilter(DataFilter *df, Leaf *leaf)
             bool lhsType = Leaf::isNumber(df, leaf->lvalue.l);
             bool rhsType = Leaf::isNumber(df, leaf->rvalue.l);
             if (lhsType != rhsType) {
-                DataFiltererrors << QString("comparing strings with numbers");
+                DataFiltererrors << QString(QObject::tr("comparing strings with numbers"));
             }
 
             // what about using string operations on a lhs/rhs that
             // are numeric?
             if ((lhsType || rhsType) && leaf->op >= MATCHES && leaf->op <= CONTAINS) {
-                DataFiltererrors << "using a string operations with a number";
+                DataFiltererrors << QObject::tr("using a string operations with a number");
             }
 
             validateFilter(df, leaf->lvalue.l);
@@ -222,7 +223,7 @@ QStringList DataFilter::parseFilter(QString query, QStringList *list)
     if (!treeRoot || DataFiltererrors.count() > 0) { // nope
 
         // no errors just failed to finish
-        if (!treeRoot) DataFiltererrors << "malformed expression.";
+        if (!treeRoot) DataFiltererrors << tr("malformed expression.");
 
         // Bzzzt, malformed
         emit parseBad(DataFiltererrors);
@@ -269,12 +270,13 @@ void DataFilter::configUpdate()
     lookupMap.clear();
     lookupType.clear();
 
-    // create lookup map from 'friendly name' to name used in smmaryMetrics
+    // create lookup map from 'friendly name' to INTERNAL-name used in summaryMetrics
     // to enable a quick lookup && the lookup for the field type (number, text)
     const RideMetricFactory &factory = RideMetricFactory::instance();
     for (int i=0; i<factory.metricCount(); i++) {
         QString symbol = factory.metricName(i);
-        QString name = factory.rideMetric(symbol)->name();
+        QString name = context->specialFields.internalName(factory.rideMetric(symbol)->name());
+
         lookupMap.insert(name.replace(" ","_"), symbol);
         lookupType.insert(name.replace(" ","_"), true);
     }
@@ -283,10 +285,16 @@ void DataFilter::configUpdate()
     foreach(FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
             QString underscored = field.name;
             if (!context->specialFields.isMetric(underscored)) {
+
+                // translate to internal name if name has non Latin1 characters
+                underscored = context->specialFields.internalName(underscored);
+                field.name = context->specialFields.internalName((field.name));
+
                 lookupMap.insert(underscored.replace(" ","_"), field.name);
                 lookupType.insert(underscored.replace(" ","_"), (field.type > 2)); // true if is number
             }
     }
+
 }
 
 double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
@@ -384,8 +392,14 @@ double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
                 QString rename;
                 // get symbol value
                 if ((lhsisNumber = df->lookupType.value(*(leaf->lvalue.l->lvalue.n))) == true) {
-                    // numeric
-                    lhsdouble = m.getForSymbol(rename=df->lookupMap.value(*(leaf->lvalue.l->lvalue.n),""));
+
+                    // check metadata string to number first ...
+                    QString meta = m.getText(rename=df->lookupMap.value(*(leaf->lvalue.l->lvalue.n),""), "unknown");
+                    if (meta == "unknown")
+                        lhsdouble = m.getForSymbol(rename=df->lookupMap.value(*(leaf->lvalue.l->lvalue.n),""));
+                    else
+                        lhsdouble = meta.toDouble();
+
                     //qDebug()<<"symbol" << *(leaf->lvalue.l->lvalue.n) << "is" << lhsdouble << "via" << rename;
                 } else {
                     // string
@@ -429,7 +443,11 @@ double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
                 // get symbol value
                 if ((rhsisNumber=df->lookupType.value(*(leaf->rvalue.l->lvalue.n))) == true) {
                     // numeric
-                    rhsdouble = m.getForSymbol(rename=df->lookupMap.value(*(leaf->rvalue.l->lvalue.n),""));
+                    QString meta = m.getText(rename=df->lookupMap.value(*(leaf->rvalue.l->lvalue.n),""), "unknown");
+                    if (meta == "unknown")
+                        rhsdouble = m.getForSymbol(rename=df->lookupMap.value(*(leaf->rvalue.l->lvalue.n),""));
+                    else
+                        rhsdouble = meta.toDouble();
                     //qDebug()<<"symbol" << *(leaf->rvalue.l->lvalue.n) << "is" << rhsdouble << "via" << rename;
                 } else {
                     // string

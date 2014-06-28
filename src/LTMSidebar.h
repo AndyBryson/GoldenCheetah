@@ -65,6 +65,7 @@ class LTMSidebar : public QWidget
         void dateRangePopup();
         void dateRangeChanged(QTreeWidgetItem *, int);
         void dateRangeMoved(QTreeWidgetItem *, int, int);
+        void presetTreeWidgetSelectionChanged();
         void addRange();
         void editRange();
         void deleteRange();
@@ -74,6 +75,8 @@ class LTMSidebar : public QWidget
         void editEvent();
         void deleteEvent();
         void addEvent();
+
+        void presetsChanged();
 
         void filterTreeWidgetSelectionChanged();
         void resetFilters(); // rebuild the seasons list if it changes
@@ -104,6 +107,10 @@ class LTMSidebar : public QWidget
         GcSplitterItem *seasonsWidget;
         SeasonTreeView *dateRangeTree;
         QTreeWidgetItem *allDateRanges;
+
+        GcSplitterItem *chartsWidget;
+        QTreeWidget *chartTree;
+        QTreeWidgetItem *allCharts;
 
         GcSplitterItem *eventsWidget;
         QTreeWidget *eventTree;

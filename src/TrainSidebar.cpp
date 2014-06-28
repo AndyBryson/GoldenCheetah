@@ -44,8 +44,8 @@
 #include "FortiusController.h"
 #endif
 
-#ifdef GC_HAVE_VLC
 // Media selection helper
+#ifndef Q_OS_MAC
 #include "VideoWindow.h"
 #endif
 
@@ -73,7 +73,7 @@ TrainSidebar::TrainSidebar(Context *context) : GcWindow(context), context(contex
     // don't set the source for telemetry
     bpmTelemetry = wattsTelemetry = kphTelemetry = rpmTelemetry = -1;
 
-#if defined Q_OS_MAC || defined GC_HAVE_VLC
+#if !defined GC_VIDEO_NONE
     videoModel = new QSqlTableModel(this, trainDB->connection());
     videoModel->setTable("videos");
     videoModel->setEditStrategy(QSqlTableModel::OnManualSubmit);
@@ -326,7 +326,7 @@ intensity->hide(); //XXX!!! temporary
     cl->addWidget(trainSplitter);
 
 
-#if defined Q_OS_MAC || defined GC_HAVE_VLC
+#if !defined GC_VIDEO_NONE
     mediaItem = new GcSplitterItem(tr("Media"), iconFromPNG(":images/sidebar/movie.png"), this);
     QAction *moreMediaAct = new QAction(iconFromPNG(":images/sidebar/extra.png"), tr("Menu"), this);
     mediaItem->addAction(moreMediaAct);
@@ -338,7 +338,9 @@ intensity->hide(); //XXX!!! temporary
 
 #ifdef Q_OS_MAC
     // get rid of annoying focus rectangle for sidebar components
+#if !defined GC_VIDEO_NONE
     mediaTree->setAttribute(Qt::WA_MacShowFocusRect, 0);
+#endif
     workoutTree->setAttribute(Qt::WA_MacShowFocusRect, 0);
     deviceTree->setAttribute(Qt::WA_MacShowFocusRect, 0);
 #endif
@@ -347,7 +349,7 @@ intensity->hide(); //XXX!!! temporary
     connect(deviceTree,SIGNAL(itemSelectionChanged()), this, SLOT(deviceTreeWidgetSelectionChanged()));
     connect(deviceTree,SIGNAL(customContextMenuRequested(const QPoint &)), this, SLOT(deviceTreeMenuPopup(const QPoint &)));
 
-#if defined Q_OS_MAC || defined GC_HAVE_VLC
+#if !defined GC_VIDEO_NONE
     connect(mediaTree->selectionModel(), SIGNAL(selectionChanged(QItemSelection, QItemSelection)),
                             this, SLOT(mediaTreeWidgetSelectionChanged()));
     connect(context, SIGNAL(selectMedia(QString)), this, SLOT(selectVideo(QString)));
@@ -408,7 +410,7 @@ TrainSidebar::refresh()
 {
     int row;
 
-#if defined Q_OS_MAC || defined GC_HAVE_VLC
+#if !defined GC_VIDEO_NONE
     // remember selection
     row = mediaTree->currentIndex().row();
     QString videoPath = mediaTree->model()->data(mediaTree->model()->index(row,0)).toString();
@@ -500,7 +502,7 @@ void
 TrainSidebar::configChanged()
 {
     setProperty("color", GColor(CTRAINPLOTBACKGROUND));
-#if defined Q_OS_MAC || defined GC_HAVE_VLC
+#if !defined GC_VIDEO_NONE
     mediaTree->setStyleSheet(GCColor::stylesheet());
 #endif
     workoutTree->setStyleSheet(GCColor::stylesheet());
@@ -782,7 +784,7 @@ void TrainSidebar::Start()       // when start button is pressed
         load_period.restart();
         if (status & RT_WORKOUT) load_timer->start(LOADRATE);
 
-#if defined Q_OS_MAC || defined GC_HAVE_VLC
+#if !defined GC_VIDEO_NONE
         mediaTree->setEnabled(false);
 #endif
 
@@ -803,7 +805,7 @@ void TrainSidebar::Start()       // when start button is pressed
         if (status & RT_WORKOUT) load_timer->stop();
         load_msecs += load_period.restart();
 
-#if defined Q_OS_MAC || defined GC_HAVE_VLC
+#if !defined GC_VIDEO_NONE
         // enable media tree so we can change movie - mid workout
         mediaTree->setEnabled(true);
 #endif
@@ -830,7 +832,7 @@ void TrainSidebar::Start()       // when start button is pressed
             return;
         }
 
-#if defined Q_OS_MAC || defined GC_HAVE_VLC
+#if !defined GC_VIDEO_NONE
         mediaTree->setEnabled(false);
 #endif
         workoutTree->setEnabled(false);
@@ -916,7 +918,7 @@ void TrainSidebar::Pause()        // pause capture to recalibrate
         load_period.restart();
         if (status & RT_WORKOUT) load_timer->start(LOADRATE);
 
-#if defined Q_OS_MAC || defined GC_HAVE_VLC
+#if !defined GC_VIDEO_NONE
         mediaTree->setEnabled(false);
 #endif
 
@@ -935,7 +937,7 @@ void TrainSidebar::Pause()        // pause capture to recalibrate
         load_msecs += load_period.restart();
 
         // enable media tree so we can change movie
-#if defined Q_OS_MAC || defined GC_HAVE_VLC
+#if !defined GC_VIDEO_NONE
         mediaTree->setEnabled(true);
 #endif
 
@@ -952,7 +954,7 @@ void TrainSidebar::Stop(int deviceStatus)        // when stop button is pressed
 
     // Stop users from selecting different devices
     // media or workouts whilst a workout is in progress
-#if defined Q_OS_MAC || defined GC_HAVE_VLC
+#if !defined GC_VIDEO_NONE
     mediaTree->setEnabled(true);
 #endif
     workoutTree->setEnabled(true);

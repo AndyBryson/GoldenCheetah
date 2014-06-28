@@ -205,11 +205,11 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     // model config
     // 2 or 3 point model ?
     modelCombo= new QComboBox(this);
-    modelCombo->addItem("None");
-    modelCombo->addItem("2 parameter");
-    modelCombo->addItem("3 parameter");
-    modelCombo->addItem("Extended CP");
-    modelCombo->addItem("Multicomponent");
+    modelCombo->addItem(tr("None"));
+    modelCombo->addItem(tr("2 parameter"));
+    modelCombo->addItem(tr("3 parameter"));
+    modelCombo->addItem(tr("Extended CP"));
+    modelCombo->addItem(tr("Multicomponent"));
     modelCombo->setCurrentIndex(1);
 
     mcl->addRow(new QLabel(tr("CP Model")), modelCombo);
@@ -353,6 +353,8 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     ftpTitle = new QLabel(tr("FTP"), this);
     ftpValue = new QLabel(tr("0 w"), this);
     ftpRank = new QLabel(tr("n/a"), this);
+    eiTitle = new QLabel(tr("Endurance Index"), this);
+    eiValue = new QLabel(tr("n/a"), this);
 
     // autofill
     titleBlank->setAutoFillBackground(true);
@@ -370,6 +372,8 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     ftpTitle->setAutoFillBackground(true);
     ftpValue->setAutoFillBackground(true);
     ftpRank->setAutoFillBackground(true);
+    eiTitle->setAutoFillBackground(true);
+    eiValue->setAutoFillBackground(true);
 
     // align all centered
     titleBlank->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
@@ -387,6 +391,8 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     ftpTitle->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     ftpValue->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
     ftpRank->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+    eiTitle->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    eiValue->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
 
     // add to grid
     gridLayout->addWidget(titleBlank, 0, 0);
@@ -404,8 +410,10 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     gridLayout->addWidget(ftpTitle, 4, 0);
     gridLayout->addWidget(ftpValue, 4, 1);
     gridLayout->addWidget(ftpRank, 4, 2);
+    gridLayout->addWidget(eiTitle, 5, 0);
+    gridLayout->addWidget(eiValue, 5, 1);
 
-    addHelper(QString("CP Model"), helper);
+    addHelper(QString(tr("CP Model")), helper);
 
     if (rangemode) {
         connect(this, SIGNAL(dateRangeChanged(DateRange)), SLOT(dateRangeChanged(DateRange)));
@@ -468,6 +476,9 @@ CriticalPowerWindow::CriticalPowerWindow(const QDir &home, Context *context, boo
     connect(dateSetting, SIGNAL(useThruToday()), this, SLOT(useThruToday()));
     connect(dateSetting, SIGNAL(useStandardRange()), this, SLOT(useStandardRange()));
 
+    // set date range for bests and model
+    if (!rangemode) seasonSelected(cComboSeason->currentIndex());
+
     // set widgets and model parameters
     modelChanged();
 
@@ -509,6 +520,8 @@ CriticalPowerWindow::configChanged()
     ftpTitle->setFont(font);
     ftpValue->setFont(font);
     ftpRank->setFont(font);
+    eiTitle->setFont(font);
+    eiValue->setFont(font);
 
     helper->setPalette(palette);
     titleBlank->setPalette(palette);
@@ -526,10 +539,13 @@ CriticalPowerWindow::configChanged()
     ftpTitle->setPalette(palette);
     ftpValue->setPalette(whitepalette);
     ftpRank->setPalette(whitepalette);
+    eiTitle->setPalette(palette);
+    eiValue->setPalette(whitepalette);
 
     QPen gridPen(GColor(CPLOTGRID));
     grid->setPen(gridPen);
 
+    // set ride
     rideSelected();
 }
 
@@ -920,13 +936,13 @@ CriticalPowerWindow::intervalHover(RideFileInterval x)
         for (size_t i=0; i<intervalCurves[index]->data()->size(); i++) array << intervalCurves[index]->data()->sample(i);
 
         QPen pen(Qt::gray);
-        double width = appsettings->value(this, GC_LINEWIDTH, 1.0).toDouble();
+        double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
         pen.setWidth(width);
 
         // create the hover curve
         hoverCurve = new QwtPlotCurve("Interval");
         hoverCurve->setPen(pen);
-        if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true) hoverCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
+        if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true) hoverCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
         hoverCurve->setYAxis(QwtPlot::yLeft);
         hoverCurve->setSamples(array);
         hoverCurve->setVisible(true);
@@ -994,7 +1010,7 @@ CriticalPowerWindow::showIntervalCurve(IntervalItem *current, int index)
 
     // create a curve!
     QwtPlotCurve *curve = new QwtPlotCurve();
-    if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
+    if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true)
         curve->setRenderHint(QwtPlotItem::RenderAntialiased);
 
     // set its color - based upon index in intervals!
@@ -1002,7 +1018,7 @@ CriticalPowerWindow::showIntervalCurve(IntervalItem *current, int index)
     int count=context->athlete->allIntervalItems()->childCount();
     intervalColor.setHsv(index * (255/count), 255,255);
     QPen pen(intervalColor);
-    double width = appsettings->value(this, GC_LINEWIDTH, 1.0).toDouble();
+    double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
     pen.setWidth(width);
     //pen.setStyle(Qt::DotLine);
     intervalColor.setAlpha(64);

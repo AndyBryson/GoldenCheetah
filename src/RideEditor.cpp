@@ -1082,6 +1082,25 @@ void CellDelegate::setModelData(QWidget *editor, QAbstractItemModel *, const QMo
     }
 }
 
+//custom drawContents class
+class GTextDocument : public QTextDocument
+{
+    public:
+        GTextDocument(QString string) : QTextDocument(string) {}
+
+        // custom draw
+        void drawContents(QPainter *painter, QColor color) {
+
+            painter->save();
+
+            QAbstractTextDocumentLayout::PaintContext ctx;
+            ctx.palette.setColor(QPalette::Text, color);
+            documentLayout()->draw(painter, ctx);
+
+            painter->restore();
+        }
+};
+
 // anomalies are underlined in red, otherwise straight paintjob
 void CellDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
                          const QModelIndex &index) const
@@ -1110,7 +1129,7 @@ void CellDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
     if (rideEditor->isAnomaly(index.row(), index.column())) {
 
         // wavy line is a pain!
-        QTextDocument *meh = new QTextDocument(QString(value));
+        GTextDocument *meh = new GTextDocument(QString(value));
         QTextCharFormat wavy;
         wavy.setUnderlineStyle(QTextCharFormat::WaveUnderline);
         wavy.setUnderlineColor(Qt::red);
@@ -1127,9 +1146,10 @@ void CellDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
 
         painter->save();
         painter->translate(option.rect.x(), option.rect.y());
-        meh->drawContents(painter);
+        meh->drawContents(painter, GCColor::invertColor(GColor(CPLOTBACKGROUND)));
         painter->restore();
         delete meh;
+
     } else {
 
         // normal render
@@ -2409,7 +2429,7 @@ PasteSpecialDialog::columnChanged()
 AnomalyDialog::AnomalyDialog(RideEditor *rideEditor) : rideEditor(rideEditor)
 {
     // setup the basic window settings; nonmodal, ontop and delete on close
-    setWindowTitle("Anomalies");
+    setWindowTitle(tr("Anomalies"));
     //setAttribute(Qt::WA_DeleteOnClose);
     setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint | Qt::Tool);
     QVBoxLayout *main = new QVBoxLayout(this);

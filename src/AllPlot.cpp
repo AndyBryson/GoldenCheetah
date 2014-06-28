@@ -246,12 +246,12 @@ class AllPlotZoneLabel: public QwtPlotItem
         }
 };
 
-class TimeScaleDraw: public QwtScaleDraw
+class TimeScaleDraw: public ScaleScaleDraw
 {
 
     public:
 
-    TimeScaleDraw(bool *bydist) : QwtScaleDraw(), bydist(bydist) {}
+    TimeScaleDraw(bool *bydist) : ScaleScaleDraw(), bydist(bydist) {}
 
     virtual QwtText label(double v) const
     {
@@ -376,7 +376,7 @@ AllPlotObject::AllPlotObject(AllPlot *plot) : plot(plot)
     rpsCurve->setPaintAttribute(QwtPlotCurve::FilterPoints, true);
     rpsCurve->setYAxis(QwtAxisId(QwtAxis::yLeft, 3));
 
-    wCurve = new QwtPlotCurve(tr("W' Balance (j)"));
+    wCurve = new QwtPlotCurve(tr("W' Balance (kJ)"));
     wCurve->setPaintAttribute(QwtPlotCurve::FilterPoints, true);
     wCurve->setYAxis(QwtAxisId(QwtAxis::yRight, 2));
 
@@ -421,7 +421,7 @@ AllPlotObject::setColor(QColor color)
     QPen pen;
     pen.setWidth(1.0);
     int alpha = 200;
-    bool antialias = appsettings->value(this, GC_ANTIALIAS, false).toBool();
+    bool antialias = appsettings->value(this, GC_ANTIALIAS, true).toBool();
     foreach(QwtPlotCurve *c, worklist) {
 
         pen.setColor(color);
@@ -670,10 +670,10 @@ AllPlot::AllPlot(AllPlotWindow *parent, Context *context, RideFile::SeriesType s
     setAxisVisible(xBottom, true);
 
     // highlighter
-    QwtScaleDraw *sd = new QwtScaleDraw;
+    ScaleScaleDraw *sd = new ScaleScaleDraw;
     sd->setTickLength(QwtScaleDiv::MajorTick, 2);
-    sd->enableComponent(QwtScaleDraw::Ticks, false);
-    sd->enableComponent(QwtScaleDraw::Backbone, false);
+    sd->enableComponent(ScaleScaleDraw::Ticks, false);
+    sd->enableComponent(ScaleScaleDraw::Backbone, false);
     setAxisScaleDraw(QwtAxisId(QwtAxis::yLeft, 2), sd);
 
     QPalette pal = palette();
@@ -720,9 +720,9 @@ AllPlot::~AllPlot()
 void
 AllPlot::configChanged()
 {
-    double width = appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble();
+    double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
 
-    if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true) {
+    if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true) {
         standard->wattsCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
         standard->atissCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
         standard->antissCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
@@ -987,64 +987,64 @@ AllPlot::configChanged()
     enableAxis(xBottom, true);
     setAxisVisible(xBottom, true);
 
-    QwtScaleDraw *sd = new QwtScaleDraw;
+    ScaleScaleDraw *sd = new ScaleScaleDraw;
     sd->setTickLength(QwtScaleDiv::MajorTick, 3);
-    sd->enableComponent(QwtScaleDraw::Ticks, false);
-    sd->enableComponent(QwtScaleDraw::Backbone, false);
+    sd->enableComponent(ScaleScaleDraw::Ticks, false);
+    sd->enableComponent(ScaleScaleDraw::Backbone, false);
     setAxisScaleDraw(QwtPlot::yLeft, sd);
     pal.setColor(QPalette::WindowText, GColor(CPOWER));
     pal.setColor(QPalette::Text, GColor(CPOWER));
     axisWidget(QwtPlot::yLeft)->setPalette(pal);
 
-    sd = new QwtScaleDraw;
+    sd = new ScaleScaleDraw;
     sd->setTickLength(QwtScaleDiv::MajorTick, 3);
-    sd->enableComponent(QwtScaleDraw::Ticks, false);
-    sd->enableComponent(QwtScaleDraw::Backbone, false);
+    sd->enableComponent(ScaleScaleDraw::Ticks, false);
+    sd->enableComponent(ScaleScaleDraw::Backbone, false);
     setAxisScaleDraw(QwtAxisId(QwtAxis::yLeft, 1), sd);
     pal.setColor(QPalette::WindowText, GColor(CHEARTRATE));
     pal.setColor(QPalette::Text, GColor(CHEARTRATE));
     axisWidget(QwtAxisId(QwtAxis::yLeft, 1))->setPalette(pal);
 
-    sd = new QwtScaleDraw;
+    sd = new ScaleScaleDraw;
     sd->setTickLength(QwtScaleDiv::MajorTick, 3);
-    sd->enableComponent(QwtScaleDraw::Ticks, false);
-    sd->enableComponent(QwtScaleDraw::Backbone, false);
+    sd->enableComponent(ScaleScaleDraw::Ticks, false);
+    sd->enableComponent(ScaleScaleDraw::Backbone, false);
     setAxisScaleDraw(QwtAxisId(QwtAxis::yLeft, 3), sd);
     pal.setColor(QPalette::WindowText, GColor(CPLOTMARKER));
     pal.setColor(QPalette::Text, GColor(CPLOTMARKER));
     axisWidget(QwtAxisId(QwtAxis::yLeft, 3))->setPalette(pal);
 
-    sd = new QwtScaleDraw;
+    sd = new ScaleScaleDraw;
     sd->setTickLength(QwtScaleDiv::MajorTick, 3);
-    sd->enableComponent(QwtScaleDraw::Ticks, false);
-    sd->enableComponent(QwtScaleDraw::Backbone, false);
+    sd->enableComponent(ScaleScaleDraw::Ticks, false);
+    sd->enableComponent(ScaleScaleDraw::Backbone, false);
     setAxisScaleDraw(QwtPlot::yRight, sd);
     pal.setColor(QPalette::WindowText, GColor(CSPEED));
     pal.setColor(QPalette::Text, GColor(CSPEED));
     axisWidget(QwtPlot::yRight)->setPalette(pal);
 
-    sd = new QwtScaleDraw;
+    sd = new ScaleScaleDraw;
     sd->setTickLength(QwtScaleDiv::MajorTick, 3);
-    sd->enableComponent(QwtScaleDraw::Ticks, false);
-    sd->enableComponent(QwtScaleDraw::Backbone, false);
+    sd->enableComponent(ScaleScaleDraw::Ticks, false);
+    sd->enableComponent(ScaleScaleDraw::Backbone, false);
     setAxisScaleDraw(QwtAxisId(QwtAxis::yRight, 1), sd);
     pal.setColor(QPalette::WindowText, GColor(CALTITUDE));
     pal.setColor(QPalette::Text, GColor(CALTITUDE));
     axisWidget(QwtAxisId(QwtAxis::yRight, 1))->setPalette(pal);
 
-    sd = new QwtScaleDraw;
-    sd->enableComponent(QwtScaleDraw::Ticks, false);
-    sd->enableComponent(QwtScaleDraw::Backbone, false);
-    sd->setLabelRotation(90);// in the 000s
+    sd = new ScaleScaleDraw;
+    sd->enableComponent(ScaleScaleDraw::Ticks, false);
+    sd->enableComponent(ScaleScaleDraw::Backbone, false);
     sd->setTickLength(QwtScaleDiv::MajorTick, 3);
+    sd->setFactor(0.001f); // in kJ
     setAxisScaleDraw(QwtAxisId(QwtAxis::yRight, 2), sd);
     pal.setColor(QPalette::WindowText, GColor(CWBAL));
     pal.setColor(QPalette::Text, GColor(CWBAL));
     axisWidget(QwtAxisId(QwtAxis::yRight, 2))->setPalette(pal);
 
-    sd = new QwtScaleDraw;
-    sd->enableComponent(QwtScaleDraw::Ticks, false);
-    sd->enableComponent(QwtScaleDraw::Backbone, false);
+    sd = new ScaleScaleDraw;
+    sd->enableComponent(ScaleScaleDraw::Ticks, false);
+    sd->enableComponent(ScaleScaleDraw::Backbone, false);
     sd->setTickLength(QwtScaleDiv::MajorTick, 3);
     setAxisScaleDraw(QwtAxisId(QwtAxis::yRight, 3), sd);
     pal.setColor(QPalette::WindowText, GColor(CATISS));
@@ -1184,8 +1184,14 @@ AllPlot::recalc(AllPlotObject *objects)
         return;
     }
 
+    // if recintsecs is longer than the smoothing there is no point in even trying
+    int applysmooth = smooth < rideItem->ride()->recIntSecs() ? 0 : smooth;
+
+    // compare mode breaks
+    if (context->isCompareIntervals && applysmooth == 0) applysmooth = 1;
+    
     // we should only smooth the curves if objects->smoothed rate is greater than sample rate
-    if (smooth > 0) {
+    if (applysmooth > 0) {
 
         double totalWatts = 0.0;
         double totalNP = 0.0;
@@ -1242,7 +1248,7 @@ AllPlot::recalc(AllPlotObject *objects)
         objects->smoothLPS.resize(rideTimeSecs + 1);
         objects->smoothRPS.resize(rideTimeSecs + 1);
 
-        for (int secs = 0; ((secs < smooth)
+        for (int secs = 0; ((secs < applysmooth)
                             && (secs < rideTimeSecs)); ++secs) {
             objects->smoothWatts[secs] = 0.0;
             objects->smoothNP[secs] = 0.0;
@@ -1274,7 +1280,7 @@ AllPlot::recalc(AllPlotObject *objects)
         }
 
         int i = 0;
-        for (int secs = smooth; secs <= rideTimeSecs; ++secs) {
+        for (int secs = applysmooth; secs <= rideTimeSecs; ++secs) {
             while ((i < objects->timeArray.count()) && (objects->timeArray[i] <= secs)) {
                 DataPoint dp(objects->timeArray[i],
                              (!objects->hrArray.empty() ? objects->hrArray[i] : 0),
@@ -1327,7 +1333,7 @@ AllPlot::recalc(AllPlotObject *objects)
                 if (!objects->altArray.empty())
                     totalAlt   += objects->altArray[i];
                 if (!objects->tempArray.empty() ) {
-                    if (objects->tempArray[i] == RideFile::noTemp) {
+                    if (objects->tempArray[i] == RideFile::NoTemp) {
                         dp.temp = (i>0 && !list.empty()?list.back().temp:0.0);
                         totalTemp   += dp.temp;
                     }
@@ -1356,7 +1362,7 @@ AllPlot::recalc(AllPlotObject *objects)
                 list.append(dp);
                 ++i;
             }
-            while (!list.empty() && (list.front().time < secs - smooth)) {
+            while (!list.empty() && (list.front().time < secs - applysmooth)) {
                 DataPoint &dp = list.front();
                 totalWatts -= dp.watts;
                 totalNP -= dp.np;
@@ -1504,7 +1510,7 @@ AllPlot::recalc(AllPlotObject *objects)
             objects->smoothTime.append(dp->secs/60);
             objects->smoothDistance.append(context->athlete->useMetricUnits ? dp->km : dp->km * MILES_PER_KM);
             objects->smoothAltitude.append(context->athlete->useMetricUnits ? dp->alt : dp->alt * FEET_PER_METER);
-            if (dp->temp == RideFile::noTemp && !objects->smoothTemp.empty())
+            if (dp->temp == RideFile::NoTemp && !objects->smoothTemp.empty())
                 dp->temp = objects->smoothTemp.last();
             objects->smoothTemp.append(context->athlete->useMetricUnits ? dp->temp : dp->temp * FAHRENHEIT_PER_CENTIGRADE + FAHRENHEIT_ADD_CENTIGRADE);
             objects->smoothWind.append(context->athlete->useMetricUnits ? dp->headwind : dp->headwind * MILES_PER_KM);
@@ -1863,7 +1869,7 @@ AllPlot::setYMax()
 
     if (showW && standard->wCurve->isVisible() && rideItem && rideItem->ride()) {
 
-        setAxisTitle(QwtAxisId(QwtAxis::yRight, 2), tr("W' Balance (j)"));
+        setAxisTitle(QwtAxisId(QwtAxis::yRight, 2), tr("W' Balance (kJ)"));
         setAxisScale(QwtAxisId(QwtAxis::yRight, 2),rideItem->ride()->wprimeData()->minY-1000,rideItem->ride()->wprimeData()->maxY+1000);
         setAxisLabelAlignment(QwtAxisId(QwtAxis::yRight, 2),Qt::AlignVCenter);
     }
@@ -2073,10 +2079,10 @@ AllPlot::setDataFromPlot(AllPlot *plot, int startidx, int stopidx)
 
     if (bydist) {
         startidx = plot->distanceIndex(plot->standard->distanceArray[startidx]);
-        stopidx  = plot->distanceIndex(plot->standard->distanceArray[(stopidx>=plot->standard->distanceArray.size()?plot->standard->distanceArray.size()-1:stopidx)])-1;
+        stopidx  = plot->distanceIndex(plot->standard->distanceArray[(stopidx>=plot->standard->distanceArray.size()?plot->standard->distanceArray.size()-1:stopidx)]);
     } else {
         startidx = plot->timeIndex(plot->standard->timeArray[startidx]/60);
-        stopidx  = plot->timeIndex(plot->standard->timeArray[(stopidx>=plot->standard->timeArray.size()?plot->standard->timeArray.size()-1:stopidx)]/60)-1;
+        stopidx  = plot->timeIndex(plot->standard->timeArray[(stopidx>=plot->standard->timeArray.size()?plot->standard->timeArray.size()-1:stopidx)]/60);
     }
 
     // center the curve title
@@ -2138,12 +2144,20 @@ AllPlot::setDataFromPlot(AllPlot *plot, int startidx, int stopidx)
         if (rideItem->ride()->wprimeData()->minY < 0) {
             int minCP = rideItem->ride()->wprimeData()->PCP();
             if (minCP)
-                warn = QString("** Minimum CP=%1 **").arg(rideItem->ride()->wprimeData()->PCP());
+                warn = QString(tr("** Minimum CP=%1 **")).arg(rideItem->ride()->wprimeData()->PCP());
             else
-                warn = QString("** Check W' is set correctly **");
+                warn = QString(tr("** Check W' is set correctly **"));
         }
 
-        QwtText text(QString("Tau=%1, CP=%2, W'=%3, %4 matches >2kJ (%5 kJ) %6").arg(rideItem->ride()->wprimeData()->TAU)
+        QString matchesText;  // consider Singular/Plural in Text / Zero is in most languages handled like Plural
+        if (count == 1) {
+          matchesText = tr("Tau=%1, CP=%2, W'=%3, %4 match >2kJ (%5 kJ) %6");
+        }
+        else {
+          matchesText = tr("Tau=%1, CP=%2, W'=%3, %4 matches >2kJ (%5 kJ) %6");
+        }
+
+        QwtText text(matchesText.arg(rideItem->ride()->wprimeData()->TAU)
                                                     .arg(rideItem->ride()->wprimeData()->CP)
                                                     .arg(rideItem->ride()->wprimeData()->WPRIME)
                                                     .arg(count)
@@ -2215,33 +2229,34 @@ AllPlot::setDataFromPlot(AllPlot *plot, int startidx, int stopidx)
         standard->wCurve->setSamples(rideItem->ride()->wprimeData()->xdata(bydist).data(),rideItem->ride()->wprimeData()->ydata().data(),rideItem->ride()->wprimeData()->xdata(bydist).count());
         standard->mCurve->setSamples(rideItem->ride()->wprimeData()->mxdata(bydist).data(),rideItem->ride()->wprimeData()->mydata().data(),rideItem->ride()->wprimeData()->mxdata(bydist).count());
     }
-    standard->wattsCurve->setSamples(xaxis,smoothW,stopidx-startidx);
-    standard->atissCurve->setSamples(xaxis,smoothAT,stopidx-startidx);
-    standard->antissCurve->setSamples(xaxis,smoothANT,stopidx-startidx);
-    standard->npCurve->setSamples(xaxis,smoothN,stopidx-startidx);
-    standard->xpCurve->setSamples(xaxis,smoothX,stopidx-startidx);
-    standard->apCurve->setSamples(xaxis,smoothL,stopidx-startidx);
-    standard->hrCurve->setSamples(xaxis, smoothHR,stopidx-startidx);
-    standard->speedCurve->setSamples(xaxis, smoothS, stopidx-startidx);
-    standard->accelCurve->setSamples(xaxis, smoothAC, stopidx-startidx);
-    standard->wattsDCurve->setSamples(xaxis, smoothWD, stopidx-startidx);
-    standard->cadDCurve->setSamples(xaxis, smoothCD, stopidx-startidx);
-    standard->nmDCurve->setSamples(xaxis, smoothND, stopidx-startidx);
-    standard->hrDCurve->setSamples(xaxis, smoothHD, stopidx-startidx);
-    standard->cadCurve->setSamples(xaxis, smoothC, stopidx-startidx);
-    standard->altCurve->setSamples(xaxis, smoothA, stopidx-startidx);
-    standard->tempCurve->setSamples(xaxis, smoothTE, stopidx-startidx);
+    int points = stopidx - startidx + 1; // e.g. 10 to 12 is 3 points 10,11,12, so not 12-10 !
+    standard->wattsCurve->setSamples(xaxis,smoothW,points);
+    standard->atissCurve->setSamples(xaxis,smoothAT,points);
+    standard->antissCurve->setSamples(xaxis,smoothANT,points);
+    standard->npCurve->setSamples(xaxis,smoothN,points);
+    standard->xpCurve->setSamples(xaxis,smoothX,points);
+    standard->apCurve->setSamples(xaxis,smoothL,points);
+    standard->hrCurve->setSamples(xaxis, smoothHR,points);
+    standard->speedCurve->setSamples(xaxis, smoothS, points);
+    standard->accelCurve->setSamples(xaxis, smoothAC, points);
+    standard->wattsDCurve->setSamples(xaxis, smoothWD, points);
+    standard->cadDCurve->setSamples(xaxis, smoothCD, points);
+    standard->nmDCurve->setSamples(xaxis, smoothND, points);
+    standard->hrDCurve->setSamples(xaxis, smoothHD, points);
+    standard->cadCurve->setSamples(xaxis, smoothC, points);
+    standard->altCurve->setSamples(xaxis, smoothA, points);
+    standard->tempCurve->setSamples(xaxis, smoothTE, points);
 
-    QVector<QwtIntervalSample> tmpWND(stopidx-startidx);
-    memcpy(tmpWND.data(), smoothRS, (stopidx-startidx) * sizeof(QwtIntervalSample));
+    QVector<QwtIntervalSample> tmpWND(points);
+    memcpy(tmpWND.data(), smoothRS, (points) * sizeof(QwtIntervalSample));
     standard->windCurve->setSamples(new QwtIntervalSeriesData(tmpWND));
-    standard->torqueCurve->setSamples(xaxis, smoothNM, stopidx-startidx);
-    standard->balanceLCurve->setSamples(xaxis, smoothBALL, stopidx-startidx);
-    standard->balanceRCurve->setSamples(xaxis, smoothBALR, stopidx-startidx);
-    standard->lteCurve->setSamples(xaxis, smoothLTE, stopidx-startidx);
-    standard->rteCurve->setSamples(xaxis, smoothRTE, stopidx-startidx);
-    standard->lpsCurve->setSamples(xaxis, smoothLPS, stopidx-startidx);
-    standard->rpsCurve->setSamples(xaxis, smoothRPS, stopidx-startidx);
+    standard->torqueCurve->setSamples(xaxis, smoothNM, points);
+    standard->balanceLCurve->setSamples(xaxis, smoothBALL, points);
+    standard->balanceRCurve->setSamples(xaxis, smoothBALR, points);
+    standard->lteCurve->setSamples(xaxis, smoothLTE, points);
+    standard->rteCurve->setSamples(xaxis, smoothRTE, points);
+    standard->lpsCurve->setSamples(xaxis, smoothLPS, points);
+    standard->rpsCurve->setSamples(xaxis, smoothRPS, points);
 
     /*QVector<double> _time(stopidx-startidx);
     qMemCopy( _time.data(), xaxis, (stopidx-startidx) * sizeof( double ) );
@@ -2252,7 +2267,6 @@ AllPlot::setDataFromPlot(AllPlot *plot, int startidx, int stopidx)
         tmpWND.append(inter); // plot->standard->smoothRelSpeed.at(i)
     }*/
 
-    int points = stopidx - startidx;
     setSymbol(standard->wCurve, points);
     setSymbol(standard->wattsCurve, points);
     setSymbol(standard->antissCurve, points);
@@ -2280,7 +2294,7 @@ AllPlot::setDataFromPlot(AllPlot *plot, int startidx, int stopidx)
 
     setYMax();
 
-    setAxisScale(xBottom, xaxis[0], xaxis[stopidx-startidx-1]);
+    setAxisScale(xBottom, xaxis[0], xaxis[stopidx-startidx]);
     enableAxis(xBottom, true);
     setAxisVisible(xBottom, true);
 
@@ -2734,7 +2748,8 @@ AllPlot::setDataFromPlot(AllPlot *plot)
 
         // x-axis
         if (thereCurve)
-            setAxisScale(QwtPlot::xBottom, thereCurve->minXValue(), thereCurve->maxXValue());
+            setAxisScale(QwtPlot::xBottom, referencePlot->axisScaleDiv(xBottom).lowerBound(),
+                                           referencePlot->axisScaleDiv(xBottom).upperBound());
         else if (thereICurve)
             setAxisScale(QwtPlot::xBottom, thereICurve->boundingRect().left(), thereICurve->boundingRect().right());
 
@@ -2754,10 +2769,14 @@ AllPlot::setDataFromPlot(AllPlot *plot)
         }
 
 
-        QwtScaleDraw *sd = new QwtScaleDraw;
+        ScaleScaleDraw *sd = new ScaleScaleDraw;
         sd->setTickLength(QwtScaleDiv::MajorTick, 3);
-        sd->enableComponent(QwtScaleDraw::Ticks, false);
-        sd->enableComponent(QwtScaleDraw::Backbone, false);
+        sd->enableComponent(ScaleScaleDraw::Ticks, false);
+        sd->enableComponent(ScaleScaleDraw::Backbone, false);
+        sd->setMinimumExtent(24);
+        sd->setSpacing(0);
+
+        if (scope == RideFile::wprime) sd->setFactor(0.001f); // Kj
         setAxisScaleDraw(QwtPlot::yLeft, sd);
 
         // title and colour
@@ -2984,7 +3003,7 @@ AllPlot::setDataFromPlots(QList<AllPlot *> plots)
 
             case RideFile::wprime:
                 {
-                ourCurve = new QwtPlotCurve(tr("W' Balance (j)"));
+                ourCurve = new QwtPlotCurve(tr("W' Balance (kJ)"));
                 ourCurve->setPaintAttribute(QwtPlotCurve::FilterPoints, true);
                 ourCurve2 = new QwtPlotCurve(tr("Matches"));
                 ourCurve2->setPaintAttribute(QwtPlotCurve::FilterPoints, true);
@@ -3129,7 +3148,7 @@ AllPlot::setDataFromPlots(QList<AllPlot *> plots)
                 break;
             }
 
-            bool antialias = appsettings->value(this, GC_ANTIALIAS, false).toBool();
+            bool antialias = appsettings->value(this, GC_ANTIALIAS, true).toBool();
 
             // lets clone !
             if ((ourCurve && thereCurve) || (ourICurve && thereICurve)) {
@@ -3244,10 +3263,10 @@ AllPlot::setDataFromPlots(QList<AllPlot *> plots)
     setAxisVisible(yLeft, true);
 
     // prettify the chart at the end
-    QwtScaleDraw *sd = new QwtScaleDraw;
+    ScaleScaleDraw *sd = new ScaleScaleDraw;
     sd->setTickLength(QwtScaleDiv::MajorTick, 3);
-    sd->enableComponent(QwtScaleDraw::Ticks, false);
-    sd->enableComponent(QwtScaleDraw::Backbone, false);
+    sd->enableComponent(ScaleScaleDraw::Ticks, false);
+    sd->enableComponent(ScaleScaleDraw::Backbone, false);
     setAxisScaleDraw(QwtPlot::yLeft, sd);
 
     // set the y-axis for largest value we saw +10%
@@ -4456,7 +4475,7 @@ AllPlot::pointHover(QwtPlotCurve *curve, int index)
         if (bydist) {
             xstring = QString("%1").arg(xvalue);
         } else {
-            QTime t = QTime().addSecs(xvalue*60.00);
+            QTime t = QTime(0,0,0).addSecs(xvalue*60.00);
             xstring = t.toString("hh:mm:ss");
         }
 

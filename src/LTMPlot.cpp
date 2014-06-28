@@ -47,7 +47,7 @@
 #include <math.h> // for isinf() isnan()
 
 LTMPlot::LTMPlot(LTMWindow *parent, Context *context, bool first) : 
-    bg(NULL), parent(parent), context(context), highlighter(NULL), first(first)
+    bg(NULL), parent(parent), context(context), highlighter(NULL), first(first), isolation(false)
 {
     // don't do this ..
     setAutoReplot(false);
@@ -120,6 +120,8 @@ LTMPlot::LTMPlot(LTMWindow *parent, Context *context, bool first) :
     picker->setEnabled(true);
     _canvasPicker = new LTMCanvasPicker(this);
 
+    curveColors = new CurveColors(this);
+
     settings = NULL;
     cogganPMC = skibaPMC = NULL; // cache when replotting a PMC
 
@@ -129,7 +131,6 @@ LTMPlot::LTMPlot(LTMWindow *parent, Context *context, bool first) :
     // connect pickers to ltmPlot
     connect(_canvasPicker, SIGNAL(pointHover(QwtPlotCurve*, int)), this, SLOT(pointHover(QwtPlotCurve*, int)));
     connect(_canvasPicker, SIGNAL(pointClicked(QwtPlotCurve*, int)), this, SLOT(pointClicked(QwtPlotCurve*, int)));
-
 }
 
 LTMPlot::~LTMPlot()
@@ -151,9 +152,18 @@ LTMPlot::configUpdate()
     palette.setColor(QPalette::Text, GColor(CPLOTMARKER));
     setPalette(palette);
 
+    axesObject.clear();
+    axesId.clear();
     foreach (QwtAxisId x, supportedAxes) {
         axisWidget(x)->setPalette(palette);
         axisWidget(x)->setPalette(palette);
+
+        // keep track
+        axisWidget(x)->removeEventFilter(this);
+        axisWidget(x)->installEventFilter(this);
+        axesObject << axisWidget(x);
+        axesId << x;
+
     }
     axisWidget(QwtPlot::xBottom)->setPalette(palette);
     QwtLegend *l = static_cast<QwtLegend *>(this->legend());
@@ -163,6 +173,7 @@ LTMPlot::configUpdate()
             w->setPalette(palette);
         }
     }
+    curveColors->saveState();
     updateLegend();
 }
 
@@ -269,6 +280,8 @@ LTMPlot::setData(LTMSettings *set)
         enableAxis(supportedAxes[i].id, false);
     }
     axes.clear();
+    axesObject.clear();
+    axesId.clear();
 
     // reset all min/max Y values
     for (int i=0; i<10; i++) minY[i]=0, maxY[i]=0;
@@ -355,7 +368,7 @@ LTMPlot::setData(LTMSettings *set)
     //qDebug()<<"Created curve data.."<<timer.elapsed();
 
     // setup the curves
-    double width = appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble();
+    double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
     bool donestack = false;
 
     // now we iterate over the metric details AGAIN
@@ -400,7 +413,7 @@ LTMPlot::setData(LTMSettings *set)
         else
             curves.insert(metricDetail.symbol, current);
         stacks.insert(current, stackcounter+1);
-        if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
+        if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true)
             current->setRenderHint(QwtPlotItem::RenderAntialiased);
         QPen cpen = QPen(metricDetail.penColor);
         cpen.setWidth(width);
@@ -548,7 +561,7 @@ LTMPlot::setData(LTMSettings *set)
             curves.insert(metricDetail.bestSymbol, current);
         else
             curves.insert(metricDetail.symbol, current);
-        if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
+        if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true)
             current->setRenderHint(QwtPlotItem::RenderAntialiased);
         QPen cpen = QPen(metricDetail.penColor);
         cpen.setWidth(width);
@@ -605,7 +618,7 @@ LTMPlot::setData(LTMSettings *set)
                 cpen.setWidth(2); // double thickness for trend lines
                 cpen.setStyle(Qt::SolidLine);
                 trend->setPen(cpen);
-                if (appsettings->value(this, GC_ANTIALIAS, false).toBool()==true)
+                if (appsettings->value(this, GC_ANTIALIAS, true).toBool()==true)
                     trend->setRenderHint(QwtPlotItem::RenderAntialiased);
                 trend->setBaseline(0);
                 trend->setYAxis(axisid);
@@ -641,7 +654,7 @@ LTMPlot::setData(LTMSettings *set)
                 cpen.setWidth(2); // double thickness for trend lines
                 cpen.setStyle(Qt::SolidLine);
                 trend->setPen(cpen);
-                if (appsettings->value(this, GC_ANTIALIAS, false).toBool()==true)
+                if (appsettings->value(this, GC_ANTIALIAS, true).toBool()==true)
                     trend->setRenderHint(QwtPlotItem::RenderAntialiased);
                 trend->setBaseline(0);
                 trend->setYAxis(axisid);
@@ -834,7 +847,7 @@ LTMPlot::setData(LTMSettings *set)
 
                         } else {
                             // no precision
-                            labelString = (QString("%1").arg(value, 0, 'f', 0));
+                            labelString = (QString("%1").arg(value, 0, 'f', 1));
                         }
 
 
@@ -996,7 +1009,7 @@ LTMPlot::setData(LTMSettings *set)
 
                     } else {
                         // no precision
-                        labelString = (QString("%1").arg(value, 0, 'f', 0));
+                        labelString = (QString("%1").arg(value, 0, 'f', 1));
                     }
 
 
@@ -1212,6 +1225,8 @@ LTMPlot::setCompareData(LTMSettings *set)
         enableAxis(supportedAxes[i].id, false);
     }
     axes.clear();
+    axesObject.clear();
+    axesId.clear();
 
     // reset all min/max Y values
     for (int i=0; i<10; i++) minY[i]=0, maxY[i]=0;
@@ -1304,6 +1319,9 @@ LTMPlot::setCompareData(LTMSettings *set)
             case LTM_YEAR:
                 setAxisTitle(xBottom, tr("Year"));
                 break;
+            case LTM_ALL:
+                setAxisTitle(xBottom, tr("All"));
+                break;
             default:
                 setAxisTitle(xBottom, tr("Date"));
                 break;
@@ -1365,7 +1383,7 @@ LTMPlot::setCompareData(LTMSettings *set)
         //qDebug()<<"Created curve data.."<<timer.elapsed();
 
         // setup the curves
-        double width = appsettings->value(this, GC_LINEWIDTH, 2.0).toDouble();
+        double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
 
         // now we iterate over the metric details AGAIN
         // but this time in reverse and only plot the
@@ -1412,7 +1430,7 @@ LTMPlot::setCompareData(LTMSettings *set)
             else
                 curves.insert(name, current);
             stacks.insert(current, stackcounter+1);
-            if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
+            if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true)
                 current->setRenderHint(QwtPlotItem::RenderAntialiased);
             QPen cpen = QPen(cd.color);
             cpen.setWidth(width);
@@ -1568,7 +1586,7 @@ LTMPlot::setCompareData(LTMSettings *set)
                 curves.insert(cd.name, current);
             else
                 curves.insert(cd.name, current);
-            if (appsettings->value(this, GC_ANTIALIAS, false).toBool() == true)
+            if (appsettings->value(this, GC_ANTIALIAS, true).toBool() == true)
                 current->setRenderHint(QwtPlotItem::RenderAntialiased);
             QPen cpen = QPen(cd.color);
             cpen.setWidth(width);
@@ -1623,7 +1641,7 @@ LTMPlot::setCompareData(LTMSettings *set)
                     cpen.setWidth(2); // double thickness for trend lines
                     cpen.setStyle(Qt::SolidLine);
                     trend->setPen(cpen);
-                    if (appsettings->value(this, GC_ANTIALIAS, false).toBool()==true)
+                    if (appsettings->value(this, GC_ANTIALIAS, true).toBool()==true)
                         trend->setRenderHint(QwtPlotItem::RenderAntialiased);
                     trend->setBaseline(0);
                     trend->setYAxis(axisid);
@@ -1658,7 +1676,7 @@ LTMPlot::setCompareData(LTMSettings *set)
                     cpen.setWidth(2); // double thickness for trend lines
                     cpen.setStyle(Qt::SolidLine);
                     trend->setPen(cpen);
-                    if (appsettings->value(this, GC_ANTIALIAS, false).toBool()==true)
+                    if (appsettings->value(this, GC_ANTIALIAS, true).toBool()==true)
                     trend->setRenderHint(QwtPlotItem::RenderAntialiased);
                     trend->setBaseline(0);
                     trend->setYAxis(axisid);
@@ -1842,7 +1860,7 @@ LTMPlot::setCompareData(LTMSettings *set)
     
                             } else {
                                 // no precision
-                                labelString = (QString("%1").arg(value, 0, 'f', 0));
+                                labelString = (QString("%1").arg(value, 0, 'f', 1));
                             }
 
 
@@ -2004,7 +2022,7 @@ LTMPlot::setCompareData(LTMSettings *set)
 
                         } else {
                             // no precision
-                            labelString = (QString("%1").arg(value, 0, 'f', 0));
+                            labelString = (QString("%1").arg(value, 0, 'f', 1));
                         }
 
 
@@ -2241,6 +2259,13 @@ LTMPlot::createTODCurveData(Context *context, LTMSettings *settings, MetricDetai
 
         int array = rideMetrics.getRideDate().time().hour();
         int type = metricDetail.metric ? metricDetail.metric->type() : RideMetric::Average;
+        bool aggZero = metricDetail.metric ? metricDetail.metric->aggregateZero() : false;
+
+        // set aggZero to false and value to zero if is temperature and -255
+        if (metricDetail.metric && metricDetail.metric->symbol() == "average_temp" && value == RideFile::NoTemp) {
+            value = 0;
+            aggZero = false;
+        }
 
         if (metricDetail.uunits == "Ramp" ||
             metricDetail.uunits == tr("Ramp")) type = RideMetric::Total;
@@ -2254,7 +2279,8 @@ LTMPlot::createTODCurveData(Context *context, LTMSettings *settings, MetricDetai
             // average should be calculated taking into account
             // the duration of the ride, otherwise high value but
             // short rides will skew the overall average
-            y[array] = value; //XXX average is broken
+            if (value || aggZero)
+                y[array] = value; //XXX average is broken
             break;
             }
         case RideMetric::Low:
@@ -2279,6 +2305,9 @@ LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail m
     x.resize(maxdays+3); // one for start from zero plus two for 0 value added at head and tail
     y.resize(maxdays+3); // one for start from zero plus two for 0 value added at head and tail
 
+    // do we aggregate ?
+    bool aggZero = metricDetail.metric ? metricDetail.metric->aggregateZero() : false;
+
     // Get metric data, either from metricDB for RideFile metrics
     // or from StressCalculator for PM type metrics
     QList<SummaryMetrics> PMCdata;
@@ -2300,6 +2329,7 @@ LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail m
     int lastDay=0;
     unsigned long secondsPerGroupBy=0;
     bool wantZero = metricDetail.curveStyle == QwtPlotCurve::Steps;
+
     foreach (SummaryMetrics rideMetrics, *data) { 
 
         // filter out unwanted rides but not for PMC type metrics
@@ -2321,6 +2351,12 @@ LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail m
 
         // check values are bounded to stop QWT going berserk
         if (isnan(value) || isinf(value)) value = 0;
+
+        // set aggZero to false and value to zero if is temperature and -255
+        if (metricDetail.metric && metricDetail.metric->symbol() == "average_temp" && value == RideFile::NoTemp) {
+            value = 0;
+            aggZero = false;
+        }
 
         // Special computed metrics (LTS/STS) have a null metric pointer
         if (metricDetail.type != METRIC_BEST && metricDetail.metric) {
@@ -2352,7 +2388,10 @@ LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail m
 
                 y[n] = value;
                 x[n] = currentDay - groupForDate(settings->start.date(), settings->groupBy);
-                secondsPerGroupBy = seconds; // reset for new group
+
+                // only increment counter if nonzero or we aggregate zeroes
+                if (value || aggZero) secondsPerGroupBy = seconds; 
+
             } else {
                 // sum totals, average averages and choose best for Peaks
                 int type = metricDetail.metric ? metricDetail.metric->type() : RideMetric::Average;
@@ -2374,7 +2413,7 @@ LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail m
                     // average should be calculated taking into account
                     // the duration of the ride, otherwise high value but
                     // short rides will skew the overall average
-                    y[n] = ((y[n]*secondsPerGroupBy)+(seconds*value)) / (secondsPerGroupBy+seconds);
+                    if (value || aggZero) y[n] = ((y[n]*secondsPerGroupBy)+(seconds*value)) / (secondsPerGroupBy+seconds);
                     break;
                     }
                 case RideMetric::Low:
@@ -2411,6 +2450,9 @@ LTMPlot::createEstimateData(Context *context, LTMSettings *settings, MetricDetai
 
     // loop through all the estimate data
     foreach(PDEstimate est, context->athlete->PDEstimates) {
+
+        // wpk skip for now
+        if (est.wpk != metricDetail.wpk) continue;
 
         // skip entries for other models
         if (est.model != metricDetail.model) continue;
@@ -2459,6 +2501,10 @@ LTMPlot::createEstimateData(Context *context, LTMSettings *settings, MetricDetai
                     value = model->y(metricDetail.estimateDuration * metricDetail.estimateDuration_units);
                 }
             }
+            break;
+
+        case ESTIMATE_EI :
+            value = est.EI;
             break;
         }
 
@@ -2628,10 +2674,55 @@ LTMPlot::chooseYAxis(QString units)
         setAxisVisible(chosen, true);
         axes.insert(units, chosen);
         return chosen;
+
     } else {
         // eek!
         return QwtAxis::yLeft; // just re-use the current yLeft axis
     }
+}
+
+bool
+LTMPlot::eventFilter(QObject *obj, QEvent *event)
+{
+    // is it for other objects ?
+    if (axesObject.contains(obj)) {
+
+        QwtAxisId id = axesId.at(axesObject.indexOf(obj));
+
+        // this is an axes widget
+        //qDebug()<<this<<"event on="<<id<< static_cast<QwtScaleWidget*>(obj)->title().text() <<"event="<<event->type();
+
+        // isolate / restore on mouse enter leave
+        if (!isolation && event->type() == QEvent::Enter) {
+
+            // isolate curve on hover
+            curveColors->isolateAxis(id);
+            replot();
+
+        } else if (!isolation && event->type() == QEvent::Leave) {
+
+            // return to normal when leave
+            curveColors->restoreState();
+            replot();
+
+        } else if (event->type() == QEvent::MouseButtonRelease) {
+
+            // click on any axis to toggle isolation
+            // if isolation is on, just turns it off
+            // if isolation is off, turns it on for the axis clicked
+            if (isolation) {
+                isolation = false;
+                curveColors->restoreState();
+                replot();
+            } else {
+                isolation = true;
+                curveColors->isolateAxis(id, true); // with scale adjust
+                replot();
+            }
+        }
+    }
+
+    return false;
 }
 
 int
@@ -2648,6 +2739,7 @@ LTMPlot::groupForDate(QDate date, int groupby)
     case LTM_DAY:
     default:
         return date.toJulianDay();
+    case LTM_ALL: return 1;
 
     }
 }
@@ -2669,7 +2761,9 @@ LTMPlot::pointHover(QwtPlotCurve *curve, int index)
             LTMScaleDraw *lsd = new LTMScaleDraw(settings->start, groupForDate(settings->start.date(), settings->groupBy), settings->groupBy);
             QwtText startText = lsd->label((int)(curve->sample(index).x()+0.5));
 
-            if (settings->groupBy != LTM_WEEK)
+            if (settings->groupBy == LTM_ALL)
+                datestr = QString(tr("All"));
+            else if (settings->groupBy != LTM_WEEK)
                 datestr = startText.text();
             else
                 datestr = QString(tr("Week Commencing %1")).arg(startText.text());
@@ -2917,7 +3011,7 @@ LTMPlot::refreshMarkers(LTMSettings *settings, QDate from, QDate to, int groupby
                 mrk->attach(this);
                 mrk->setLineStyle(QwtPlotMarker::VLine);
                 mrk->setLabelAlignment(Qt::AlignRight | Qt::AlignTop);
-                mrk->setLinePen(QPen(color, 0, Qt::DashDotLine));
+                mrk->setLinePen(QPen(color, 0, Qt::DashLine));
                 mrk->setValue(double(groupForDate(s.getStart(), groupby)) - baseday, 0.0);
 
                 if (first) {
@@ -2939,13 +3033,13 @@ LTMPlot::refreshMarkers(LTMSettings *settings, QDate from, QDate to, int groupby
                     mrk->attach(this);
                     mrk->setLineStyle(QwtPlotMarker::VLine);
                     mrk->setLabelAlignment(Qt::AlignRight | Qt::AlignTop);
-                    mrk->setLinePen(QPen(color, 0, Qt::DashDotLine));
+                    mrk->setLinePen(QPen(color, 0, Qt::SolidLine));
                     mrk->setValue(double(groupForDate(event.date, groupby)) - baseday, 10.0);
 
                     if (first) {
                         QwtText text(event.name);
                         text.setFont(QFont("Helvetica", 10, QFont::Bold));
-                        text.setColor(color);
+                        text.setColor(Qt::red);
                         mrk->setLabel(text);
                     }
 
