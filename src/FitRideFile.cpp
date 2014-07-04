@@ -234,6 +234,7 @@ struct FitFileReaderState
                 case 1328: rideFile->setDeviceType("Garmin FR910XT"); break;
                 case 1561: rideFile->setDeviceType("Garmin Edge 510"); break;
                 case 1567: rideFile->setDeviceType("Garmin Edge 810"); break;
+                case 1836: rideFile->setDeviceType("Garmin Edge 1000"); break;
                 case 20119: rideFile->setDeviceType("Garmin Training Center"); break;
                 case 65534: rideFile->setDeviceType("Garmin Connect Website"); break;
                 default: rideFile->setDeviceType(QString("Garmin %1").arg(prod));
@@ -689,6 +690,7 @@ struct FitFileReaderState
                 case 34: /* activity */
                 case 49: /* file creator */
                 case 79: /* unknown */
+                case 104: /* battery */
                     break;
                 default:
                     unknown_global_msg_nums.insert(def.global_msg_num);

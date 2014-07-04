@@ -28,7 +28,7 @@
 #ifdef Q_OS_WIN
 #include <windows.h>
 #ifdef GC_HAVE_DWM
-#include "Dwmapi.h"
+#include "dwmapi.h"
 #endif
 #endif
 
@@ -451,7 +451,7 @@ GCColor::linearGradient(int size, bool active, bool alternate)
 
             HRESULT hr = DwmGetColorizationColor(&wincolor, &opaque);
             if (SUCCEEDED(hr)) {
-                BYTE red = GetRValue(wincolor)
+                BYTE red = GetRValue(wincolor);
                 BYTE green = GetGValue(wincolor);
                 BYTE blue = GetBValue(wincolor);
                 color = QColor::fromRgb(red,green,blue,255);
@@ -559,9 +559,9 @@ Themes::Themes()
 
     // we can add more later ....
     add.name = tr("Classic"); // Old GoldenCheetah colors // ** LIGHT **
-    colors << QColor(Qt::white) << QColor(Qt::black) << QColor(Qt::darkRed) << QColor(Qt::blue) << QColor(Qt::red);
+    colors << QColor(Qt::white) << QColor(Qt::black) << QColor(204,67,104) << QColor(Qt::blue) << QColor(Qt::red);
     //            HR              Speed                Power                 Cadence             Torque
-    colors << QColor(Qt::red) << QColor(Qt::green) << QColor(Qt::blue) << QColor(0,204,204) << QColor(Qt::magenta) ;
+    colors << QColor(Qt::red) << QColor(85,170,0) << QColor(255,170,0) << QColor(0,204,204) << QColor(Qt::magenta) ;
     add.colors = colors;
     themes << add;
     colors.clear();

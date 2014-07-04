@@ -68,9 +68,9 @@ CPPlot::CPPlot(QWidget *parent, Context *context, bool rangemode) : QwtPlot(pare
     setAxisTitle(xBottom, tr("Interval Length"));
 
     // Log scale on x-axis
-    LogTimeScaleDraw *ld = new LogTimeScaleDraw;
-    ld->setTickLength(QwtScaleDiv::MajorTick, 3);
-    setAxisScaleDraw(xBottom, ld);
+    ltsd = new LogTimeScaleDraw;
+    ltsd->setTickLength(QwtScaleDiv::MajorTick, 3);
+    setAxisScaleDraw(xBottom, ltsd);
     setAxisScaleEngine(xBottom, new QwtLogScaleEngine);
 
     // left yAxis scale prettify
@@ -174,22 +174,14 @@ CPPlot::setSeries(CriticalPowerWindow::CriticalSeriesType criticalSeries)
         }
     }
 
+    enum { linear, inverse, log } scale = log;
+
     switch (criticalSeries) {
 
     case CriticalPowerWindow::work:
         series = tr("Total work");
         units = tr("kJ");
-        //setAxisScaleEngine(xBottom, new QwtLinearScaleEngine);
-        //setAxisTitle(xBottom, tr("Interval Length (minutes)"));
-        break;
-
-    case CriticalPowerWindow::watts_inv_time:
-        series = tr("Power");
-        units = tr("watts");
-        //setAxisScaleEngine(xBottom, new QwtLinearScaleEngine);
-        //setAxisScaleDraw(xBottom, new QwtScaleDraw);
-        //ltsd->inv_time = true;
-        //setAxisTitle(xBottom, tr("Interval Length (minutes)"));
+        scale = linear;
         break;
 
     case CriticalPowerWindow::cad:
@@ -275,7 +267,13 @@ CPPlot::setSeries(CriticalPowerWindow::CriticalSeriesType criticalSeries)
 
     }
 
+    // set scale to match what's needed
+    if (scale != log) setAxisScaleEngine(xBottom, new QwtLinearScaleEngine);
+    else setAxisScaleEngine(xBottom, new QwtLogScaleEngine);
+
+    // set axis title
     setAxisTitle(yLeft, QString ("%1 %2 (%3) %4").arg(prefix).arg(series).arg(units).arg(postfix));
+
     // zap the old curves
     clearCurves();
 }
@@ -982,7 +980,7 @@ CPPlot::plotRide(RideItem *rideItem)
     if (maxNonZero == 1) return;
 
     // Right, lets actually plot the ride
-    rideCurve = new QwtPlotCurve(rideItem->dateTime.toString(tr("ddd MMM d, yyyy h:mm AP")));
+    rideCurve = new QwtPlotCurve(rideItem->dateTime.toString(tr("ddd MMM d, yyyy hh:mm")));
     rideCurve->setRenderHint(QwtPlotItem::RenderAntialiased);
     rideCurve->setBrush(QBrush(Qt::NoBrush)); // never filled
 
@@ -1833,6 +1831,8 @@ CPPlot::calculateForIntervals(QList<CompareInterval> compareIntervals)
 
     double ymax = 0;
     double ymin = 0;
+    double xmax = 0;
+    double xmin = 1.0f/60.0f - 0.001f;
 
     // prepare aggregates
     for (int i = 0; i < compareIntervals.size(); ++i) {
@@ -1863,6 +1863,9 @@ CPPlot::calculateForIntervals(QList<CompareInterval> compareIntervals)
                 // now plot using the delta series and NOT the cache
                 plotCache(deltaArray, interval.color);
 
+                // set x-axis max
+                if ((n/60.00f) > xmax) xmax = n/60.00f;
+
                 foreach(double v, deltaArray) {
                     if (v > ymax) ymax = v;
                     if (v < ymin) ymin = v;
@@ -1877,9 +1880,33 @@ CPPlot::calculateForIntervals(QList<CompareInterval> compareIntervals)
                 foreach(double v, interval.rideFileCache()->meanMaxArray(rideSeries)) {
                     if (v > ymax) ymax = v;
                 }
+
+                double mins = interval.rideFileCache()->meanMaxArray(rideSeries).count() / 60.00f;
+                if (mins > xmax) xmax = mins;
             }
         }
     }
+
+    // X-AXIS
+
+    // if max xvalue not set then default to 6 hours
+    if (xmax == 0) xmax = 6 * 60;
+
+    // truncate at an hour for energy mode
+    if (criticalSeries == CriticalPowerWindow::work) xmax = 60.0;
+
+    // not interested in short durations for vam
+    if (criticalSeries == CriticalPowerWindow::vam) xmin = 4.993;
+
+    // now set the scale
+    QwtScaleDiv div((double)xmin, (double)xmax);
+    if (criticalSeries == CriticalPowerWindow::work)
+        div.setTicks(QwtScaleDiv::MajorTick, LogTimeScaleDraw::ticksEnergy);
+    else
+        div.setTicks(QwtScaleDiv::MajorTick, LogTimeScaleDraw::ticks);
+    setAxisScaleDiv(QwtPlot::xBottom, div);
+
+    // Y-AXIS
 
     if (!showDelta && rideSeries == RideFile::watts) {
 

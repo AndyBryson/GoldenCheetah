@@ -62,11 +62,16 @@ class CTableWidgetItem : public QTableWidgetItem
 
         bool operator<(const QTableWidgetItem&other) const // for sorting our way
         { 
+            QStringList list;
+
             switch(column()) {
 
                 case 2 : return text() < other.text(); // athlete
-                case 3 : return QDate::fromString(text(), QObject::tr("dd, MMM yyyy")) <
-                                QDate::fromString(other.text(), QObject::tr("dd, MMM yyyy")); // date
+
+                case 3 : // the date format in "toString" and "fromString" must be the same !
+                         //: Ensure EQUAL translation for EACH variant of date format used, don't mix
+                         return QDate::fromString(text(), QObject::tr("dd MMM, yyyy")) <
+                                QDate::fromString(other.text(), QObject::tr("dd MMM, yyyy")); // date
                 case 4 : // date or time depending on which view
                          if (text().contains(":")) {
 
@@ -75,30 +80,48 @@ class CTableWidgetItem : public QTableWidgetItem
 
                          } else {
 
-                            return QDate::fromString(text(), QObject::tr("dd, MMM yyyy")) <
-                                   QDate::fromString(other.text(), QObject::tr("dd, MMM yyyy")); // date
+                            return // the date format in "toString" and "fromString" must be the same !
+                                   QDate::fromString(text(), QObject::tr("dd MMM, yyyy")) <
+                                   QDate::fromString(other.text(), QObject::tr("dd MMM, yyyy")); // date
 
                          }
-                case 5 : return QTime::fromString(text(), "hh:mm") < // Duration
-                                QTime::fromString(other.text(), "hh:mm");
-
                 default: // work it out ..
-                         if (text().contains(":")) { // time
+                         // first time & duration (considering the fixed format with at least one ":")
+                         if (text().contains(":") && other.text().contains(":")) {
+                             // time or duration - (for comparison the can be treated equally by converting to "seconds"
+                             // QTime only works up to 23:59:59 - but in Trends View Durations will be often higher
+                             int factor;
+                             double t1 = 0;
+                             // split seconds, minutes, hours into a list and compute Seconds (Right to Left)
+                             list = text().split(":", QString::SkipEmptyParts, Qt::CaseInsensitive);
+                             factor = 1;
+                             while (!list.isEmpty()) {
+                                 t1 += list.takeLast().toInt() * factor; // start from the end
+                                 factor *= 60; // seconds, minutes, hours
+                             }
+                             double t2 = 0;
+                             // split seconds, minutes, hours into a list and compute Seconds (Right to Left)
+                             list = other.text().split(":", QString::SkipEmptyParts, Qt::CaseInsensitive);
+                             factor = 1;
+                             while (!list.isEmpty()) {
+                                 t2 += list.takeLast().toInt() * factor; // start from the end
+                                 factor *= 60; // seconds, minutes, hours
+                             }
 
-                             return QTime::fromString(text()) <
-                                    QTime::fromString(other.text());
+                             return t1 < t2;
 
                          } else if (text().contains(QRegExp("[^0-9.,]")) ||
                                     other.text().contains(QRegExp("[^0-9.,]"))) { // alpha
 
-                            return text() < other.text();
+                              return text() < other.text();
 
                          } else { // assume numeric
 
-                            return text().toDouble() < other.text().toDouble();
+                              return text().toDouble() < other.text().toDouble();
                         }
                         break;
-                }
+            }
+            return false; // keep compiler happy
         }
 };
 
@@ -165,6 +188,7 @@ ComparePane::refreshTable()
         table->clearSelection();
         table->clear();
         table->setRowCount(0);
+        table->setColumnCount(0);
 
         // metric summary
         QStringList always;
@@ -206,7 +230,7 @@ ComparePane::refreshTable()
         table->setColumnCount(list.count()+1);
         table->horizontalHeader()->setSectionHidden(list.count(), true);
         table->setHorizontalHeaderLabels(list);
-        table->setSortingEnabled(true);
+        table->setSortingEnabled(false);
         table->verticalHeader()->hide();
         table->setShowGrid(false);
         table->setSelectionMode(QAbstractItemView::MultiSelection);
@@ -337,8 +361,10 @@ ComparePane::refreshTable()
         // STEP ONE : SET THE TABLE HEADINGS
 
         // clear current contents
+        table->clearSelection();
         table->clear();
         table->setRowCount(0);
+        table->setColumnCount(0);
 
         // metric summary
         QStringList always;
@@ -379,7 +405,7 @@ ComparePane::refreshTable()
         table->setColumnCount(list.count()+1);
         table->horizontalHeader()->setSectionHidden(list.count(), true);
         table->setHorizontalHeaderLabels(list);
-        table->setSortingEnabled(true);
+        table->setSortingEnabled(false);
         table->verticalHeader()->hide();
         table->setShowGrid(false);
         table->setSelectionMode(QAbstractItemView::MultiSelection);
@@ -476,6 +502,8 @@ ComparePane::refreshTable()
 #endif
         table->horizontalHeader()->setStretchLastSection(true);
     }
+    // sorting has to be disabled as long as table content is updated
+    table->setSortingEnabled(true);
     blockSignals(false);
 }
 
