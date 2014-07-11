@@ -50,11 +50,11 @@ class WPrime {
         RideFile *ride() { return rideFile; }
 
         // W' 1second time series from 0
-        QVector<double> &ydata() { return values; }
-        QVector<double> &xdata(bool bydist) { return bydist ? xdvalues : xvalues; }
+        QVector<double> &ydata() { check(); return values; }
+        QVector<double> &xdata(bool bydist) { check(); return bydist ? xdvalues : xvalues; }
 
-        QVector<double> &mydata() { return mvalues; }
-        QVector<double> &mxdata(bool bydist) { return bydist ? mxdvalues : mxvalues; }
+        QVector<double> &mydata() { check(); return mvalues; }
+        QVector<double> &mxdata(bool bydist) { check(); return bydist ? mxdvalues : mxvalues; }
 
         double maxMatch();
         double minY, maxY;
@@ -82,6 +82,26 @@ class WPrime {
 
         QwtSpline smoothed, distance;
         int last;
+
+        void check(); // check we don't need to recompute
+        bool wasIntegral;
 };
 
+class WPrimeIntegrator : public QThread
+{
+    public:
+        WPrimeIntegrator(QVector<int> &source, int begin, int end, double TAU);
+
+        // integrate from start to stop from source into output
+        // basically sums in the exponential decays, but we break it
+        // into threads to parallelise the work
+        void run();
+
+        QVector<int> &source;
+        int begin, end;
+        double TAU;
+
+        // resized to match source holds results
+        QVector<double> output;
+};
 #endif
