@@ -101,7 +101,7 @@ Athlete::Athlete(Context *context, const QDir &home)
 
     // read athlete's charts.xml and translate etc
     LTMSettings reader;
-    reader.readChartXML(context->athlete->home, presets);
+    reader.readChartXML(context->athlete->home, context->athlete->useMetricUnits, presets);
     translateDefaultCharts(presets);
 
     // Metadata
@@ -446,9 +446,52 @@ Athlete::translateDefaultCharts(QList<LTMSettings>&charts)
 	chartNameMap.insert("Withings Weight", tr("Withings Weight"));
 	chartNameMap.insert("Stress and Distance", tr("Stress and Distance"));
 	chartNameMap.insert("Calories vs Duration", tr("Calories vs Duration"));
+    chartNameMap.insert("Stress (TISS)", tr("Stress (TISS)"));
+    chartNameMap.insert("PMC (Coggan)", tr("PMC (Coggan)"));
+    chartNameMap.insert("PMC (Skiba)", tr("PMC (Skiba)"));
+    chartNameMap.insert("PMC (TRIMP)", tr("PMC (TRIMP)"));
+    chartNameMap.insert("CP History", tr("CP History"));
 
     for(int i=0; i<charts.count(); i++) {
         // Replace chart name for localized version, default to english name
         charts[i].name = chartNameMap.value(charts[i].name, charts[i].name);
+    }
+}
+
+void
+Athlete::configChanged()
+{
+    // re-read Zones in case it changed
+    QFile zonesFile(home.absolutePath() + "/power.zones");
+    if (zonesFile.exists()) {
+        if (!zones_->read(zonesFile)) {
+            QMessageBox::critical(context->mainWindow, tr("Zones File Error"),
+                                 zones_->errorString());
+        }
+       else if (! zones_->warningString().isEmpty())
+            QMessageBox::warning(context->mainWindow, tr("Reading Zones File"), zones_->warningString());
+    }
+
+    // reread HR zones
+    QFile hrzonesFile(home.absolutePath() + "/hr.zones");
+    if (hrzonesFile.exists()) {
+        if (!hrzones_->read(hrzonesFile)) {
+            QMessageBox::critical(context->mainWindow, tr("HR Zones File Error"),
+                                 hrzones_->errorString());
+        }
+       else if (! hrzones_->warningString().isEmpty())
+            QMessageBox::warning(context->mainWindow, tr("Reading HR Zones File"), hrzones_->warningString());
+    }
+
+    QVariant unit = appsettings->cvalue(cyclist, GC_UNIT);
+    useMetricUnits = (unit.toString() == GC_UNIT_METRIC);
+
+    // forget all the cached weight values in case weight changed
+    for (int i=0; i<allRides->childCount(); i++) {
+        RideItem *rideItem = static_cast<RideItem*>(allRides->child(i));
+        if (rideItem->ride(false)) {
+            rideItem->ride(false)->setWeight(0);
+            rideItem->ride(false)->getWeight();
+        }
     }
 }

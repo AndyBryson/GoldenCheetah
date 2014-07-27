@@ -23,6 +23,7 @@
 #include "HomeWindow.h"
 #include "LTMTool.h"
 #include "LTMSettings.h"
+#include "LTMWindow.h"
 #include "Settings.h"
 #include "ChartBar.h"
 
@@ -1206,6 +1207,8 @@ HomeWindow::saveState()
 void
 HomeWindow::restoreState(bool useDefault)
 {
+    bool defaultUsed = false;
+
     // restore window state
     QString filename = context->athlete->home.absolutePath() + "/" + name + "-layout.xml";
     QFileInfo finfo(filename);
@@ -1213,7 +1216,10 @@ HomeWindow::restoreState(bool useDefault)
     if (useDefault) QFile::remove(filename);
 
     // use a default if not there
-    if (!finfo.exists()) filename = QString(":xml/%1-layout.xml").arg(name);
+    if (!finfo.exists()) {
+        filename = QString(":xml/%1-layout.xml").arg(name);
+        defaultUsed = true;
+    }
 
     // now go read...
     QFile file(filename);
@@ -1229,6 +1235,37 @@ HomeWindow::restoreState(bool useDefault)
     xmlReader.parse(source);
     // translate the titles
     translateChartTitles(handler.charts);
+
+    // translate the metrics, but only if the built-in "default.XML"s are read (and only for LTM charts)
+    if (defaultUsed) {
+        // define and fill translation maps
+        QMap<QString, QString> nMap;  // names
+        QMap<QString, QString> uMap;  // unit of measurement
+        LTMTool::getMetricsTranslationMap(nMap, uMap, context->athlete->useMetricUnits);
+
+        // check all charts for LTMWindow(s)
+        for (int i=0; i<handler.charts.count(); i++) {
+            // find out if it's an LTMWindow via dynamic_cast
+            LTMWindow* ltmW = dynamic_cast<LTMWindow*> (handler.charts[i]);
+            if (ltmW) {
+                // the current chart is an LTMWindow, let's translate
+
+                // now get the LTMMetrics
+                LTMSettings workSettings = ltmW->getSettings();
+                for (int j=0; j<workSettings.metrics.count(); j++){
+                    // now map and substitute
+                    QString n  = nMap.value(workSettings.metrics[j].symbol, workSettings.metrics[j].uname);
+                    QString u  = uMap.value(workSettings.metrics[j].symbol, workSettings.metrics[j].uunits);
+                    // set name, units only if there was a description before
+                    if (workSettings.metrics[j].name != "") workSettings.metrics[j].name = n;
+                    workSettings.metrics[j].uname = n;
+                    if (workSettings.metrics[j].units != "") workSettings.metrics[j].units = u;
+                    workSettings.metrics[j].uunits = u;
+                }
+                ltmW->applySettings(workSettings);
+            }
+        }
+    }
 
     // layout the results
     styleChanged(handler.style);
@@ -1358,6 +1395,14 @@ void HomeWindow::translateChartTitles(QList<GcWindow*> charts)
     titleMap.insert("Training Mix", tr("Training Mix"));
     titleMap.insert("W/kg", tr("W/kg"));
     titleMap.insert("Workout", tr("Workout"));
+    titleMap.insert("Stress", tr("Stress"));
+    titleMap.insert("Scatter", tr("Scatter"));
+    titleMap.insert("HrPw", tr("HrPw"));
+    titleMap.insert("Activity Log", tr("Activity Log"));
+    titleMap.insert("HrPw", tr("HrPw"));
+    titleMap.insert("Tracker", tr("Tracker"));
+    titleMap.insert("CP History", tr("CP History"));
+    titleMap.insert("Library", tr("Library"));
 
     foreach(GcWindow *chart, charts) {
         QString chartTitle = chart->property("title").toString();

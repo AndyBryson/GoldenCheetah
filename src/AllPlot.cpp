@@ -1715,6 +1715,13 @@ AllPlot::refreshCalibrationMarkers()
     }
     standard->cal_mrk.clear();
 
+    // only on power based charts
+    if (scope != RideFile::none && scope != RideFile::watts && scope != RideFile::aTISS && scope != RideFile::anTISS &&
+        scope != RideFile::NP && scope != RideFile::aPower && scope != RideFile::xPower) return;
+
+    QColor color = GColor(CPOWER);
+    color.setAlpha(15); // almost invisble !
+
     if (rideItem && rideItem->ride()) {
         foreach(const RideFileCalibration &calibration, rideItem->ride()->calibrations()) {
             QwtPlotMarker *mrk = new QwtPlotMarker;
@@ -1722,16 +1729,18 @@ AllPlot::refreshCalibrationMarkers()
             mrk->attach(this);
             mrk->setLineStyle(QwtPlotMarker::VLine);
             mrk->setLabelAlignment(Qt::AlignRight | Qt::AlignTop);
-            mrk->setLinePen(QPen(Qt::gray, 0, Qt::DashLine));
-            QwtText text(wanttext ? ("\n\n"+calibration.name) : "");
-            text.setFont(QFont("Helvetica", 9, QFont::Bold));
-            text.setColor(Qt::gray);
+            mrk->setLinePen(QPen(color, 0, Qt::SolidLine));
             if (!bydist)
                 mrk->setValue(calibration.start / 60.0, 0.0);
             else
                 mrk->setValue((context->athlete->useMetricUnits ? 1 : MILES_PER_KM) *
                                 rideItem->ride()->timeToDistance(calibration.start), 0.0);
-            mrk->setLabel(text);
+
+            //Lots of markers can clutter things, so avoid texts for now
+            //QwtText text(false ? ("\n\n"+calibration.name) : "");
+            //text.setFont(QFont("Helvetica", 9, QFont::Bold));
+            //text.setColor(Qt::gray);
+            //mrk->setLabel(text);
         }
     }
 }
@@ -2010,15 +2019,15 @@ AllPlot::setYMax()
 
         if (referencePlot == NULL) {
             ymin = standard->altCurve->minYValue();
-            ymax = qMax(ymin + 100, 1.05 * standard->altCurve->maxYValue());
+            ymax = qMax(500.000, 1.05 * standard->altCurve->maxYValue());
         } else {
             ymin = referencePlot->standard->altCurve->minYValue();
-            ymax = qMax(ymin + 100, 1.05 * referencePlot->standard->altCurve->maxYValue());
+            ymax = qMax(500.000, 1.05 * referencePlot->standard->altCurve->maxYValue());
         }
         ymin = (ymin < 0 ? -100 : 0) + ( qRound(ymin) / 100 ) * 100;
 
         int axisHeight = qRound( plotLayout()->canvasRect().height() );
-        int step = 10;
+        int step = 100;
 
         if (axisHeight) {
             QFontMetrics labelWidthMetric = QFontMetrics( QwtPlot::axisFont(yLeft) );

@@ -115,6 +115,7 @@ class ANTChannel : public QObject {
             CHANNEL_TYPE_QUARQ,
             CHANNEL_TYPE_FAST_QUARQ,
             CHANNEL_TYPE_FAST_QUARQ_NEW,
+            CHANNEL_TYPE_KICKR,
             CHANNEL_TYPE_GUARD
         };
         typedef enum channeltype ChannelType;
@@ -126,9 +127,13 @@ class ANTChannel : public QObject {
         int device_number;
         int channel_type_flags;
         int device_id;
+
+        // special cases
+        bool is_kickr;
         bool is_cinqo; // bool
         bool is_old_cinqo; // bool, set for cinqo needing separate control channel
         bool is_alt; // is alternative channel for power
+
         int search_type;
         int srm_offset;
         ANTChannel *control_channel;

@@ -147,7 +147,7 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
 #ifdef Q_OS_MAC
     charts->setAttribute(Qt::WA_MacShowFocusRect, 0);
 #endif
-    charts->headerItem()->setText(0, "Charts");
+    charts->headerItem()->setText(0, tr("Charts"));
     charts->setColumnCount(1);
     charts->setSelectionMode(QAbstractItemView::SingleSelection);
     charts->setEditTriggers(QAbstractItemView::SelectedClicked); // allow edit
@@ -212,6 +212,141 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
     //
     // Add PM metrics, which are calculated over the metric dataset
     //
+
+    QList<MetricDetail> pmMetrics = providePMmetrics();
+
+    foreach (MetricDetail m, pmMetrics){
+       metrics.append(m);
+    }
+
+    // metadata metrics
+    SpecialFields sp;
+    foreach (FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
+        if (!sp.isMetric(field.name) && (field.type == 3 || field.type == 4)) {
+            MetricDetail metametric;
+            metametric.type = METRIC_META;
+            QString underscored = field.name;
+            metametric.symbol = underscored.replace(" ", "_");
+            metametric.metric = NULL; // not a factory metric
+            metametric.penColor = QColor(Qt::blue);
+            metametric.curveStyle = QwtPlotCurve::Lines;
+            metametric.symbolStyle = QwtSymbol::NoSymbol;
+            metametric.smooth = false;
+            metametric.trendtype = 0;
+            metametric.topN = 1;
+            metametric.uname = metametric.name = sp.displayName(field.name);
+            metametric.units = "";
+            metametric.uunits = "";
+            metrics.append(metametric);
+        }
+    }
+
+    // measures
+    QList<FieldDefinition> measureDefinitions;
+    QList<KeywordDefinition> keywordDefinitions; //NOTE: not used in measures.xml
+    QString filename = context->athlete->home.absolutePath()+"/measures.xml";
+    QString colorfield;
+    if (!QFile(filename).exists()) filename = ":/xml/measures.xml";
+    RideMetadata::readXML(filename, keywordDefinitions, measureDefinitions, colorfield);
+
+    foreach (FieldDefinition field, measureDefinitions) {
+        if (!sp.isMetric(field.name) && (field.type == 3 || field.type == 4)) {
+            MetricDetail measure;
+            measure.type = METRIC_MEASURE;
+            QString underscored = field.name;
+            measure.symbol = QString("%1_m").arg(field.name); // we don't bother with '_' for measures
+            measure.metric = NULL; // not a factory metric
+            measure.penColor = QColor(Qt::blue);
+            measure.curveStyle = QwtPlotCurve::Lines;
+            measure.symbolStyle = QwtSymbol::NoSymbol;
+            measure.smooth = false;
+            measure.trendtype = 0;
+            measure.topN = 1;
+            measure.uname = "";
+            measure.name = QString("%1 (m)").arg(sp.displayName(field.name));
+            measure.units = "";
+            measure.uunits = "";
+            metrics.append(measure);
+        }
+    }
+
+    // sort the list
+    qSort(metrics);
+
+    // custom widget
+    QWidget *custom = new QWidget(this);
+    custom->setContentsMargins(20,20,20,20);
+    QVBoxLayout *customLayout = new QVBoxLayout(custom);
+    customLayout->setContentsMargins(0,0,0,0);
+    customLayout->setSpacing(5);
+
+    // custom table
+    customTable = new QTableWidget(this);
+#ifdef Q_OS_MAX
+    customTable->setAttribute(Qt::WA_MacShowFocusRect, 0);
+#endif
+    customTable->setColumnCount(2);
+    customTable->horizontalHeader()->setStretchLastSection(true);
+    customTable->setSortingEnabled(false);
+    customTable->verticalHeader()->hide();
+    customTable->setShowGrid(false);
+    customTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    customTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    customLayout->addWidget(customTable);
+
+    // custom buttons
+    editCustomButton = new QPushButton(tr("Edit"));
+    connect(editCustomButton, SIGNAL(clicked()), this, SLOT(editMetric()));
+
+    addCustomButton = new QPushButton("+");
+    connect(addCustomButton, SIGNAL(clicked()), this, SLOT(addMetric()));
+
+    deleteCustomButton = new QPushButton("- ");
+    connect(deleteCustomButton, SIGNAL(clicked()), this, SLOT(deleteMetric()));
+
+    usePreset = new QCheckBox(tr("Use sidebar chart settings"));
+    usePreset->setChecked(false);
+
+#ifndef Q_OS_MAC
+    addCustomButton->setFixedSize(20,20);
+    deleteCustomButton->setFixedSize(20,20);
+#endif
+    QHBoxLayout *customButtons = new QHBoxLayout;
+    customButtons->setSpacing(2);
+    customButtons->addWidget(usePreset);
+    customButtons->addStretch();
+    customButtons->addWidget(editCustomButton);
+    customButtons->addStretch();
+    customButtons->addWidget(addCustomButton);
+    customButtons->addWidget(deleteCustomButton);
+    customLayout->addLayout(customButtons);
+
+    tabs->addTab(basicsettings, tr("Basic"));
+    tabs->addTab(basic, tr("Preset"));
+    tabs->addTab(custom, tr("Curves"));
+
+    // switched between one or other
+    connect(dateSetting, SIGNAL(useStandardRange()), this, SIGNAL(useStandardRange()));
+    connect(dateSetting, SIGNAL(useCustomRange(DateRange)), this, SIGNAL(useCustomRange(DateRange)));
+    connect(dateSetting, SIGNAL(useThruToday()), this, SIGNAL(useThruToday()));
+
+    // watch for changes to the preset charts
+    connect(context, SIGNAL(presetsChanged()), this, SLOT(presetsChanged()));
+    connect(usePreset, SIGNAL(stateChanged(int)), this, SLOT(usePresetChanged()));
+
+    // set the show/hide for preset selection
+    usePresetChanged();
+    
+    // but setup for the first time
+    presetsChanged();
+}
+
+QList<MetricDetail> LTMTool::providePMmetrics() {
+
+// Add PM metrics, which are calculated over the metric dataset
+//
+
+    QList<MetricDetail> metrics;
 
     // SKIBA LTS
     MetricDetail skibaLTS;
@@ -971,127 +1106,12 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
     trimpLTR.uunits = tr("Ramp");
     metrics.append(trimpLTR);
 
-    // metadata metrics
-    SpecialFields sp;
-    foreach (FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
-        if (!sp.isMetric(field.name) && (field.type == 3 || field.type == 4)) {
-            MetricDetail metametric;
-            metametric.type = METRIC_META;
-            QString underscored = field.name;
-            metametric.symbol = underscored.replace(" ", "_");
-            metametric.metric = NULL; // not a factory metric
-            metametric.penColor = QColor(Qt::blue);
-            metametric.curveStyle = QwtPlotCurve::Lines;
-            metametric.symbolStyle = QwtSymbol::NoSymbol;
-            metametric.smooth = false;
-            metametric.trendtype = 0;
-            metametric.topN = 1;
-            metametric.uname = metametric.name = sp.displayName(field.name);
-            metametric.units = "";
-            metametric.uunits = "";
-            metrics.append(metametric);
-        }
-    }
+    // done
 
-    // measures
-    QList<FieldDefinition> measureDefinitions;
-    QList<KeywordDefinition> keywordDefinitions; //NOTE: not used in measures.xml
-    QString filename = context->athlete->home.absolutePath()+"/measures.xml";
-    QString colorfield;
-    if (!QFile(filename).exists()) filename = ":/xml/measures.xml";
-    RideMetadata::readXML(filename, keywordDefinitions, measureDefinitions, colorfield);
+    return metrics;
 
-    foreach (FieldDefinition field, measureDefinitions) {
-        if (!sp.isMetric(field.name) && (field.type == 3 || field.type == 4)) {
-            MetricDetail measure;
-            measure.type = METRIC_MEASURE;
-            QString underscored = field.name;
-            measure.symbol = QString("%1_m").arg(field.name); // we don't bother with '_' for measures
-            measure.metric = NULL; // not a factory metric
-            measure.penColor = QColor(Qt::blue);
-            measure.curveStyle = QwtPlotCurve::Lines;
-            measure.symbolStyle = QwtSymbol::NoSymbol;
-            measure.smooth = false;
-            measure.trendtype = 0;
-            measure.topN = 1;
-            measure.uname = "";
-            measure.name = QString("%1 (m)").arg(sp.displayName(field.name));
-            measure.units = "";
-            measure.uunits = "";
-            metrics.append(measure);
-        }
-    }
-
-    // sort the list
-    qSort(metrics);
-
-    // custom widget
-    QWidget *custom = new QWidget(this);
-    custom->setContentsMargins(20,20,20,20);
-    QVBoxLayout *customLayout = new QVBoxLayout(custom);
-    customLayout->setContentsMargins(0,0,0,0);
-    customLayout->setSpacing(5);
-
-    // custom table
-    customTable = new QTableWidget(this);
-#ifdef Q_OS_MAX
-    customTable->setAttribute(Qt::WA_MacShowFocusRect, 0);
-#endif
-    customTable->setColumnCount(2);
-    customTable->horizontalHeader()->setStretchLastSection(true);
-    customTable->setSortingEnabled(false);
-    customTable->verticalHeader()->hide();
-    customTable->setShowGrid(false);
-    customTable->setSelectionMode(QAbstractItemView::SingleSelection);
-    customTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    customLayout->addWidget(customTable);
-
-    // custom buttons
-    editCustomButton = new QPushButton(tr("Edit"));
-    connect(editCustomButton, SIGNAL(clicked()), this, SLOT(editMetric()));
-
-    addCustomButton = new QPushButton("+");
-    connect(addCustomButton, SIGNAL(clicked()), this, SLOT(addMetric()));
-
-    deleteCustomButton = new QPushButton("- ");
-    connect(deleteCustomButton, SIGNAL(clicked()), this, SLOT(deleteMetric()));
-
-    usePreset = new QCheckBox(tr("Use sidebar chart settings"));
-    usePreset->setChecked(false);
-
-#ifndef Q_OS_MAC
-    addCustomButton->setFixedSize(20,20);
-    deleteCustomButton->setFixedSize(20,20);
-#endif
-    QHBoxLayout *customButtons = new QHBoxLayout;
-    customButtons->setSpacing(2);
-    customButtons->addWidget(usePreset);
-    customButtons->addStretch();
-    customButtons->addWidget(editCustomButton);
-    customButtons->addStretch();
-    customButtons->addWidget(addCustomButton);
-    customButtons->addWidget(deleteCustomButton);
-    customLayout->addLayout(customButtons);
-
-    tabs->addTab(basicsettings, tr("Basic"));
-    tabs->addTab(basic, tr("Preset"));
-    tabs->addTab(custom, tr("Curves"));
-
-    // switched between one or other
-    connect(dateSetting, SIGNAL(useStandardRange()), this, SIGNAL(useStandardRange()));
-    connect(dateSetting, SIGNAL(useCustomRange(DateRange)), this, SIGNAL(useCustomRange(DateRange)));
-    connect(dateSetting, SIGNAL(useThruToday()), this, SIGNAL(useThruToday()));
-
-    // watch for changes to the preset charts
-    connect(context, SIGNAL(presetsChanged()), this, SLOT(presetsChanged()));
-    connect(usePreset, SIGNAL(stateChanged(int)), this, SLOT(usePresetChanged()));
-
-    // set the show/hide for preset selection
-    usePresetChanged();
-    
-    // but setup for the first time
-    presetsChanged();
 }
+
 
 void
 LTMTool::usePresetChanged()
@@ -1263,6 +1283,30 @@ LTMTool::addCurrent()
     context->notifyPresetsChanged();
 }
 
+void
+LTMTool::getMetricsTranslationMap (QMap<QString, QString> &nMap, QMap<QString, QString> &uMap, bool useMetricUnits) {
+
+    // build up translation maps
+    const RideMetricFactory &factory = RideMetricFactory::instance();
+    for (int i=0; i<factory.metricCount(); i++) {
+        const RideMetric *add = factory.rideMetric(factory.metricName(i));
+        QTextEdit processHTMLname(add->name());
+        // use the .symbol() as key - since only CHART.XML is mapped
+        nMap.insert(add->symbol(), processHTMLname.toPlainText());
+        uMap.insert(add->symbol(), add->units(useMetricUnits));
+
+    }
+    // add mapping for PM metrics (name and unit)
+    QList<MetricDetail> pmMetrics = LTMTool::providePMmetrics();
+    for (int i=0; i<pmMetrics.count(); i++)
+    {
+        nMap.insert(pmMetrics[i].symbol, pmMetrics[i].uname);
+        uMap.insert(pmMetrics[i].symbol, pmMetrics[i].uunits);
+    }
+
+}
+
+
 // set the estimateSelection based upon what is available
 void 
 EditMetricDetailDialog::modelChanged()
@@ -1317,11 +1361,11 @@ EditMetricDetailDialog::estimateName()
         case 3 : name = "p-Max"; break;
         case 4 : 
             {
-                name = QString("Estimate %1 %2 Power").arg(estimateDuration->value())
+                name = QString(tr("Estimate %1 %2 Power")).arg(estimateDuration->value())
                                                   .arg(estimateDurationUnits->currentText());
             }
             break;
-        case 5 : name = "Endurance Index"; break;
+        case 5 : name = tr("Endurance Index"); break;
     }
 
     // now the model
@@ -1747,10 +1791,10 @@ EditMetricDetailDialog::bestName()
     // set uname from current parms
     QString desc = QString(tr("Peak %1")).arg(duration->value());
     switch (durationUnits->currentIndex()) {
-    case 0 : desc += " second "; break;
-    case 1 : desc += " minute "; break;
+    case 0 : desc += tr(" second "); break;
+    case 1 : desc += tr(" minute "); break;
     default:
-    case 2 : desc += " hour "; break;
+    case 2 : desc += tr(" hour "); break;
     }
     desc += RideFile::seriesName(seriesList.at(dataSeries->currentIndex()));
     userName->setText(desc);
@@ -2072,7 +2116,7 @@ LTMTool::importClicked()
 
         } else {
             // oops non existant - does this ever happen?
-            QMessageBox::warning( 0, "Entry Error", QString("Selected file (%1) does not exist").arg(filenames[0]));
+            QMessageBox::warning( 0, tr("Entry Error"), QString(tr("Selected file (%1) does not exist")).arg(filenames[0]));
         }
     }
 }
@@ -2090,8 +2134,8 @@ LTMTool::exportClicked()
         // if exists confirm overwrite
         if (QFileInfo(filenames[0]).exists()) {
             QMessageBox msgBox;
-            msgBox.setText(QString("The selected file (%1) exists.").arg(filenames[0]));
-            msgBox.setInformativeText("Do you want to overwrite it?");
+            msgBox.setText(QString(tr("The selected file (%1) exists.")).arg(filenames[0]));
+            msgBox.setInformativeText(tr("Do you want to overwrite it?"));
             msgBox.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
             msgBox.setDefaultButton(QMessageBox::Cancel);
             msgBox.setIcon(QMessageBox::Warning);
@@ -2159,7 +2203,7 @@ LTMTool::deleteClicked()
 {
     // must have at least 1 child
     if (charts->invisibleRootItem()->childCount() == 1) {
-        QMessageBox::warning(0, "Error", "You must have at least one chart");
+        QMessageBox::warning(0, tr("Error"), tr("You must have at least one chart"));
         return;
 
     } else if (charts->currentItem()) {

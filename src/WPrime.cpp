@@ -553,9 +553,14 @@ WPrimeIntegrator::run()
 
         if (source[t] <= 0) continue;
 
-        for (int i=0; i < (TAU*3) /*WPrimeDecayPeriod*/ && t+i < source.size(); i++) {
+        // start at 1, since the actual value shouldn't be adjusted with itself !
+        for (int i=1; i < (TAU*3) /*WPrimeDecayPeriod*/ && t+i < source.size(); i++) {
 
             double value = source[t] * pow(E, -(double(i)/TAU));
+
+            // diminishing returns - we're dealing in kJ, so 10J is nothing !
+            // this saves about 20% in calculation time typically
+            if (value < 10.00f) break;
  
             // integrate
             output[t+i] += value;
@@ -711,8 +716,10 @@ class WPrimeExp : public RideMetric {
         double total = 0;
         double secs = 0;
         foreach(const RideFilePoint *point, r->dataPoints()) {
-            if (cp && point->watts > cp) total += r->recIntSecs() * (point->watts - cp);
-            secs += r->recIntSecs();
+            if (cp && point->watts > cp)  {
+                total += r->recIntSecs() * (point->watts - cp);
+                secs += r->recIntSecs();
+            }
         }
         setValue(total/1000.00f);
         setCount(secs);
@@ -750,8 +757,13 @@ class CPExp : public RideMetric {
         double total = 0;
         double secs = 0;
         foreach(const RideFilePoint *point, r->dataPoints()) {
-            if (cp && point->watts <= cp) total += r->recIntSecs() * point->watts;
-            secs += r->recIntSecs();
+            if (cp && point->watts >=0) {
+                if (point->watts > cp) 
+                    total += r->recIntSecs() * cp;
+                else 
+                    total += r->recIntSecs() * point->watts;
+                secs += r->recIntSecs();
+            }
         }
         setValue(total/1000.00f);
         setCount(secs);
