@@ -273,20 +273,24 @@ CPPlot::setSeries(CriticalPowerWindow::CriticalSeriesType criticalSeries)
 
     }
 
+    if (criticalSeries == CriticalPowerWindow::veloclinicplot) {
+        ltsd = new LogTimeScaleDraw;
+        ltsd->setTickLength(QwtScaleDiv::MajorTick, 3);
+        setAxisScaleDraw(xBottom, ltsd);
+        setAxisTitle(xBottom, tr("Power (W)"));
+    } else {
+        sd = new QwtScaleDraw;
+        sd->setTickLength(QwtScaleDiv::MajorTick, 3);
+        setAxisScaleDraw(xBottom, sd);
+        setAxisTitle(xBottom, tr("Interval Length"));
+    }
+
     // set scale to match what's needed
     if (scale != log) setAxisScaleEngine(xBottom, new QwtLinearScaleEngine);
     else setAxisScaleEngine(xBottom, new QwtLogScaleEngine);
 
     // set axis title
     setAxisTitle(yLeft, QString ("%1 %2 (%3) %4").arg(prefix).arg(series).arg(units).arg(postfix));
-
-    if (criticalSeries == CriticalPowerWindow::veloclinicplot) {
-        setAxisScaleDraw(xBottom, ltsd);
-        setAxisTitle(xBottom, tr("Power (W)"));
-    } else {
-        setAxisScaleDraw(xBottom, sd);
-        setAxisTitle(xBottom, tr("Interval Length"));
-    }
 
     // zap the old curves
     clearCurves();
@@ -766,8 +770,9 @@ CPPlot::plotBests()
     for (int t = 0; t < maxNonZero; t++) {
         time[t] = (t+1.00f) / 60.00f;
         work[t] = values[t] * t / 1000; // kJ not Joules
-        if (criticalSeries == CriticalPowerWindow::veloclinicplot)
-            wprime[t] = (values[t]<pdModel->CP()?0:(values[t]-pdModel->CP()) * t); // Joules
+        if (criticalSeries == CriticalPowerWindow::veloclinicplot) {
+            wprime[t] = (values[t]<pdModel->CP()?0:(values[t]-pdModel->CP()) * time[t] * 60.0); // Joules
+        }
     }
 
     if (showBest) {
