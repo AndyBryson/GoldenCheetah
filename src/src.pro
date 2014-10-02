@@ -263,6 +263,7 @@ HEADERS += \
         AerolabWindow.h \
         AllPlot.h \
         AllPlotWindow.h \
+        AllPlotSlopeCurve.h \
         AnalysisSidebar.h \
         ANT.h \
         ANTChannel.h \
@@ -397,6 +398,10 @@ HEADERS += \
         SaveDialogs.h \
         SmallPlot.h \
         RideSummaryWindow.h \
+        Route.h \
+        RouteItem.h \
+        RouteParser.h \
+        RouteWindow.h \
         ScatterPlot.h \
         ScatterWindow.h \
         Season.h \
@@ -458,6 +463,7 @@ SOURCES += \
         AerolabWindow.cpp \
         AllPlot.cpp \
         AllPlotWindow.cpp \
+        AllPlotSlopeCurve.cpp \
         AnalysisSidebar.cpp \
         ANT.cpp \
         ANTChannel.cpp \
@@ -600,6 +606,10 @@ SOURCES += \
         RideNavigator.cpp \
         RideSummaryWindow.cpp \
         RideWindow.cpp \
+        Route.cpp \
+        RouteItem.cpp \
+        RouteParser.cpp \
+        RouteWindow.cpp \
         SaveDialogs.cpp \
         ScatterPlot.cpp \
         ScatterWindow.cpp \

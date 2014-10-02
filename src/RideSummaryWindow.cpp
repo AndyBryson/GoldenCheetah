@@ -693,8 +693,14 @@ RideSummaryWindow::htmlSummary()
             foreach(SummaryBest best, bests) {
 
                 // alternating shading
-                if (pos%2) summary += "<tr bgcolor='" + altColor.name() + "'>";
-                else summary += "<tr>";
+                if (pos%2) summary += "<tr bgcolor='" + altColor.name() + "'";
+                else summary += "<tr";
+
+                if (best.date == QDate::currentDate()) {
+                    // its today -- highlight it !
+                    summary += " id=\"sharp\" ";
+                }
+                summary += " >";
 
                 summary += QString("<td align=\"center\">%1.</td><td align=\"center\">%2</td><td align=\"center\">%3</td></tr>")
                            .arg(pos++)
@@ -716,44 +722,52 @@ RideSummaryWindow::htmlSummary()
     int numzones = 0;
     int range = -1;
 
-    // get zones to use via ride for ridesummary
-    if (ridesummary && rideItem) {
+    if (ridesummary && rideItem && rideItem->ride() && rideItem->ride()->isRun()) {
 
-        numzones = rideItem->numZones();
-        range = rideItem->zoneRange();
+        // no power zones on a run, should show pace here ...
+        // ... when we have pace zones implemented
 
-    // or for end of daterange plotted for daterange summary
-    } else if (context->athlete->zones()) {
+    } else {
 
-        // get from end if period
-        range = context->athlete->zones()->whichRange(myDateRange.to);
-        if (range > -1) numzones = context->athlete->zones()->numZones(range);
+        if (ridesummary && rideItem) {
+            // get zones to use via ride for ridesummary
 
-    }
+            numzones = rideItem->numZones();
+            range = rideItem->zoneRange();
 
-    if (range > -1 && numzones > 0) {
-        QVector<double> time_in_zone(numzones);
-        for (int i = 0; i < numzones; ++i) {
+        // or for end of daterange plotted for daterange summary
+        } else if (context->athlete->zones()) {
 
-            // if using metrics or data
-            if (ridesummary) time_in_zone[i] = metrics.getForSymbol(timeInZones[i]);
-            else {
-                QStringList filterList = filters;
-                if (context->ishomefiltered) {
-                    if (filtered) {
-                        foreach (QString file, filters) {
-                            if (context->homeFilters.contains(file)) 
-                                filterList << file;
-                        }
-                    } else {
-                        filterList = context->homeFilters;
-                    }
-                }
-                time_in_zone[i] = SummaryMetrics::getAggregated(context, timeInZones[i], data, filterList, context->ishomefiltered || filtered, useMetricUnits, true).toDouble();
-            }
+            // get from end if period
+            range = context->athlete->zones()->whichRange(myDateRange.to);
+            if (range > -1) numzones = context->athlete->zones()->numZones(range);
+
         }
-        summary += tr("<h3>Power Zones</h3>");
-        summary += context->athlete->zones()->summarize(range, time_in_zone, altColor); //aggregating
+
+        if (range > -1 && numzones > 0) {
+            QVector<double> time_in_zone(numzones);
+            for (int i = 0; i < numzones; ++i) {
+
+                // if using metrics or data
+                if (ridesummary) time_in_zone[i] = metrics.getForSymbol(timeInZones[i]);
+                else {
+                    QStringList filterList = filters;
+                    if (context->ishomefiltered) {
+                        if (filtered) {
+                            foreach (QString file, filters) {
+                                if (context->homeFilters.contains(file)) 
+                                    filterList << file;
+                            }
+                        } else {
+                            filterList = context->homeFilters;
+                        }
+                    }
+                    time_in_zone[i] = SummaryMetrics::getAggregated(context, timeInZones[i], data, filterList, context->ishomefiltered || filtered, useMetricUnits, true).toDouble();
+                }
+            }
+            summary += tr("<h3>Power Zones</h3>");
+            summary += context->athlete->zones()->summarize(range, time_in_zone, altColor); //aggregating
+        }
     }
 
     //
@@ -830,7 +844,8 @@ RideSummaryWindow::htmlSummary()
                         break;
                     f.appendPoint(p->secs, p->cad, p->hr, p->km, p->kph, p->nm,
                                 p->watts, p->alt, p->lon, p->lat, p->headwind,
-                                p->slope, p->temp, p->lrbalance, p->lte, p->rte, p->lps, p->rps, p->smo2, p->thb, 0);
+                                p->slope, p->temp, p->lrbalance, p->lte, p->rte, p->lps, p->rps, 
+                                p->smo2, p->thb, p->rvert, p->rcad, p->rcontact, 0);
 
                     // derived data
                     RideFilePoint *l = f.dataPoints().last();

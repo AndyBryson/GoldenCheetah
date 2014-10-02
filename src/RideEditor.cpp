@@ -227,6 +227,9 @@ RideEditor::whatColumns()
          << tr("Right PS")
          << tr("SmO2")
          << tr("tHb")
+         << tr("Vertical Oscillation")
+         << tr("Run Cadence")
+         << tr("GCT")
          << tr("Interval");
 
     return what;
@@ -727,9 +730,9 @@ RideEditor::copy()
 
             for (int column = selection[0].column();  column <= selection[selection.count()-1].column(); column++) {
                 if (column == selection[selection.count()-1].column())
-                    text += QString("%1").arg(getValue(row,column));
+                    text += QString("%1").arg(getValue(row,column), 0, 'g', 11);
                 else
-                    text += QString("%1\t").arg(getValue(row,column));
+                    text += QString("%1\t").arg(getValue(row,column), 0, 'g', 11);
             }
             text += "\n";
         }
@@ -820,6 +823,9 @@ RideEditor::insColumn(QString name)
     if (name == tr("Right PS")) series = RideFile::rps;
     if (name == tr("SmO2")) series = RideFile::smO2;
     if (name == tr("tHb")) series = RideFile::tHb;
+    if (name == tr("Vertical Oscillation")) series = RideFile::rvert;
+    if (name == tr("Run Cadence")) series = RideFile::rcad;
+    if (name == tr("GCT")) series = RideFile::rcontact;
 
     model->insertColumn(series);
 }
