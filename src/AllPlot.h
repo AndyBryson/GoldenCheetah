@@ -33,6 +33,7 @@
 #include <qwt_scale_widget.h>
 #include <qwt_compat.h>
 #include <QtGui>
+#include <QFont>
 
 #include <QTableWidget>
 #include <QStackedWidget>
@@ -337,6 +338,12 @@ class AllPlotObject : public QObject
     AllPlotSlopeCurve *altSlopeCurve;
     QwtPlotCurve *atissCurve;
     QwtPlotCurve *antissCurve;
+    QwtPlotCurve *rvCurve;
+    QwtPlotCurve *rcadCurve;
+    QwtPlotCurve *rgctCurve;
+    QwtPlotCurve *gearCurve;
+    QwtPlotCurve *smo2Curve;
+    QwtPlotCurve *thbCurve;
     QwtPlotCurve *npCurve;
     QwtPlotCurve *xpCurve;
     QwtPlotCurve *apCurve;
@@ -365,6 +372,7 @@ class AllPlotObject : public QObject
     QVector<double> match;
     QVector<double> matchTime;
     QVector<double> matchDist;
+    QVector<QwtPlotMarker*> matchLabels;
     QVector<double> wprime;
     QVector<double> wprimeTime;
     QVector<double> wprimeDist;
@@ -373,6 +381,12 @@ class AllPlotObject : public QObject
     QVector<double> wattsArray;
     QVector<double> atissArray;
     QVector<double> antissArray;
+    QVector<double> rvArray;
+    QVector<double> rcadArray;
+    QVector<double> rgctArray;
+    QVector<double> gearArray;
+    QVector<double> smo2Array;
+    QVector<double> thbArray;
     QVector<double> npArray;
     QVector<double> xpArray;
     QVector<double> apArray;
@@ -400,6 +414,12 @@ class AllPlotObject : public QObject
     QVector<double> smoothWatts;
     QVector<double> smoothAT;
     QVector<double> smoothANT;
+    QVector<double> smoothRV;
+    QVector<double> smoothRCad;
+    QVector<double> smoothRGCT;
+    QVector<double> smoothGear;
+    QVector<double> smoothSmO2;
+    QVector<double> smoothtHb;
     QVector<double> smoothNP;
     QVector<double> smoothAP;
     QVector<double> smoothXP;
@@ -461,6 +481,7 @@ class AllPlot : public QwtPlot
         void setDataFromPlots(QList<AllPlot*>); // user for single series comparing
         void setDataFromObject(AllPlotObject *object, AllPlot *reference); // for allplot when one per ride in a stack
                                                                            // reference is for settings et al
+        void setMatchLabels(AllPlotObject *object); // set labels from object
 
         // convert from time/distance to index in *smoothed* datapoints
         int timeIndex(double) const;
@@ -509,6 +530,12 @@ class AllPlot : public QwtPlot
         void setShowAlt(bool show);
         void setShowTemp(bool show);
         void setShowWind(bool show);
+        void setShowRV(bool show);
+        void setShowRGCT(bool show);
+        void setShowRCad(bool show);
+        void setShowSmO2(bool show);
+        void setShowtHb(bool show);
+        void setShowGear(bool show);
         void setShowW(bool show);
         void setShowTorque(bool show);
         void setShowBalance(bool show);
@@ -565,6 +592,12 @@ class AllPlot : public QwtPlot
         bool showBalance;
         bool showTE;
         bool showPS;
+        bool showRV;
+        bool showRGCT;
+        bool showRCad;
+        bool showSmO2;
+        bool showtHb;
+        bool showGear;
 
         // plot objects
         AllPlotObject *standard;
@@ -592,6 +625,7 @@ class AllPlot : public QwtPlot
         bool isolation;
         LTMToolTip *tooltip;
         LTMCanvasPicker *_canvasPicker; // allow point selection/hover
+        QFont labelFont;
 
         void setAltSlopePlotStyle (AllPlotSlopeCurve *curve);
         static void nextStep( int& step );

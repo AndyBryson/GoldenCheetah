@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2006 Sean C. Rhea (srhea@srhea.net)
+ * Copyright (c) 2011, 2014 Damien Grauser (Damien.Grauser@pev-geneve.ch)
+ *
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -115,8 +116,12 @@ RouteItem::ride()
     if (ride_ != NULL) return ride_;
 
     // open the ride file
-    QFile file(path + "/" + fileName);
+    qDebug() << "path" << path;
+    qDebug() << "fileName" << fileName;
+
     qDebug() << path << "/" << fileName;
+    QFile file(path + "/" + fileName);
+
     ride_ = RideFileFactory::instance().openRideFile(context, file, errors_);
     if (ride_ == NULL) return NULL; // failed to read ride
 

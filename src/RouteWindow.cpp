@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011 Damien Grauser (Damien.Grauser@pev-geneve.ch)
+ * Copyright (c) 2011, 2014 Damien Grauser (Damien.Grauser@pev-geneve.ch)
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -169,6 +169,9 @@ void RouteWindow::loadRide()
 
 void RouteWindow::updateFrame()
 {
+    delete webBridge;
+    webBridge = new WebBridgeForRoute(context, this);
+
     view->page()->mainFrame()->addToJavaScriptWindowObject("webBridge", webBridge);
 }
 

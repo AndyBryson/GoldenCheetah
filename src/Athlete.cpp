@@ -27,6 +27,7 @@
 #include "TimeUtils.h"
 #include "Units.h"
 #include "Zones.h"
+#include "PaceZones.h"
 #include "MetricAggregator.h"
 #include "WithingsDownload.h"
 #include "ZeoDownload.h"
@@ -45,6 +46,8 @@
 #include "LTMSettings.h"
 #include "Route.h"
 #include "RouteWindow.h"
+#include "RideImportWizard.h"
+
 
 #include "GcUpgrade.h" // upgrade wizard
 #include "GcCrashDialog.h" // recovering from a crash?
@@ -99,6 +102,15 @@ Athlete::Athlete(Context *context, const QDir &home)
 				  hrzones_->errorString());
         } else if (! hrzones_->warningString().isEmpty())
             QMessageBox::warning(context->mainWindow, tr("Reading HR Zones File"), hrzones_->warningString());
+    }
+
+    // Pace Zones
+    pacezones_ = new PaceZones;
+    QFile pacezonesFile(home.absolutePath() + "/pace.zones");
+    if (pacezonesFile.exists()) {
+        if (!pacezones_->read(pacezonesFile)) {
+            QMessageBox::critical(context->mainWindow, tr("Pace Zones File Error"), pacezones_->errorString());
+        }
     }
 
     // read athlete's charts.xml and translate etc
@@ -331,6 +343,9 @@ Athlete::addRide(QString name, bool dosignal)
     if (dosignal) context->notifyRideAdded(last); // here so emitted BEFORE rideSelected is emitted!
     allRides->insertChild(index, last);
 
+    //Search routes
+    routes->searchRoutesInRide(last->ride());
+
     // if it is the very first ride, we need to select it
     // after we added it
     if (!index) treeWidget->setCurrentItem(last);
@@ -489,6 +504,15 @@ Athlete::configChanged()
             QMessageBox::warning(context->mainWindow, tr("Reading HR Zones File"), hrzones_->warningString());
     }
 
+    // reread Pace zones
+    QFile pacezonesFile(home.absolutePath() + "/pace.zones");
+    if (pacezonesFile.exists()) {
+        if (!pacezones_->read(pacezonesFile)) {
+            QMessageBox::critical(context->mainWindow, tr("Pace Zones File Error"),
+                                 pacezones_->errorString());
+        }
+    }
+
     QVariant unit = appsettings->cvalue(cyclist, GC_UNIT);
     useMetricUnits = (unit.toString() == GC_UNIT_METRIC);
 
@@ -499,5 +523,43 @@ Athlete::configChanged()
             rideItem->ride(false)->setWeight(0);
             rideItem->ride(false)->getWeight();
         }
+    }
+}
+
+void
+Athlete::importFilesWithoutDialog() {
+
+    int importSettings = appsettings->cvalue(context->athlete->cyclist, GC_IMPORTSETTINGS).toInt(); // default/unset = 0
+    if (importSettings == 0) return; // no autoimport requested
+
+    QVariant importDirQV = appsettings->cvalue(context->athlete->cyclist, GC_IMPORTDIR, "");
+    QString importDirectory = importDirQV.toString();
+    if (importDirectory == "") return; // no implicit assumptions on the directory - only explicite is allowed
+
+    // now get the files formats
+    const RideFileFactory &rff = RideFileFactory::instance();
+    QStringList suffixList = rff.suffixes();
+    suffixList.replaceInStrings(QRegExp("^"), "*.");
+    QStringList allFormats;
+    QFileInfoList fileInfos;
+    foreach(QString suffix, rff.suffixes())
+        allFormats << QString("*.%1").arg(suffix);
+
+    // and now the files for the GC formats / no SubDirs considered
+    QDir *importDir = new QDir (importDirectory);
+    if (!importDir->exists()) return;    // directory might not be available (USB,..)
+    if (!importDir->isReadable()) return; // check if directory is readable,
+
+    // now get the files with their full names
+    fileInfos = importDir->entryInfoList(allFormats, QDir::Files, QDir::NoSort);
+    if (!fileInfos.isEmpty()) {
+        QStringList fileNames;
+        foreach(QFileInfo f, fileInfos) {
+            fileNames.append(f.absoluteFilePath());
+        }
+        RideImportWizard *import = new RideImportWizard(fileNames, context->athlete->home, context);
+        if (importSettings == 1) import->setDialogMode(RideImportWizard::allButDupFileErrors);
+        if (importSettings == 2) import->setDialogMode(RideImportWizard::allErrors);
+        import->process();
     }
 }

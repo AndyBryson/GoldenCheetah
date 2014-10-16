@@ -108,7 +108,7 @@ RideFile::wprimeData()
 }
 
 bool
-RideFile::isRun()
+RideFile::isRun() const
 {
     // for now we just look at Sport and if there are any
     // running specific data series in the data
@@ -152,11 +152,12 @@ RideFile::seriesName(SeriesType series)
     case RideFile::vam: return QString(tr("VAM"));
     case RideFile::wattsKg: return QString(tr("Watts per Kilogram"));
     case RideFile::wprime: return QString(tr("W' balance"));
-    case RideFile::smO2: return QString(tr("SmO2"));
-    case RideFile::tHb: return QString(tr("THb"));
+    case RideFile::smo2: return QString(tr("SmO2"));
+    case RideFile::thb: return QString(tr("THb"));
     case RideFile::rvert: return QString(tr("Vertical Oscillation"));
     case RideFile::rcad: return QString(tr("Run Cadence"));
     case RideFile::rcontact: return QString(tr("GCT"));
+    case RideFile::gear: return QString(tr("Gear Ratio"));
     default: return QString(tr("Unknown"));
     }
 }
@@ -166,7 +167,6 @@ RideFile::colorFor(SeriesType series)
 {
     switch (series) {
     case RideFile::cad: return GColor(CCADENCE);
-    case RideFile::rcad: return GColor(CCADENCE);
     case RideFile::cadd: return GColor(CCADENCE);
     case RideFile::hr: return GColor(CHEARTRATE);
     case RideFile::hrd: return GColor(CHEARTRATE);
@@ -192,16 +192,18 @@ RideFile::colorFor(SeriesType series)
     case RideFile::interval: return QColor(Qt::white);
     case RideFile::wattsKg: return GColor(CPOWER);
     case RideFile::wprime: return GColor(CWBAL);
-    case RideFile::smO2: return GColor(CWBAL);
-    case RideFile::tHb: return GColor(CSPEED);
+    case RideFile::smo2: return GColor(CWBAL);
+    case RideFile::thb: return GColor(CSPEED);
+    case RideFile::slope: return GColor(CSLOPE);
+    case RideFile::rvert: return GColor(CRV);
+    case RideFile::rcontact: return GColor(CRGCT);
+    case RideFile::rcad: return GColor(CRCAD);
+    case RideFile::gear: return GColor(CGEAR);
     case RideFile::secs:
     case RideFile::km:
     case RideFile::vam:
     case RideFile::lon:
     case RideFile::lat:
-    case RideFile::slope:
-    case RideFile::rvert:
-    case RideFile::rcontact:
     default: return GColor(CPLOTMARKER);
     }
 }
@@ -244,11 +246,12 @@ RideFile::unitName(SeriesType series, Context *context)
     case RideFile::vam: return QString(tr("meters per hour"));
     case RideFile::wattsKg: return QString(useMetricUnits ? tr("watts/kg") : tr("watts/kg")); // always kg !
     case RideFile::wprime: return QString(useMetricUnits ? tr("joules") : tr("joules"));
-    case RideFile::smO2: return QString(tr("%"));
-    case RideFile::tHb: return QString(tr("g/dL"));
+    case RideFile::smo2: return QString(tr("%"));
+    case RideFile::thb: return QString(tr("g/dL"));
     case RideFile::rcad: return QString(tr("spm"));
     case RideFile::rvert: return QString(tr("cm"));
     case RideFile::rcontact: return QString(tr("ms"));
+    case RideFile::gear: return QString(tr("ratio"));
     default: return QString(tr("Unknown"));
     }
 }
@@ -600,6 +603,8 @@ void RideFile::updateMin(RideFilePoint* point)
        minPoint->rcad = point->rcad;
     if (minPoint->rcontact == 0 || point->rcontact<minPoint->rcontact)
        minPoint->rcontact = point->rcontact;
+    if (minPoint->gear == 0 || point->gear<minPoint->gear)
+       minPoint->gear = point->gear;
 }
 
 void RideFile::updateMax(RideFilePoint* point)
@@ -651,6 +656,8 @@ void RideFile::updateMax(RideFilePoint* point)
        maxPoint->rcad = point->rcad;
     if (point->rcontact>maxPoint->rcontact)
        maxPoint->rcontact = point->rcontact;
+    if (point->gear>maxPoint->gear)
+       maxPoint->gear = point->gear;
 }
 
 void RideFile::updateAvg(RideFilePoint* point)
@@ -679,6 +686,7 @@ void RideFile::updateAvg(RideFilePoint* point)
     totalPoint->rvert += point->rvert;
     totalPoint->rcad += point->rcad;
     totalPoint->rcontact += point->rcontact;
+    totalPoint->gear += point->gear;
 
     ++totalCount;
     if (point->temp != NoTemp) ++totalTemp;
@@ -707,6 +715,7 @@ void RideFile::updateAvg(RideFilePoint* point)
     avgPoint->rvert = totalPoint->rvert/totalCount;
     avgPoint->rcad = totalPoint->rcad/totalCount;
     avgPoint->rcontact = totalPoint->rcontact/totalCount;
+    avgPoint->gear = totalPoint->gear/totalCount;
 }
 
 void RideFile::appendPoint(double secs, double cad, double hr, double km,
@@ -813,11 +822,12 @@ RideFile::setDataPresent(SeriesType series, bool value)
         case rte : dataPresent.rte = value; break;
         case lps : dataPresent.lps = value; break;
         case rps : dataPresent.rps = value; break;
-        case smO2 : dataPresent.smo2 = value; break;
-        case tHb : dataPresent.thb = value; break;
+        case smo2 : dataPresent.smo2 = value; break;
+        case thb : dataPresent.thb = value; break;
         case rcad : dataPresent.rcad = value; break;
         case rvert : dataPresent.rvert = value; break;
         case rcontact : dataPresent.rcontact = value; break;
+        case gear : dataPresent.gear = value; break;
         case interval : dataPresent.interval = value; break;
         case wprime : dataPresent.wprime = value; break;
         default:
@@ -850,11 +860,12 @@ RideFile::isDataPresent(SeriesType series)
         case rps : return dataPresent.rps; break;
         case lte : return dataPresent.lte; break;
         case rte : return dataPresent.rte; break;
-        case smO2 : return dataPresent.smo2; break;
-        case tHb : return dataPresent.thb; break;
+        case smo2 : return dataPresent.smo2; break;
+        case thb : return dataPresent.thb; break;
         case rvert : return dataPresent.rvert; break;
         case rcad : return dataPresent.rcad; break;
         case rcontact : return dataPresent.rcontact; break;
+        case gear : return dataPresent.gear; break;
         case interval : return dataPresent.interval; break;
         default:
         case none : return false; break;
@@ -883,8 +894,8 @@ RideFile::setPointValue(int index, SeriesType series, double value)
         case rte : dataPoints_[index]->rte = value; break;
         case lps : dataPoints_[index]->lps = value; break;
         case rps : dataPoints_[index]->rps = value; break;
-        case smO2 : dataPoints_[index]->smo2 = value; break;
-        case tHb : dataPoints_[index]->thb = value; break;
+        case smo2 : dataPoints_[index]->smo2 = value; break;
+        case thb : dataPoints_[index]->thb = value; break;
         case rcad : dataPoints_[index]->rcad = value; break;
         case rvert : dataPoints_[index]->rvert = value; break;
         case rcontact : dataPoints_[index]->rcontact = value; break;
@@ -921,11 +932,12 @@ RideFilePoint::value(RideFile::SeriesType series) const
         case RideFile::rte : return rte; break;
         case RideFile::lps : return lps; break;
         case RideFile::rps : return rps; break;
-        case RideFile::tHb : return thb; break;
-        case RideFile::smO2 : return smo2; break;
+        case RideFile::thb : return thb; break;
+        case RideFile::smo2 : return smo2; break;
         case RideFile::rcad : return rcad; break;
         case RideFile::rvert : return rvert; break;
         case RideFile::rcontact : return rcontact; break;
+        case RideFile::gear : return gear; break;
         case RideFile::interval : return interval; break;
         case RideFile::NP : return np; break;
         case RideFile::xPower : return xp; break;
@@ -1009,11 +1021,12 @@ RideFile::decimalsFor(SeriesType series)
         case rps :
         case lte :
         case rte : return 0; break;
-        case smO2 : return 0; break;
-        case tHb : return 2; break;
+        case smo2 : return 0; break;
+        case thb : return 2; break;
         case rcad : return 0; break;
         case rvert : return 1; break;
         case rcontact : return 1; break;
+        case gear : return 2; break;
         case wprime : return 0; break;
         default:
         case none : break;
@@ -1051,11 +1064,12 @@ RideFile::maximumFor(SeriesType series)
         case lte :
         case rte :
         case lrbalance : return 100; break;
-        case smO2 : return 100; break;
-        case tHb : return 20; break;
+        case smo2 : return 100; break;
+        case thb : return 20; break;
         case rcad : return 500; break;
         case rvert : return 50; break;
         case rcontact : return 1000; break;
+        case gear : return 30; break;
         case wprime : return 99999; break;
         default :
         case none : break;
@@ -1093,11 +1107,12 @@ RideFile::minimumFor(SeriesType series)
         case lps :
         case rps :
         case lrbalance : return 0; break;
-        case smO2 : return 0; break;
-        case tHb : return 0; break;
+        case smo2 : return 0; break;
+        case thb : return 0; break;
         case rcad : return 0; break;
         case rvert : return 0; break;
         case rcontact : return 0; break;
+        case gear : return 0; break;
         case wprime : return 0; break;
         default :
         case none : break;
@@ -1305,6 +1320,11 @@ RideFile::recalculateDerivedSeries()
         if (oCP) CP=oCP;
     }
 
+    // wheelsize - use meta, then config then drop to 2100
+    double wheelsize = getTag(tr("Wheelsize"), "0.0").toDouble();
+    if (wheelsize == 0) wheelsize = appsettings->value(this, GC_WHEELSIZE, 2100).toInt();
+    wheelsize /= 1000.00f; // need it in meters
+
     // last point looked at
     RideFilePoint *lastP = NULL;
 
@@ -1460,6 +1480,22 @@ RideFile::recalculateDerivedSeries()
                     p->slope = lastP->slope;
                 }
             }
+        }
+
+        // can we derive gear ratio ?
+        // needs speed and cadence
+        if (p->kph && p->cad && !isRun()) {
+
+            // need to say we got it
+            setDataPresent(RideFile::gear, true);
+
+            // calculate gear ratio, without rounding (but will need
+            // to do something to it in order to identify gear)
+            // speed and wheelsize in meters
+            p->gear = (1000.00f * p->kph) / (p->cad * 60.00f * wheelsize);
+            
+        } else {
+            p->gear = 0.0f;
         }
 
         // last point

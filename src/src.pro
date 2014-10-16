@@ -365,6 +365,7 @@ HEADERS += \
         MetricAggregator.h \
         NewCyclistDialog.h \
         NullController.h \
+        PaceZones.h \
         Pages.h \
         PDModel.h \
         PfPvPlot.h \
@@ -575,6 +576,8 @@ SOURCES += \
         MetricAggregator.cpp \
         NewCyclistDialog.cpp \
         NullController.cpp \
+        PaceTimeInZone.cpp \
+        PaceZones.cpp \
         Pages.cpp \
         PDModel.cpp \
         PeakPower.cpp \
@@ -649,6 +652,7 @@ SOURCES += \
         TreeMapPlot.cpp \
         TtbDialog.cpp \
         TRIMPPoints.cpp \
+        Units.cpp \
         Views.cpp \
         WattsPerKilogram.cpp \
         WithingsDownload.cpp \

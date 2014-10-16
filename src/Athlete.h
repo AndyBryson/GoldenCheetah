@@ -29,6 +29,7 @@
 class MetricAggregator;
 class Zones;
 class HrZones;
+class PaceZones;
 class RideFile;
 class ErgFile;
 class RideMetadata;
@@ -65,11 +66,16 @@ class Athlete : public QObject
         QString cyclist; // the cyclist name
         bool useMetricUnits;
         QDir home;
+
+        // zones
         const Zones *zones() const { return zones_; }
         const HrZones *hrZones() const { return hrzones_; }
+        const PaceZones *paceZones() const { return pacezones_; }
         Zones *zones_;
         HrZones *hrzones_;
+        PaceZones *pacezones_;
         void setCriticalPower(int cp);
+
         bool isclean;
         MetricAggregator *metricDB;
         QSqlTableModel *sqlModel;
@@ -124,6 +130,9 @@ class Athlete : public QObject
         void notifySeasonsChanged() { seasonsChanged(); }
         void notifyNamedSearchesChanged() { namedSearchesChanged(); }
 
+        // import rides from athlete specific directory
+        void importFilesWithoutDialog();
+
     signals:
         void zonesChanged();
         void seasonsChanged();
@@ -135,6 +144,7 @@ class Athlete : public QObject
         void checkCPX(RideItem*ride);
         void updateRideFileIntervals();
         void configChanged();
+
 
 };
 #endif

@@ -16,6 +16,7 @@
 #include <QList>
 #include "Zones.h"
 #include "HrZones.h"
+#include "PaceZones.h"
 #include <QLabel>
 #include <QDateEdit>
 #include <QCheckBox>
@@ -43,6 +44,7 @@ class ColorsPage;
 class IntervalMetricsPage;
 class ZonePage;
 class HrZonePage;
+class PaceZonePage;
 class SummaryMetricsPage;
 class MetadataPage;
 class KeywordsPage;
@@ -111,6 +113,7 @@ class RiderPage : public QWidget
     public slots:
         void chooseAvatar();
         void unitChanged(int currentIndex);
+        void browseImportDir();
 
     private:
         Context *context;
@@ -124,6 +127,11 @@ class RiderPage : public QWidget
         QTextEdit  *bio;
         QPushButton *avatarButton;
         QPixmap     avatar;
+        QLineEdit *importDirectory;
+        QPushButton *importBrowseButton;
+        QLabel *importLabel;
+        QComboBox *importSetting;
+
 };
 
 class CredentialsPage : public QScrollArea
@@ -541,6 +549,9 @@ class MetadataPage : public QWidget
         QString colorfield;
 };
 
+//
+// Power Zones
+//
 class SchemePage : public QWidget
 {
     Q_OBJECT
@@ -626,6 +637,9 @@ class ZonePage : public QWidget
         // local versions for modification
 };
 
+//
+// Heartrate Zones
+//
 class HrSchemePage : public QWidget
 {
     Q_OBJECT
@@ -712,6 +726,98 @@ protected:
 
     // local versions for modification
 };
+
+//
+// Pace Zones
+//
+class PaceSchemePage : public QWidget
+{
+    Q_OBJECT
+    G_OBJECT
+
+
+    public:
+        PaceSchemePage(PaceZonePage *parent);
+        PaceZoneScheme getScheme();
+        void saveClicked();
+
+    public slots:
+        void addClicked();
+        void deleteClicked();
+        void renameClicked();
+
+    private:
+        PaceZonePage *zonePage;
+        QTreeWidget *scheme;
+        QPushButton *addButton, *renameButton, *deleteButton;
+};
+
+class CVPage : public QWidget
+{
+    Q_OBJECT
+    G_OBJECT
+
+
+    public:
+        CVPage(PaceZonePage *parent);
+        QCheckBox *metric;
+
+    public slots:
+        void addClicked();
+        void deleteClicked();
+        void defaultClicked();
+        void rangeSelectionChanged();
+        void addZoneClicked();
+        void deleteZoneClicked();
+        void zonesChanged();
+
+        void metricChanged();
+
+    private:
+        bool active;
+
+        QDateEdit *dateEdit;
+        QTimeEdit *cvEdit;
+
+        PaceZonePage *zonePage;
+        QTreeWidget *ranges;
+        QTreeWidget *zones;
+        QPushButton *addButton, *deleteButton, *defaultButton;
+        QPushButton *addZoneButton, *deleteZoneButton;
+        QLabel *per;
+};
+
+class PaceZonePage : public QWidget
+{
+    Q_OBJECT
+    G_OBJECT
+
+
+    public:
+
+        PaceZonePage(Context *);
+        void saveClicked();
+
+        PaceZones zones;
+
+        // Children talk to each other
+        PaceSchemePage *schemePage;
+        CVPage *cvPage;
+
+    public slots:
+
+
+    protected:
+
+        Context *context;
+        bool changed;
+
+        QTabWidget *tabs;
+
+        // local versions for modification
+};
+
+// Seasons
 
 class SeasonsPage : public QWidget
 {
