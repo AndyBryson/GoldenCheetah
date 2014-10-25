@@ -31,6 +31,7 @@
 #include <QtXml/QtXml>
 #include <algorithm> // for std::lower_bound
 #include <assert.h>
+#include <math.h>
 
 #define mark() \
 { \
@@ -154,6 +155,8 @@ RideFile::seriesName(SeriesType series)
     case RideFile::wprime: return QString(tr("W' balance"));
     case RideFile::smo2: return QString(tr("SmO2"));
     case RideFile::thb: return QString(tr("THb"));
+    case RideFile::o2hb: return QString(tr("O2Hb"));
+    case RideFile::hhb: return QString(tr("HHb"));
     case RideFile::rvert: return QString(tr("Vertical Oscillation"));
     case RideFile::rcad: return QString(tr("Run Cadence"));
     case RideFile::rcontact: return QString(tr("GCT"));
@@ -192,8 +195,10 @@ RideFile::colorFor(SeriesType series)
     case RideFile::interval: return QColor(Qt::white);
     case RideFile::wattsKg: return GColor(CPOWER);
     case RideFile::wprime: return GColor(CWBAL);
-    case RideFile::smo2: return GColor(CWBAL);
-    case RideFile::thb: return GColor(CSPEED);
+    case RideFile::smo2: return GColor(CSMO2);
+    case RideFile::thb: return GColor(CTHB);
+    case RideFile::o2hb: return GColor(CO2HB);
+    case RideFile::hhb: return GColor(CHHB);
     case RideFile::slope: return GColor(CSLOPE);
     case RideFile::rvert: return GColor(CRV);
     case RideFile::rcontact: return GColor(CRGCT);
@@ -248,6 +253,8 @@ RideFile::unitName(SeriesType series, Context *context)
     case RideFile::wprime: return QString(useMetricUnits ? tr("joules") : tr("joules"));
     case RideFile::smo2: return QString(tr("%"));
     case RideFile::thb: return QString(tr("g/dL"));
+    case RideFile::o2hb: return QString(tr(""));
+    case RideFile::hhb: return QString(tr(""));
     case RideFile::rcad: return QString(tr("spm"));
     case RideFile::rvert: return QString(tr("cm"));
     case RideFile::rcontact: return QString(tr("ms"));
@@ -595,6 +602,10 @@ void RideFile::updateMin(RideFilePoint* point)
        minPoint->lrbalance = point->lrbalance;
     if (minPoint->smo2 == 0 || point->smo2<minPoint->smo2)
        minPoint->smo2 = point->smo2;
+    if (minPoint->o2hb == 0 || point->o2hb<minPoint->o2hb)
+       minPoint->o2hb = point->o2hb;
+    if (minPoint->hhb == 0 || point->hhb<minPoint->hhb)
+       minPoint->hhb = point->hhb;
     if (minPoint->thb == 0 || point->thb<minPoint->thb)
        minPoint->thb = point->thb;
     if (minPoint->rvert == 0 || point->rvert<minPoint->rvert)
@@ -650,6 +661,10 @@ void RideFile::updateMax(RideFilePoint* point)
        maxPoint->smo2 = point->smo2;
     if (point->thb>maxPoint->thb)
        maxPoint->thb = point->thb;
+    if (point->o2hb>maxPoint->o2hb)
+       maxPoint->o2hb = point->o2hb;
+    if (point->hhb>maxPoint->hhb)
+       maxPoint->hhb = point->hhb;
     if (point->rvert>maxPoint->rvert)
        maxPoint->rvert = point->rvert;
     if (point->rcad>maxPoint->rcad)
@@ -683,6 +698,8 @@ void RideFile::updateAvg(RideFilePoint* point)
     totalPoint->lrbalance += point->lrbalance;
     totalPoint->smo2 += point->smo2;
     totalPoint->thb += point->thb;
+    totalPoint->o2hb += point->o2hb;
+    totalPoint->hhb += point->hhb;
     totalPoint->rvert += point->rvert;
     totalPoint->rcad += point->rcad;
     totalPoint->rcontact += point->rcontact;
@@ -712,6 +729,8 @@ void RideFile::updateAvg(RideFilePoint* point)
     avgPoint->rps = totalPoint->rps/totalCount;
     avgPoint->smo2 = totalPoint->smo2/totalCount;
     avgPoint->thb = totalPoint->thb/totalCount;
+    avgPoint->o2hb = totalPoint->o2hb/totalCount;
+    avgPoint->hhb = totalPoint->hhb/totalCount;
     avgPoint->rvert = totalPoint->rvert/totalCount;
     avgPoint->rcad = totalPoint->rcad/totalCount;
     avgPoint->rcontact = totalPoint->rcontact/totalCount;
@@ -824,6 +843,8 @@ RideFile::setDataPresent(SeriesType series, bool value)
         case rps : dataPresent.rps = value; break;
         case smo2 : dataPresent.smo2 = value; break;
         case thb : dataPresent.thb = value; break;
+        case o2hb : dataPresent.o2hb = value; break;
+        case hhb : dataPresent.hhb = value; break;
         case rcad : dataPresent.rcad = value; break;
         case rvert : dataPresent.rvert = value; break;
         case rcontact : dataPresent.rcontact = value; break;
@@ -862,6 +883,8 @@ RideFile::isDataPresent(SeriesType series)
         case rte : return dataPresent.rte; break;
         case smo2 : return dataPresent.smo2; break;
         case thb : return dataPresent.thb; break;
+        case o2hb : return dataPresent.o2hb; break;
+        case hhb : return dataPresent.hhb; break;
         case rvert : return dataPresent.rvert; break;
         case rcad : return dataPresent.rcad; break;
         case rcontact : return dataPresent.rcontact; break;
@@ -896,6 +919,8 @@ RideFile::setPointValue(int index, SeriesType series, double value)
         case rps : dataPoints_[index]->rps = value; break;
         case smo2 : dataPoints_[index]->smo2 = value; break;
         case thb : dataPoints_[index]->thb = value; break;
+        case o2hb : dataPoints_[index]->o2hb = value; break;
+        case hhb : dataPoints_[index]->hhb = value; break;
         case rcad : dataPoints_[index]->rcad = value; break;
         case rvert : dataPoints_[index]->rvert = value; break;
         case rcontact : dataPoints_[index]->rcontact = value; break;
@@ -934,6 +959,8 @@ RideFilePoint::value(RideFile::SeriesType series) const
         case RideFile::rps : return rps; break;
         case RideFile::thb : return thb; break;
         case RideFile::smo2 : return smo2; break;
+        case RideFile::o2hb : return o2hb; break;
+        case RideFile::hhb : return hhb; break;
         case RideFile::rcad : return rcad; break;
         case RideFile::rvert : return rvert; break;
         case RideFile::rcontact : return rcontact; break;
@@ -1023,6 +1050,8 @@ RideFile::decimalsFor(SeriesType series)
         case rte : return 0; break;
         case smo2 : return 0; break;
         case thb : return 2; break;
+        case o2hb : return 2; break;
+        case hhb : return 2; break;
         case rcad : return 0; break;
         case rvert : return 1; break;
         case rcontact : return 1; break;
@@ -1066,10 +1095,12 @@ RideFile::maximumFor(SeriesType series)
         case lrbalance : return 100; break;
         case smo2 : return 100; break;
         case thb : return 20; break;
+        case o2hb : return 20; break;
+        case hhb : return 20; break;
         case rcad : return 500; break;
         case rvert : return 50; break;
         case rcontact : return 1000; break;
-        case gear : return 30; break;
+        case gear : return 7; break; // 53x8
         case wprime : return 99999; break;
         default :
         case none : break;
@@ -1109,6 +1140,8 @@ RideFile::minimumFor(SeriesType series)
         case lrbalance : return 0; break;
         case smo2 : return 0; break;
         case thb : return 0; break;
+        case o2hb : return 0; break;
+        case hhb : return 0; break;
         case rcad : return 0; break;
         case rvert : return 0; break;
         case rcontact : return 0; break;
@@ -1489,17 +1522,89 @@ RideFile::recalculateDerivedSeries()
             // need to say we got it
             setDataPresent(RideFile::gear, true);
 
-            // calculate gear ratio, without rounding (but will need
-            // to do something to it in order to identify gear)
+            // calculate gear ratio, with simple 3 level rounding (considering that the ratio steps are not linear):
+            // -> below ratio 1, round to next 0,05 border (ratio step of 2 tooth change is around 0,03 for 20/36 (MTB)
+            // -> above ratio 1 and 3,  round to next 0,1 border (MTB + Racebike - bigger differences per shifting step)
+            // -> above ration 3, round to next 0,5 border (mainly Racebike - even wider differences)
             // speed and wheelsize in meters
-            p->gear = (1000.00f * p->kph) / (p->cad * 60.00f * wheelsize);
-            
+            // but only if ride point has power, cadence and speed > 0 otherwise calculation will give a random result
+            if (p->watts > 0.0f && p->cad > 0.0f && p->kph > 0.0f) {
+                p->gear = (1000.00f * p->kph) / (p->cad * 60.00f * wheelsize);
+                // do the rounding
+                double rounding = 0.0f;
+                if (p->gear < 1.0f) {
+                  rounding = 0.05f;
+                }
+                else if (p->gear >= 1.0f && p->gear < 3.0f) {
+                    rounding = 0.1f;
+                } else {
+                    rounding = 0.5f;
+                }
+                double mod = fmod(p->gear, rounding);
+                double factor = trunc(p->gear / rounding);
+                if (mod < rounding) p->gear = factor * rounding;
+                else p->gear = (factor+1) * rounding;
+
+                // final rounding to 2 decimals
+                p->gear = round(p->gear * 100.00f) / 100.00f;
+            }
+            else {
+                p->gear = 0.0f; // to be filled up with previous gear later
+            }
+
+            // truncate big values
+            if (p->gear > maximumFor(RideFile::gear)) p->gear = 0;
+
         } else {
             p->gear = 0.0f;
         }
 
+        // split out O2Hb and HHb when we have SmO2 and tHb
+        // O2Hb is oxygenated haemoglobin and HHb is deoxygenated haemoglobin
+        if (dataPresent.smo2 && dataPresent.thb) {
+
+            if (p->smo2 > 0 && p->thb > 0) {
+                setDataPresent(RideFile::o2hb, true);
+                setDataPresent(RideFile::hhb, true);
+
+                p->o2hb = (p->thb * p->smo2) / 100.00f;
+                p->hhb = p->thb - p->o2hb;
+            } else {
+
+                p->o2hb = p->hhb = 0;
+            }
+        }
+
         // last point
         lastP = p;
+    }
+
+    // remove gear outlier (for single outlier values = 1 second) and
+    // fill 0 gaps in Gear series with previous or next gear ration value (whichever of those is above 0)
+    if (dataPresent.gear) {
+        double last = 0.0f;
+        double current = 0.0f;
+        double next = 0.0f;
+        double lastGear = 0.0;
+        for (int i = 0; i<dataPoints_.count(); i++) {
+            // first handle the zeros
+            if (dataPoints_[i]->gear > 0)
+                lastGear = dataPoints_[i]->gear;
+            else
+                dataPoints_[i]->gear = lastGear;
+            // set the single outliers (there might be better ways, but this is easy
+            if (i>0) last = dataPoints_[i-1]->gear; else last = 0.0f;
+            current = dataPoints_[i]->gear;
+            if (i<dataPoints_.count()-1) next = dataPoints_[i+1]->gear; else next = 0.0f;
+            // if there is a big jump to current in relation to last-next consider this a outlier
+            double diff1 = abs(last-next);
+            double diff2 = abs(last-current);
+            if ((diff1 < 0.01f) || (diff2 >= (diff1+0.5f))){
+                // single outlier (no shift up/down in 2 seconds
+                dataPoints_[i]->gear = (last>next) ? last : next;
+            }
+
+        }
     }
 
     // Smooth the slope if it has been derived

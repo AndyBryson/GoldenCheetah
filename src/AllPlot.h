@@ -144,8 +144,9 @@ class CurveColors : public QObject
             // Labels
             foreach(QwtPlotItem *item, plot->itemList(QwtPlotItem::Rtti_PlotMarker)) {
 
-                // ignore event / interval markers
-                if (static_cast<QwtPlotMarker*>(item)->lineStyle() == QwtPlotMarker::VLine) continue;
+                // ignore event / interval markers / blanks
+                if (static_cast<QwtPlotMarker*>(item)->lineStyle() == QwtPlotMarker::VLine ||
+                    static_cast<QwtPlotMarker*>(item)->label().text() == "") continue;
 
                 QwtScaleWidget *x = plot->axisWidget(static_cast<QwtPlotMarker*>(item)->yAxis());
                 labels.insert(static_cast<QwtPlotMarker*>(item), x);
@@ -344,6 +345,8 @@ class AllPlotObject : public QObject
     QwtPlotCurve *gearCurve;
     QwtPlotCurve *smo2Curve;
     QwtPlotCurve *thbCurve;
+    QwtPlotCurve *o2hbCurve;
+    QwtPlotCurve *hhbCurve;
     QwtPlotCurve *npCurve;
     QwtPlotCurve *xpCurve;
     QwtPlotCurve *apCurve;
@@ -387,6 +390,8 @@ class AllPlotObject : public QObject
     QVector<double> gearArray;
     QVector<double> smo2Array;
     QVector<double> thbArray;
+    QVector<double> o2hbArray;
+    QVector<double> hhbArray;
     QVector<double> npArray;
     QVector<double> xpArray;
     QVector<double> apArray;
@@ -420,6 +425,8 @@ class AllPlotObject : public QObject
     QVector<double> smoothGear;
     QVector<double> smoothSmO2;
     QVector<double> smoothtHb;
+    QVector<double> smoothO2Hb;
+    QVector<double> smoothHHb;
     QVector<double> smoothNP;
     QVector<double> smoothAP;
     QVector<double> smoothXP;
@@ -499,6 +506,8 @@ class AllPlot : public QwtPlot
         // refresh data / plot parameters
         void recalc(AllPlotObject *objects);
         void setYMax();
+        void setLeftOnePalette(); // color of yLeft,1 axis
+        void setRightPalette(); // color of yRight,0 axis
         void setXTitle();
         void setHighlightIntervals(bool);
 
@@ -535,6 +544,8 @@ class AllPlot : public QwtPlot
         void setShowRCad(bool show);
         void setShowSmO2(bool show);
         void setShowtHb(bool show);
+        void setShowO2Hb(bool show);
+        void setShowHHb(bool show);
         void setShowGear(bool show);
         void setShowW(bool show);
         void setShowTorque(bool show);
@@ -597,6 +608,8 @@ class AllPlot : public QwtPlot
         bool showRCad;
         bool showSmO2;
         bool showtHb;
+        bool showO2Hb;
+        bool showHHb;
         bool showGear;
 
         // plot objects

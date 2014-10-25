@@ -217,8 +217,6 @@ WPrime::setRide(RideFile *input)
 
         QVector<double> myvalues(last+1);
 
-        int stop = last / 2;
-
         WPrimeIntegrator a(inputArray, 0, last, TAU);
 
         a.start();
@@ -388,6 +386,8 @@ WPrime::setErg(ErgFile *input)
     if (integral) {
 
         last = input->Duration / 1000; 
+        values.resize(last);
+        xvalues.resize(last);
 
         // input array contains the actual W' expenditure
         // and will also contain non-zero values
@@ -409,20 +409,13 @@ WPrime::setErg(ErgFile *input)
             } else EXP += value; // total expenditure above CP
         }
 
-        if (countBelowCP > 0)
-            TAU = 546.00f * exp(-0.01*(CP - (totalBelowCP/countBelowCP))) + 316.00f;
-        else
-            TAU = 546.00f * exp(-0.01*(CP)) + 316.00f;
-
-        TAU = int(TAU); // round it down
+        TAU = appsettings->cvalue(input->context->athlete->cyclist, GC_WBALTAU, 300).toInt();
 
         // lets run forward from 0s to end of ride
         values.resize(last+1);
         xvalues.resize(last+1);
 
         QVector<double> myvalues(last+1);
-
-        int stop = last / 2;
 
         WPrimeIntegrator a(inputArray, 0, last, TAU);
 
@@ -432,6 +425,7 @@ WPrime::setErg(ErgFile *input)
         // sum values
         for (int t=0; t<=last; t++) {
             values[t] = a.output[t];
+            xvalues[t] = t * 1000.00f;
         }
 
         // now subtract WPRIME and work out minimum etc

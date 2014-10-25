@@ -236,6 +236,14 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     showtHb->setCheckState(Qt::Checked);
     seriesRight->addRow(new QLabel(""), showtHb);
 
+    showO2Hb = new QCheckBox(tr("O2Hb"), this);
+    showO2Hb->setCheckState(Qt::Checked);
+    seriesRight->addRow(new QLabel(""), showO2Hb);
+
+    showHHb = new QCheckBox(tr("HHb"), this);
+    showHHb->setCheckState(Qt::Checked);
+    seriesRight->addRow(new QLabel(""), showHHb);
+
     // "standard"
     showHr = new QCheckBox(tr("Heart Rate"), this);
     showHr->setCheckState(Qt::Checked);
@@ -614,6 +622,8 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     connect(showGear, SIGNAL(stateChanged(int)), this, SLOT(setShowGear(int)));
     connect(showSmO2, SIGNAL(stateChanged(int)), this, SLOT(setShowSmO2(int)));
     connect(showtHb, SIGNAL(stateChanged(int)), this, SLOT(setShowtHb(int)));
+    connect(showO2Hb, SIGNAL(stateChanged(int)), this, SLOT(setShowO2Hb(int)));
+    connect(showHHb, SIGNAL(stateChanged(int)), this, SLOT(setShowHHb(int)));
     connect(showATISS, SIGNAL(stateChanged(int)), this, SLOT(setShowATISS(int)));
     connect(showANTISS, SIGNAL(stateChanged(int)), this, SLOT(setShowANTISS(int)));
     connect(showXP, SIGNAL(stateChanged(int)), this, SLOT(setShowXP(int)));
@@ -971,6 +981,8 @@ AllPlotWindow::compareChanged()
         if (showGear->isChecked()) { s.one = RideFile::gear; s.two = RideFile::none; wanted << s;};
         if (showSmO2->isChecked()) { s.one = RideFile::smo2; s.two = RideFile::none; wanted << s;};
         if (showtHb->isChecked()) { s.one = RideFile::thb; s.two = RideFile::none; wanted << s;};
+        if (showO2Hb->isChecked()) { s.one = RideFile::o2hb; s.two = RideFile::none; wanted << s;};
+        if (showHHb->isChecked()) { s.one = RideFile::hhb; s.two = RideFile::none; wanted << s;};
         if (showATISS->isChecked()) { s.one = RideFile::aTISS; s.two = RideFile::none; wanted << s;};
         if (showANTISS->isChecked()) { s.one = RideFile::anTISS; s.two = RideFile::none; wanted << s;};
         if (showXP->isChecked()) { s.one = RideFile::xPower; s.two = RideFile::none; wanted << s;};
@@ -2467,6 +2479,48 @@ AllPlotWindow::setShowtHb(int value)
 }
 
 void
+AllPlotWindow::setShowO2Hb(int value)
+{
+    showO2Hb->setChecked(value);
+
+    // compare mode selfcontained update
+    if (isCompare()) {
+        compareChanged();
+        return;
+    }
+
+    bool checked = (( value == Qt::Checked ) && showO2Hb->isEnabled()) ? true : false;
+
+    allPlot->setShowO2Hb(checked);
+    foreach (AllPlot *plot, allPlots)
+        plot->setShowO2Hb(checked);
+
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
+}
+
+void
+AllPlotWindow::setShowHHb(int value)
+{
+    showHHb->setChecked(value);
+
+    // compare mode selfcontained update
+    if (isCompare()) {
+        compareChanged();
+        return;
+    }
+
+    bool checked = (( value == Qt::Checked ) && showHHb->isEnabled()) ? true : false;
+
+    allPlot->setShowHHb(checked);
+    foreach (AllPlot *plot, allPlots)
+        plot->setShowHHb(checked);
+
+    // and the series stacks too
+    forceSetupSeriesStackPlots(); // scope changed so force redraw
+}
+
+void
 AllPlotWindow::setShowGear(int value)
 {
     showGear->setChecked(value);
@@ -3020,6 +3074,8 @@ AllPlotWindow::setupSeriesStackPlots()
     if (showGear->isChecked() && rideItem->ride()->areDataPresent()->gear) { s.one = RideFile::gear; s.two = RideFile::none; serieslist << s; }
     if (showSmO2->isChecked() && rideItem->ride()->areDataPresent()->smo2) { s.one = RideFile::smo2; s.two = RideFile::none; serieslist << s; }
     if (showtHb->isChecked() && rideItem->ride()->areDataPresent()->thb) { s.one = RideFile::thb; s.two = RideFile::none; serieslist << s; }
+    if (showO2Hb->isChecked() && rideItem->ride()->areDataPresent()->o2hb) { s.one = RideFile::o2hb; s.two = RideFile::none; serieslist << s; }
+    if (showHHb->isChecked() && rideItem->ride()->areDataPresent()->hhb) { s.one = RideFile::hhb; s.two = RideFile::none; serieslist << s; }
     if (showATISS->isChecked() && rideItem->ride()->areDataPresent()->watts) { s.one = RideFile::aTISS; s.two = RideFile::none; serieslist << s; }
     if (showANTISS->isChecked() && rideItem->ride()->areDataPresent()->watts) { s.one = RideFile::anTISS; s.two = RideFile::none; serieslist << s; }
     if (showXP->isChecked() && rideItem->ride()->areDataPresent()->watts) { s.one = RideFile::xPower; s.two = RideFile::none; serieslist << s; }
@@ -3222,6 +3278,8 @@ AllPlotWindow::setupStackPlots()
         _allPlot->setShowGear((showGear->isEnabled()) ? ( showGear->checkState() == Qt::Checked ) : false );
         _allPlot->setShowSmO2((showSmO2->isEnabled()) ? ( showSmO2->checkState() == Qt::Checked ) : false );
         _allPlot->setShowtHb((showtHb->isEnabled()) ? ( showtHb->checkState() == Qt::Checked ) : false );
+        _allPlot->setShowO2Hb((showO2Hb->isEnabled()) ? ( showO2Hb->checkState() == Qt::Checked ) : false );
+        _allPlot->setShowHHb((showHHb->isEnabled()) ? ( showHHb->checkState() == Qt::Checked ) : false );
         _allPlot->setShowXP((showXP->isEnabled()) ? ( showXP->checkState() == Qt::Checked ) : false );
         _allPlot->setShowAP((showAP->isEnabled()) ? ( showAP->checkState() == Qt::Checked ) : false );
         _allPlot->setShowTE((showTE->isEnabled()) ? ( showTE->checkState() == Qt::Checked ) : false );
