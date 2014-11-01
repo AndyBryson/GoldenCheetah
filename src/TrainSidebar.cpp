@@ -891,7 +891,7 @@ void TrainSidebar::Start()       // when start button is pressed
             // setup file
             QString filename = now.toString(QString("yyyy_MM_dd_hh_mm_ss")) + QString(".csv");
 
-            QString fulltarget = context->athlete->home.absolutePath() + "/" + filename;
+            QString fulltarget = context->athlete->home->activities().absolutePath() + "/" + filename;
             if (recordFile) delete recordFile;
             recordFile = new QFile(fulltarget);
             if (!recordFile->open(QFile::WriteOnly | QFile::Truncate)) {
@@ -1100,6 +1100,10 @@ void TrainSidebar::guiUpdate()           // refreshes the telemetry
                     rtData.setSlope(local.getSlope()); // and get slope in case it was adjusted	
 					// to within defined limits					
 				}
+
+                if (Devices[dev].type == DEV_ANTLOCAL) {
+                    rtData.setHb(local.getSmO2(), local.gettHb()); //only moxy data from ant devices right now
+                }
 				
                 // what are we getting from this one?
                 if (dev == bpmTelemetry) rtData.setHr(local.getHr());

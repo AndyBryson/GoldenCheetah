@@ -623,6 +623,15 @@ void ANTChannel::broadcastEvent(unsigned char *ant_message)
            }
            break;
 
+            //moxy
+            case CHANNEL_TYPE_MOXY:
+            {
+                value = antMessage.tHb;
+                value2 = antMessage.newsmo2;
+                parent->setHb(value2, value);
+            }
+            break;
+
            default:
              break; // unknown?
            }
