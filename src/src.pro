@@ -363,6 +363,7 @@ HEADERS += \
         MergeActivityWizard.h \
         MetadataWindow.h \
         MetricAggregator.h \
+        MoxyDevice.h \
         NewCyclistDialog.h \
         NullController.h \
         PaceZones.h \
@@ -384,6 +385,7 @@ HEADERS += \
         ReferenceLineDialog.h \
         ComputrainerController.h \
         RealtimePlot.h \
+        RideAutoImportConfig.h \
         RideEditor.h \
         RideFile.h \
         RideFileCache.h \
@@ -539,6 +541,7 @@ SOURCES += \
         GcWindowRegistry.cpp \
         GoldenCheetah.cpp \
         GoogleMapControl.cpp \
+        GOVSS.cpp \
         GProgressDialog.cpp \
         GpxParser.cpp \
         GpxRideFile.cpp \
@@ -574,6 +577,7 @@ SOURCES += \
         MergeActivityWizard.cpp \
         MetadataWindow.cpp \
         MetricAggregator.cpp \
+        MoxyDevice.cpp \
         NewCyclistDialog.cpp \
         NullController.cpp \
         PaceTimeInZone.cpp \
@@ -597,6 +601,7 @@ SOURCES += \
         RealtimePlot.cpp \
         RealtimePlotWindow.cpp \
         ReferenceLineDialog.cpp \
+        RideAutoImportConfig.cpp \
         RideEditor.cpp \
         RideFile.cpp \
         RideFileCache.cpp \

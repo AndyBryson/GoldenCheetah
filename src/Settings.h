@@ -54,12 +54,11 @@
 #define GC_NICKNAME                 "nickname"
 #define GC_DOB                      "dob"
 #define GC_WEIGHT                   "weight"
+#define GC_HEIGHT                   "height"
 #define GC_WBALTAU                  "wbaltau"
 #define GC_SEX                      "sex"
 #define GC_BIO                      "bio"
 #define GC_AVATAR                   "avatar"
-#define GC_IMPORTDIR                "importDir"
-#define GC_IMPORTSETTINGS           "importSettings"
 #define GC_SETTINGS_LAST_IMPORT_PATH "mainwindow/lastImportPath"
 #define GC_SETTINGS_LAST_WORKOUT_PATH "mainwindow/lastWorkoutPath"
 #define GC_LAST_DOWNLOAD_DEVICE      "mainwindow/lastDownloadDevice"
@@ -213,6 +212,9 @@
 
 // wbal formula to use
 #define GC_WBALFORM               "wbal/formula"
+
+// success tracking of more complex upgrades stored on athlete level
+#define GC_UPGRADE_311_FOLDER_SUCCESS  "upgradesuccess/folder311"
 
 #include <QSettings>
 #include <QFileInfo>

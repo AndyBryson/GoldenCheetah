@@ -23,12 +23,13 @@
 #include "Context.h"
 #include "Athlete.h"
 #include "Settings.h"
+#include "JsonRideFile.h"
+#include <assert.h>
 #include <errno.h>
 #include <QtGui>
 
-DownloadRideDialog::DownloadRideDialog(Context *context,
-                                       const QDir &home) :
-    context(context), home(home), cancelled(false),
+DownloadRideDialog::DownloadRideDialog(Context *context) :
+    context(context), cancelled(false),
     action(actionIdle)
 {
     setAttribute(Qt::WA_DeleteOnClose);
@@ -108,7 +109,7 @@ DownloadRideDialog::setReadyInstruct()
         if (inst.size() == 0)
             statusLabel->setPlainText(tr("Click Download to begin downloading."));
         else
-            statusLabel->setPlainText(inst + tr(", \nthen click Download."));
+            statusLabel->setPlainText(inst + tr(", then click Download."));
 
         updateAction( actionIdle );
     }
@@ -286,12 +287,14 @@ DownloadRideDialog::downloadClicked()
     connect( this, SIGNAL(cancel()), device.data(), SLOT(cancelled()) );
     connect( device.data(), SIGNAL(updateProgress(QString)), this, SLOT(updateProgress(QString)));
 
-    updateStatus(tr("getting summary ..."));
-    if( ! device->preview( err ) ){
+    if (devtype->canPreview()) {
+        updateStatus(tr("Getting ride list ..."));
+        if( ! device->preview( err ) ){
 
-        QMessageBox::information(this, tr("Preview failed"), err);
-        updateAction( actionIdle );
-        return;
+            QMessageBox::information(this, tr("Get ride list failed"), err);
+            updateAction( actionIdle );
+            return;
+        }
     }
 
     QList<DeviceRideItemPtr> &rides( device->rides() );
@@ -303,11 +306,11 @@ DownloadRideDialog::downloadClicked()
         }
     }
 
-    updateStatus(tr("getting data ..."));
-    if (!device->download( home, files, err))
+    updateStatus(tr("Starting Download ..."));
+    if (!device->download( context->athlete->home->downloads(), files, err))
     {
         if (cancelled) {
-            QMessageBox::information(this, tr("Download canceled"),
+            QMessageBox::information(this, tr("Download cancelled"),
                                      tr("Cancel clicked by user."));
             cancelled = false;
         }
@@ -324,7 +327,7 @@ DownloadRideDialog::downloadClicked()
     int failures = 0;
     for( int i = 0; i < files.size(); ++i ){
         if( ! files.at(i).startTime.isValid() ){
-            updateStatus(tr("file %1 has no valid timestamp, falling back to 'now'")
+            updateStatus(tr("File %1 has no valid timestamp, falling back to 'now'")
                 .arg(files.at(i).name));
             files[i].startTime = QDateTime::currentDateTime();
         }
@@ -332,7 +335,7 @@ DownloadRideDialog::downloadClicked()
         QString filename( files.at(i).startTime
             .toString("yyyy_MM_dd_hh_mm_ss")
             + "." + files.at(i).extension );
-        QString filepath( home.absoluteFilePath(filename) );
+        QString filepath( context->athlete->home->downloads().absoluteFilePath(filename) );
 
         if (QFile::exists(filepath)) {
             if (QMessageBox::warning( this,
@@ -378,7 +381,7 @@ DownloadRideDialog::downloadClicked()
                     .arg(files.at(i).name)
                     .arg(filepath)
                     .arg(strerror(errno)) );
-                updateStatus(tr("failed to rename %1 to %2")
+                updateStatus(tr("Failed to rename %1 to %2")
                     .arg( files.at(i).name )
                     .arg( filename ));
             QFile::remove(files.at(i).name);
@@ -386,12 +389,49 @@ DownloadRideDialog::downloadClicked()
             continue;
         }
 
+        // remove the tempoary download file after successfull creation/renaming (just in case)
         QFile::remove(files.at(i).name);
-        context->athlete->addRide(filename);
+
+        // File sucessfully downloaded and stored with proper extension - now convert to .JSON
+        QStringList errors;
+        QFile currentFile(filepath);
+        QString targetFileName;
+        RideFile *ride = RideFileFactory::instance().openRideFile(context, currentFile, errors);
+
+        // did it parse ok ?
+        if (ride) {
+
+            // serialize
+            targetFileName = filename;
+            int dot = targetFileName.lastIndexOf(".");
+            assert(dot >= 0);
+            targetFileName.truncate(dot);
+            targetFileName.append(".json");
+            // add Source File Tag + New File Name
+            ride->setTag("Source Filename", filename);
+            ride->setTag("Filename", targetFileName);
+            JsonFileReader reader;
+            QFile target(context->athlete->home->activities().canonicalPath() + "/" + targetFileName);
+            // no worry if file already exists - .JSON writer either creates the file or updates the file content
+            reader.writeRideFile(context, ride, target);
+
+        } else {
+            QMessageBox::critical( this,
+                  tr("Error"),
+                  tr("The ride %1 could not be converted to "
+                      "GoldenCheetah .JSON file format.")
+                        .arg(filename) );
+                updateStatus(tr(".JSON conversion error: file %1")
+                    .arg( filename ));
+                continue;
+
+        }
+
+        context->athlete->addRide(targetFileName);
     }
 
     if( ! failures )
-        updateStatus( tr("download completed successfully") );
+        updateStatus( tr("Download completed") );
 
     updateAction( actionIdle );
 }
@@ -420,7 +460,7 @@ DownloadRideDialog::eraseClicked()
 
     QString err;
     if( device->cleanup( err) )
-        updateStatus( tr("cleaned data") );
+        updateStatus( tr("Cleaned data") );
     else
         updateStatus( err );
 
@@ -448,5 +488,3 @@ DownloadRideDialog::closeClicked()
 {
     accept();
 }
-
-

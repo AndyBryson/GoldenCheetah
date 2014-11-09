@@ -459,7 +459,7 @@ RideFile *RideFileFactory::openRideFile(Context *context, QFile &file,
         }
 
         // legacy support for .notes file
-        QString notesFileName = fileInfo.absolutePath() + '/' + fileInfo.baseName() + ".notes";
+        QString notesFileName = fileInfo.canonicalPath() + '/' + fileInfo.baseName() + ".notes";
         QFile notesFile(notesFileName);
 
         // read it in if it exists and "Notes" is not already set
@@ -484,7 +484,7 @@ RideFile *RideFileFactory::openRideFile(Context *context, QFile &file,
         result->setTag("Filename", QFileInfo(file.fileName()).fileName());
         result->setTag("Device", result->deviceType());
         result->setTag("File Format", result->fileFormat());
-        result->setTag("Athlete", QFileInfo(file).dir().dirName());
+        result->setTag("Athlete", context->athlete->cyclist);
         result->setTag("Year", result->startTime().toString("yyyy"));
         result->setTag("Month", result->startTime().toString("MMMM"));
         result->setTag("Weekday", result->startTime().toString("ddd"));
@@ -537,6 +537,13 @@ RideFile *RideFileFactory::openRideFile(Context *context, QFile &file,
         if (result->areDataPresent()->temp) flags += 'E'; // Temperature
         else flags += '-';
         if (result->areDataPresent()->lrbalance) flags += 'V'; // V for "Vector" aka lr pedal data
+        else flags += '-';
+        if (result->areDataPresent()->smo2 ||
+            result->areDataPresent()->thb) flags += 'O'; // Moxy O2/Haemoglobin
+        else flags += '-';
+        if (result->areDataPresent()->rcontact ||
+            result->areDataPresent()->rvert ||
+            result->areDataPresent()->rcontact) flags += 'R'; // R is for running dynamics
         else flags += '-';
         result->setTag("Data", flags);
 
@@ -1240,6 +1247,29 @@ RideFile::getWeight()
     if (weight_ <= 0.00) weight_ = 75.00;
 
     return weight_;
+}
+
+double
+RideFile::getHeight()
+{
+    double const height_default = (this->getWeight()+100.0)/98.43; // default to Stillman Average
+    double height = height_default;
+
+    // ride
+    if ((height = getTag("Height", "0.0").toDouble()) > 0) {
+        return height;
+    }
+
+    // is withings upported for height?
+
+    // global options
+    height = appsettings->cvalue(context->athlete->cyclist, GC_HEIGHT, height_default).toString().toDouble();
+
+    // if set to zero in global options then override it.
+    // it must not be zero!!!
+    if (height <= 0.00) height = height_default;
+
+    return height;
 }
 
 void RideFile::appendReference(const RideFilePoint &point)

@@ -107,8 +107,10 @@
 // 86  26  Sep 2014 Mark Liversedge    Added isRun first class var
 // 87  11  Oct 2014 Mark Liversedge    W'bal inegrator fixed up by Dave Waterworth
 // 88  14  Oct 2014 Mark Liversedge    Pace Zone Metrics
+// 89  07  Nov 2014 Ale Martinez       GOVSS
+// 90  08  Nov 2014 Mark Liversedge    Update data flags for Moxy and Garmin Running Dynamics
 
-int DBSchemaVersion = 88;
+int DBSchemaVersion = 90;
 
 DBAccess::DBAccess(Context* context) : context(context), db(NULL)
 {
@@ -130,7 +132,6 @@ void
 DBAccess::initDatabase(QDir home)
 {
 
-    QString cyclist = QFileInfo(home.path()).baseName();
     sessionid = QString("%1").arg(context->athlete->cyclist);
 
     if(db && db->database(sessionid).isOpen()) return;
@@ -138,7 +139,7 @@ DBAccess::initDatabase(QDir home)
     // use different name for v3 metricDB to avoid constant rebuilding
     // when switching between v2 stable and v3 development builds
     db = new QSqlDatabase(QSqlDatabase::addDatabase("QSQLITE", sessionid));
-    db->setDatabaseName(home.absolutePath() + "/metricDBv3"); 
+    db->setDatabaseName(home.canonicalPath() + "/metricDBv3");
 
     if (!db->database(sessionid).isOpen()) {
 

@@ -31,6 +31,7 @@
 #include <QListIterator>
 #include <QItemDelegate>
 #include "Context.h"
+#include "RideAutoImportConfig.h"
 
 // Dialog class to show filenames, import progress and to capture user input
 // of ride date and time
@@ -42,12 +43,12 @@ class RideImportWizard : public QDialog
 
 
 public:
-    RideImportWizard(QList<QUrl> *urls, QDir home, Context *context, QWidget *parent = 0);
-    RideImportWizard(QList<QString> files, QDir home, Context *context, QWidget *parent = 0);
+    RideImportWizard(QList<QUrl> *urls, Context *context, QWidget *parent = 0);
+    RideImportWizard(QList<QString> files, Context *context, QWidget *parent = 0);
+    RideImportWizard(RideAutoImportConfig *dirs, Context *context, QWidget *parent = 0);
+
     ~RideImportWizard();
     int process();
-    void setDialogMode(int); // default is fullDialog
-    enum DialogMode { standardDialog, allErrors, allButDupFileErrors };
 
 signals:
 
@@ -55,25 +56,28 @@ private slots:
     void abortClicked();
     void cancelClicked();
     void todayClicked(int index);
-    void overClicked();
+    // void overClicked(); // deprecate for this release... XXX
     void activateSave();
 
 private:
-    void init(QList<QString> files, QDir home, Context *context);
+    void init(QList<QString> files, Context *context);
     QList <QString> filenames; // list of filenames passed
     QList <bool> blanks; // record of which have a RideFileReader returned date & time
-    QDir home; // target directory
+    QDir homeImports; // target directory for source files
+    QDir homeActivities; // target directory for .JSON
     bool aborted;
-    int dialogMode; // see enum
+    bool autoImportMode;
     QLabel *phaseLabel;
     QTableWidget *tableWidget;
+    QTableWidget *directoryWidget;
     QProgressBar *progressBar;
     QPushButton *abortButton; // also used for save and finish
     QPushButton *cancelButton; // cancel when asking for dates
     QComboBox *todayButton;    // set date to today when asking for dates
-    QCheckBox *overFiles;      // chance to set overwrite when asking for dates
-    bool overwriteFiles; // flag to overwrite files from checkbox
+    // QCheckBox *overFiles;      // chance to set overwrite when asking for dates // deprecate for this release... XXX
+    // bool overwriteFiles; // flag to overwrite files from checkbox               // deprecate for this release... XXX
     Context *context; // caller
+    RideAutoImportConfig *importConfig;
 
     QStringList deleteMe; // list of temp files created during import
 };
