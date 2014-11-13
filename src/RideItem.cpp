@@ -33,6 +33,13 @@ RideItem::RideItem(int type,
     dateTime(dateTime), zones(zones), hrZones(hrZones)
 { }
 
+RideItem::RideItem(int type,
+                   RideFile *ride, const QDateTime &dateTime,
+                   const Zones *zones, const HrZones *hrZones, Context *context) :
+    QTreeWidgetItem(type), ride_(ride), context(context), isdirty(true), isedit(false),
+    dateTime(dateTime), zones(zones), hrZones(hrZones)
+{ }
+
 RideFile *RideItem::ride(bool open)
 {
     if (!open || ride_) return ride_;
@@ -54,6 +61,16 @@ RideFile *RideItem::ride(bool open)
     connect(ride_, SIGNAL(reverted()), this, SLOT(reverted()));
 
     return ride_;
+}
+
+void
+RideItem::setRide(RideFile *overwrite)
+{
+    RideFile *old = ride_;
+    ride_ = overwrite; // overwrite
+    setDirty(true);
+    notifyRideDataChanged();
+    delete old; // now wipe it once referrers had chance to change
 }
 
 void
