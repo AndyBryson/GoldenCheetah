@@ -201,6 +201,9 @@ MoxyDevice::download( const QDir &tmpdir,
             updateProgress(QString(tr("Downloading ... [%1 bytes]")).arg(count));
             vbuf[bytes] = '\0';
 
+            // ignore 'delimeters' (they're just noise)
+            if (QString(vbuf) == " ,,,,," || QString(vbuf) == ",,,,,") continue;
+
             // get data
             QDateTime line = dateTimeForRow(vbuf);
 
@@ -407,6 +410,8 @@ MoxyDevice::cleanup( QString &err )
         return false;
     }
 
+    // give it some time to get the work done !
+    sleep(3);
 
     // exit engineering mode
     if (writeCommand(dev, "exit\r", err) == false) {

@@ -55,8 +55,8 @@ CONFIG(debug, debug|release) {
     INCLUDEPATH += $${LIBOAUTH_INCLUDE}
     LIBS        += $${LIBOAUTH_LIBS}
     DEFINES     += GC_HAVE_LIBOAUTH
-    SOURCES     += OAuthDialog.cpp TwitterDialog.cpp ShareDialog.cpp
-    HEADERS     += OAuthDialog.h TwitterDialog.h ShareDialog.h
+    SOURCES     += OAuthDialog.cpp TwitterDialog.cpp
+    HEADERS     += OAuthDialog.h TwitterDialog.h
 }
 
 !isEmpty( D2XX_INCLUDE ) {
@@ -414,6 +414,7 @@ HEADERS += \
         SeasonParser.h \
         Serial.h \
         Settings.h \
+        ShareDialog.h \
         SpecialFields.h \
         SpinScanPlot.h \
         SpinScanPolarPlot.h \
@@ -441,9 +442,9 @@ HEADERS += \
         TrainSidebar.h \
         TreeMapWindow.h \
         TreeMapPlot.h \
-        TtbDialog.h \
+        TrainingstagebuchUploader.h \
         Units.h \
-        VeloHeroDialog.h \
+        VeloHeroUploader.h \
         Views.h \
         WithingsDownload.h \
         WkoRideFile.h \
@@ -631,6 +632,7 @@ SOURCES += \
         SeasonParser.cpp \
         Serial.cpp \
         Settings.cpp \
+        ShareDialog.cpp \
         SmallPlot.cpp \
         SpecialFields.cpp \
         SpinScanPlot.cpp \
@@ -661,10 +663,10 @@ SOURCES += \
         TrainSidebar.cpp \
         TreeMapWindow.cpp \
         TreeMapPlot.cpp \
-        TtbDialog.cpp \
+        TrainingstagebuchUploader.cpp \
         TRIMPPoints.cpp \
         Units.cpp \
-        VeloHeroDialog.cpp \
+        VeloHeroUploader.cpp \
         Views.cpp \
         WattsPerKilogram.cpp \
         WithingsDownload.cpp \

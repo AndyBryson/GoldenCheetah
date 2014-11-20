@@ -46,6 +46,7 @@
 #include "Settings.h"
 #include "LTMCanvasPicker.h"
 #include "TimeUtils.h"
+#include "Units.h"
 
 
 CPPlot::CPPlot(QWidget *parent, Context *context, bool rangemode) : QwtPlot(parent), parent(parent),
@@ -1012,6 +1013,9 @@ CPPlot::plotBests()
     if (criticalSeries == CriticalPowerWindow::work) {
         int i = std::lower_bound(time.begin(), time.end(), 60.0) - time.begin();
         ymax = 10 * ceil(work[i] / 10);
+    } else if (criticalSeries == CriticalPowerWindow::vam) {
+        double yVam = bestsCache->meanMaxArray(RideFile::vam).value(296);
+        ymax = 100 * ceil(yVam / 100); // index of xMin for Time
     } else {
         ymax = 100 * ceil(values[0] / 100);
         if (ymax == 100) ymax = 5 * ceil(values[0] / 5);
@@ -1029,7 +1033,10 @@ CPPlot::plotBests()
     else if (criticalSeries == CriticalPowerWindow::veloclinicplot) {
         setAxisScale(yLeft, 0, 1.5*pdModel->WPrime());
     }
-    else {
+    else if (criticalSeries == CriticalPowerWindow::vam) {
+        // VAM is very big anyway - so just 5% headroom
+        setAxisScale(yLeft, 0, 1.05*ymax);
+    } else {
 
         // or just add 10% headroom
         setAxisScale(yLeft, 0, 1.1*values[0]);
@@ -1249,13 +1256,15 @@ CPPlot::setRide(RideItem *rideItem)
 void
 CPPlot::pointHover(QwtPlotCurve *curve, int index)
 {
-    if (showBest && curve == modelCurve) return; // ignore model curve hover
+    if (criticalSeries == CriticalPowerWindow::watts && showBest && curve == modelCurve && modelCurve != NULL) 
+        return; // ignore model curve hover
 
     if (index >= 0) {
 
         double xvalue = curve->sample(index).x();
         double yvalue = curve->sample(index).y();
-        QString text, dateStr;
+        QString text, dateStr, paceStr;
+        QString currentRidePercentStr;
         QString units1;
         QString units2;
 
@@ -1279,19 +1288,43 @@ CPPlot::pointHover(QwtPlotCurve *curve, int index)
             || (curve == rideCurve && showPercent)) units2 = QString("%");
         else if (criticalSeries == CriticalPowerWindow::veloclinicplot)
             units2 = "J"; // Joule
+        else if (criticalSeries == CriticalPowerWindow::kph)
+            units2 = tr("kph"); // yAxis doesn't obey units settings yet, remove when fixed
         else
             units2 = RideFile::unitName(rideSeries, context);
+
+		// for the current ride curve, add a percent of rider's actual best.
+		if (!showPercent && curve == rideCurve && index >= 0 && getBests().count() > index) {
+			double bestY = getBests()[index];
+			if (0 != bestY) {
+				// use 0 decimals for the percent.
+				currentRidePercentStr = QString("\n%1 %2")
+					.arg((yvalue *100)/ bestY, 0, 'f', 0)
+					.arg(tr("Percent of Best"));
+			}
+		}
 
         // no units for Heat Curve
         if (curve == heatCurve) units2 = QString(tr("Rides"));
 
+        // for speed series add pace with units according to settings
+        if (criticalSeries == CriticalPowerWindow::kph) {
+            bool metricPace = appsettings->value(this, GC_PACE, true).toBool();
+            QString paceunit = metricPace ? tr("min/km") : tr("min/mile");
+            // yAxis doesn't obey units yet
+            // when fixed, change true to: context->athlete->useMetricUnits
+            paceStr = QString("\n%1 %2").arg(true ? kphToPace(yvalue, metricPace) : mphToPace(yvalue, metricPace)).arg(paceunit);
+        }
+
         // output the tooltip
-        text = QString("%1%2\n%3 %4%5")
+        text = QString("%1%2\n%3 %4%7%5%6")
                .arg(criticalSeries == CriticalPowerWindow::veloclinicplot?QString("%1").arg(xvalue, 0, 'f', RideFile::decimalsFor(rideSeries)):interval_to_str(60.0*xvalue))
                .arg(units1)
                .arg(yvalue, 0, 'f', RideFile::decimalsFor(rideSeries))
                .arg(units2)
-               .arg(dateStr);
+               .arg(dateStr)
+               .arg(currentRidePercentStr)
+               .arg(paceStr);
 
         // set that text up
         zoomer->setText(text);
@@ -1862,9 +1895,25 @@ CPPlot::calculateForDateRanges(QList<CompareDateRange> compareDateRanges)
                 if (rideSeries == RideFile::watts || rideSeries == RideFile::wattsKg)
                     plotModel(cache->meanMaxArray(rideSeries), range.color, NULL);
 
+                int xCount = 0;
+                double vamYMax = 0;
                 foreach(double v, cache->meanMaxArray(rideSeries)) {
+                    // get the biggest y-Axes value
                     if (v > ymax) ymax = v;
+
+                    // VAM x-Axis starts at 4.993 seconds = x-time array point 296 -
+                    // so skip the values upto that point in x-Axis time
+                    if (rideSeries == RideFile::vam) {
+                       // VAM x-Axis starts at 4.993 seconds = x-time array point 296 -
+                       // so skip the values upto that point in x-Axis time
+                       if (xCount >= 296) {
+                           if (v > vamYMax) vamYMax = v;
+                       }
+                     }
+                     xCount++;
                 }
+                // overwrite ymax for VAM - if a proper value was found
+                if (rideSeries == RideFile::vam && vamYMax > 0) ymax = vamYMax;
             }
         }
     }
@@ -1984,9 +2033,25 @@ CPPlot::calculateForIntervals(QList<CompareInterval> compareIntervals)
                 plotCache(interval.rideFileCache()->meanMaxArray(rideSeries), interval.color);
 
                 // whats ymax ?
+                int xCount = 0;
+                double vamYMax = 0;
                 foreach(double v, interval.rideFileCache()->meanMaxArray(rideSeries)) {
+                    // get the biggest y-Axes value
                     if (v > ymax) ymax = v;
+
+                    // VAM x-Axis starts at 4.993 seconds = x-time array point 296 -
+                    // so skip the values upto that point in x-Axis time
+                    if (rideSeries == RideFile::vam) {
+                       // VAM x-Axis starts at 4.993 seconds = x-time array point 296 -
+                       // so skip the values upto that point in x-Axis time
+                       if (xCount >= 296) {
+                           if (v > vamYMax) vamYMax = v;
+                       }
+                     }
+                     xCount++;
                 }
+                // overwrite ymax for VAM - if a proper value was found
+                if (rideSeries == RideFile::vam && vamYMax > 0) ymax = vamYMax;
 
                 double mins = interval.rideFileCache()->meanMaxArray(rideSeries).count() / 60.00f;
                 if (mins > xmax) xmax = mins;

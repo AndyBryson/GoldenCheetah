@@ -255,12 +255,13 @@ RideFile *CsvFileReader::openRideFile(QFile &file, QStringList &errors, QList<Ri
                     file.close();
                     return NULL;
                 }
+
                 if (degCUnits.indexIn(line) != -1)
                     tempType = degC;
                 else if (degFUnits.indexIn(line) != -1)
                     tempType = degF;
-            }
-            else if (lineno > unitsHeader) {
+
+            } else if (lineno > unitsHeader) {
                 double minutes=0,nm=0,kph=0,watts=0,km=0,cad=0,alt=0,hr=0,dfpm=0, seconds=0.0;
                 double temp=RideFile::NoTemp;
                 double slope=0.0;
@@ -297,8 +298,8 @@ RideFile *CsvFileReader::openRideFile(QFile &file, QStringList &errors, QList<Ri
                         kph *= KM_PER_MILE;
                         alt *= METERS_PER_FOOT;
                     }
-                }
-                else if (iBike) {
+
+                } else if (iBike) {
                     // this must be iBike
                     // can't find time as a column.
                     // will we have to extrapolate based on the recording interval?
@@ -310,10 +311,10 @@ RideFile *CsvFileReader::openRideFile(QFile &file, QStringList &errors, QList<Ri
                      nm = 0; //no torque
                      kph = line.section(',', 0, 0).toDouble();
                      dfpm = line.section( ',', 11, 11).toDouble();
+                     headwind = line.section(',', 1, 1).toDouble();
                      if( iBikeVersion >= 11 && ( dfpm > 0.0 || dfpmExists ) ) {
                          dfpmExists = true;
                          watts = dfpm;
-                         headwind = line.section(',', 1, 1).toDouble();
                      }
                      else {
                          watts = line.section(',', 2, 2).toDouble();
@@ -322,10 +323,12 @@ RideFile *CsvFileReader::openRideFile(QFile &file, QStringList &errors, QList<Ri
                      cad = line.section(',', 4, 4).toDouble();
                      hr = line.section(',', 5, 5).toDouble();
                      alt = line.section(',', 6, 6).toDouble();
+                     slope = line.section(',', 7, 7).toDouble();
+                     temp = line.section(',', 8, 8).toDouble();
                      lat = line.section(',', 12, 12).toDouble();
                      lon = line.section(',', 13, 13).toDouble();
-                     temp = line.section(',', 8, 8).toDouble();
-                     slope = line.section(',', 7, 7).toDouble();
+
+
                      int lap = line.section(',', 9, 9).toInt();
                      if (lap > 0) {
                          iBikeInterval += 1;
@@ -337,8 +340,14 @@ RideFile *CsvFileReader::openRideFile(QFile &file, QStringList &errors, QList<Ri
                         alt *= METERS_PER_FOOT;
                         headwind *= KM_PER_MILE;
                     }
-                }
-                else if (moxy)  {
+
+                } else if (moxy)  {
+
+                    // we get crappy lines with no data so ignore them
+                    // I think they're supposed to be delimeters for the file
+                    // content, but are just noise to us !
+                    if (line == (" ,,,,,") || line == ",,,,,") continue;
+
                     // need to get time from second column and note that
                     // there will be gaps when recording drops so shouldn't
                     // assume it is a continuous stream

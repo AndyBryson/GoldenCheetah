@@ -110,8 +110,9 @@
 // 88  14  Oct 2014 Mark Liversedge    Pace Zone Metrics
 // 89  07  Nov 2014 Ale Martinez       GOVSS
 // 90  08  Nov 2014 Mark Liversedge    Update data flags for Moxy and Garmin Running Dynamics
+// 91  16  Nov 2014 Damien Grauser     Do not include values if data not present in TimeInZone and HRTimeInZone
 
-int DBSchemaVersion = 90;
+int DBSchemaVersion = 91;
 
 DBAccess::DBAccess(Context* context) : context(context), db(NULL)
 {
@@ -1032,6 +1033,17 @@ DBAccess::deleteIntervalsForRide(QString filename)
 
     query.prepare("DELETE FROM interval_metrics WHERE filename = ?;");
     query.addBindValue(filename);
+    return query.exec();
+}
+
+bool
+DBAccess::deleteIntervalsForTypeAndGroupName(QString type, QString groupName)
+{
+    QSqlQuery query(db->database(sessionid));
+
+    query.prepare("DELETE FROM interval_metrics WHERE type = :type AND groupName = :groupName;");
+    query.addBindValue(type); // type
+    query.addBindValue(groupName); // groupName,
     return query.exec();
 }
 
