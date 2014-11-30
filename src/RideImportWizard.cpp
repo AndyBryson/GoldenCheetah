@@ -154,6 +154,7 @@ RideImportWizard::RideImportWizard(RideAutoImportConfig *dirs, Context *context,
     directoryWidget->setColumnWidth(2, 250);
 
     init(files, context);
+
 }
 
 
@@ -325,19 +326,26 @@ RideImportWizard::init(QList<QString> files, Context * /*mainWindow*/)
     if (autoImportMode) directoryWidget->adjustSize();
     tableWidget->adjustSize();
 
-    // Refresh prior to running down the list & processing...
-    if (!isActiveWindow()) activateWindow();
-    this->show();
+    // set number of files / so that a caller of the constructor can decide what to do
+    numberOfFiles = files.count();
+}
 
+int
+RideImportWizard::getNumberOfFiles() {
+    return numberOfFiles;
 }
 
 int
 RideImportWizard::process()
 {
 
+    // Make visible and put in front prior to running down the list & processing...
+    if (!isActiveWindow()) activateWindow();
+    this->show();
+
     // set progress bar limits - for each file we
     // will make 5 passes over the files
-    //         1. checking it is a file ane readable
+    //         1. checking if a file is readable
     //         2. parsing it with the RideFileReader
     //         3. [optional] collect date/time information from user
     //         4. copy file into Library
@@ -522,7 +530,7 @@ RideImportWizard::process()
 
                    } else {
 
-                       // Cool, the date and time was extrcted from the source file
+                       // Cool, the date and time was extracted from the source file
                        blanks[i] = false;
                        tableWidget->item(i,1)->setText(ride->startTime().toString(tr("dd MMM yyyy")));
                        tableWidget->item(i,2)->setText(ride->startTime().toString("hh:mm:ss"));
@@ -607,7 +615,7 @@ RideImportWizard::process()
 
    if (needdates == 0) {
       // no need to wait for the user to input dates
-      // nd press save if all the dates are set
+      // and press save if all the dates are set
       // (i.e. they got set by the file importers already)
       // do nothing for now since we need to confirm dates
       // and confirm overwrite files rather than importing

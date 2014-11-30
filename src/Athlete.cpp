@@ -565,7 +565,13 @@ Athlete::importFilesWhenOpeningAthlete() {
     if (autoImportConfig->hasRules()) {
 
         RideImportWizard *import = new RideImportWizard(autoImportConfig, context);
-        import->process();
+
+        // only process the popup if we have any files available at all
+        if ( import->getNumberOfFiles() > 0) {
+           import->process();
+        } else {
+           delete import;
+        }
     }
 }
 
@@ -576,6 +582,7 @@ AthleteDirectoryStructure::AthleteDirectoryStructure(const QDir home){
 
     athlete_activities = "activities";
     athlete_imports = "imports";
+    athlete_records = "records";
     athlete_downloads = "downloads";
     athlete_config = "config";
     athlete_cache = "cache";
@@ -598,6 +605,7 @@ AthleteDirectoryStructure::createAllSubdirs() {
 
     myhome.mkdir(athlete_activities);
     myhome.mkdir(athlete_imports);
+    myhome.mkdir(athlete_records);
     myhome.mkdir(athlete_downloads);
     myhome.mkdir(athlete_config);
     myhome.mkdir(athlete_cache);
@@ -614,6 +622,7 @@ AthleteDirectoryStructure::subDirsExist() {
 
     return (activities().exists() &&
             imports().exists() &&
+            records().exists() &&
             downloads().exists() &&
             config().exists() &&
             cache().exists() &&

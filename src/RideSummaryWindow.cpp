@@ -400,6 +400,13 @@ RideSummaryWindow::htmlSummary()
         maximumColumn << "max_temp";
     }
 
+    // if o2 data is available show the average and max
+    if ((ridesummary && ride->areDataPresent()->smo2) || 
+       (!ridesummary && SummaryMetrics::getAggregated(context, "average_smo2", data, QStringList(), false, true) != "-")) {
+        averageColumn << "average_smo2";
+        maximumColumn << "max_smo2";
+    }
+
     // users determine the metrics to display
     QString s = appsettings->value(this, GC_SETTINGS_SUMMARY_METRICS, GC_SETTINGS_SUMMARY_METRICS_DEFAULT).toString();
     if (s == "") s = GC_SETTINGS_SUMMARY_METRICS_DEFAULT;
@@ -1214,7 +1221,7 @@ RideSummaryWindow::htmlSummary()
         summary += "</table><br>";
     }
 
-    // sumarise errors reading file if it was a ride summary
+    // summarise errors reading file if it was a ride summary
     if (ridesummary && !rideItem->errors().empty()) {
 
         summary += tr("<p><h2>Errors reading file:</h2><ul>");
@@ -1596,7 +1603,7 @@ RideSummaryWindow::htmlCompareSummary() const
                 }
                 summary += "</tr>";
 
-                // now the sumamry
+                // now the summary
                 int counter = 0;
                 int rows = 0;
                 foreach (SummaryMetrics metrics, intervalMetrics) {
@@ -1668,7 +1675,7 @@ RideSummaryWindow::htmlCompareSummary() const
                 }
                 summary += "</tr>";
 
-                // now the sumamry
+                // now the summary
                 int counter = 0;
                 int rows = 0;
                 foreach (SummaryMetrics metrics, intervalMetrics) {
@@ -1864,7 +1871,7 @@ RideSummaryWindow::htmlCompareSummary() const
                 }
                 summary += "</tr>";
 
-                // now the sumamry
+                // now the summary
                 int counter = 0;
                 foreach (CompareDateRange dr, context->compareDateRanges) {
 
@@ -1936,7 +1943,7 @@ RideSummaryWindow::htmlCompareSummary() const
                 }
                 summary += "</tr>";
 
-                // now the sumamry
+                // now the summary
                 int counter = 0;
                 foreach (CompareDateRange dr, context->compareDateRanges) {
 
