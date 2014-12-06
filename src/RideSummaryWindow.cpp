@@ -558,7 +558,7 @@ RideSummaryWindow::htmlSummary()
 
                     s = s.arg(ride->getTag("Temperature", "-"));
 
-                 } else if (m->internalName() == "Pace") { // pace is mm:ss
+                 } else if (m->internalName() == "Pace" || m->internalName() == "xPace") { // pace is mm:ss
 
                     double pace;
                     bool metricPace = appsettings->value(this, GC_PACE, true).toBool();
@@ -787,11 +787,11 @@ RideSummaryWindow::htmlSummary()
 
     } else {
 
-        if (ridesummary && rideItem) {
-            // get zones to use via ride for ridesummary
+        if (ridesummary && rideItem && context->athlete->zones()) {
 
-            numzones = rideItem->numZones();
-            range = rideItem->zoneRange();
+            // get zones to use via ride for ridesummary
+            range = context->athlete->zones()->whichRange(rideItem->dateTime.date());
+            if (range > -1) numzones = context->athlete->zones()->numZones(range);
 
         // or for end of daterange plotted for daterange summary
         } else if (context->athlete->zones()) {
@@ -835,10 +835,11 @@ RideSummaryWindow::htmlSummary()
     int hrrange = -1;
 
     // get zones to use via ride for ridesummary
-    if (ridesummary && rideItem) {
+    if (ridesummary && rideItem && context->athlete->hrZones()) {
 
-        numhrzones = rideItem->numHrZones();
-        hrrange = rideItem->hrZoneRange();
+        // get zones to use via ride for ridesummary
+        hrrange = context->athlete->hrZones()->whichRange(rideItem->dateTime.date());
+        if (hrrange > -1) numhrzones = context->athlete->hrZones()->numZones(hrrange);
 
     // or for end of daterange plotted for daterange summary
     } else if (context->athlete->hrZones()) {
@@ -927,7 +928,7 @@ RideSummaryWindow::htmlSummary()
                         RideMetricPtr m = metrics.value(symbol);
                         if (!m) continue;
                         summary += "<td align=\"center\" valign=\"bottom\">" + m->name();
-                        if (m->internalName() == "Pace") { // pace is mm:ss
+                        if (m->internalName() == "Pace" || m->internalName() == "xPace") { // pace is mm:ss
 
                             summary += " (" + m->units(metricPace) + ")";
                         
@@ -958,7 +959,7 @@ RideSummaryWindow::htmlSummary()
                     QString s("<td align=\"center\">%1</td>");
                     if (m->units(useMetricUnits) == "seconds" || m->units(useMetricUnits) == tr("seconds"))
                         summary += s.arg(time_to_string(m->value(useMetricUnits)));
-                    else if (m->internalName() == "Pace") { // pace is mm:ss
+                    else if (m->internalName() == "Pace" || m->internalName() == "xPace") { // pace is mm:ss
 
                         double pace  = m->value(metricPace);
                         summary += s.arg(QTime(0,0,0,0).addSecs(pace*60).toString("mm:ss"));

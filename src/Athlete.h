@@ -52,7 +52,7 @@ class LTMSettings;
 class Routes;
 class AthleteDirectoryStructure;
 class RideAutoImportConfig;
-
+class RideCache;
 class Context;
 
 class Athlete : public QObject
@@ -116,24 +116,20 @@ class Athlete : public QObject
 #endif
         Context *context;
 
-        // The ride collection -- transitionary
-        QTreeWidget *treeWidget;
-        QTreeWidgetItem *allRides;
-        QTreeWidgetItem *allIntervals;
-        IntervalTreeView *intervalWidget;
-
-        // access to the ride collection
+        // ride collection
+        RideCache *rideCache;
         void selectRideFile(QString);
         void addRide(QString name, bool bSelect=true);
         void removeCurrentRide();
 
-        QTreeWidget *rideTreeWidget() { return treeWidget; }
-        const QTreeWidgetItem *allRideItems() { return allRides; }
+        // interval selection
+        QTreeWidgetItem *allIntervals;
+        IntervalTreeView *intervalWidget;
         const QTreeWidgetItem *allIntervalItems() { return allIntervals; }
-        const RideFile * currentRide();
         IntervalTreeView *intervalTreeWidget() { return intervalWidget; }
         QTreeWidgetItem *mutableIntervalItems() { return allIntervals; }
 
+        // xones etc
         void notifyZonesChanged() { zonesChanged(); }
         void notifySeasonsChanged() { seasonsChanged(); }
         void notifyNamedSearchesChanged() { namedSearchesChanged(); }
@@ -147,7 +143,6 @@ class Athlete : public QObject
         void namedSearchesChanged();
 
     public slots:
-        void rideTreeWidgetSelectionChanged();
         void intervalTreeWidgetSelectionChanged();
         void checkCPX(RideItem*ride);
         void updateRideFileIntervals();
@@ -169,6 +164,7 @@ class AthleteDirectoryStructure : public QObject {
             QDir imports(){ return QDir(myhome.absolutePath()+"/"+athlete_imports);}
             QDir records(){ return QDir(myhome.absolutePath()+"/"+athlete_records);}
             QDir downloads() { return QDir(myhome.absolutePath()+"/"+athlete_downloads);}
+            QDir fileBackup() { return QDir(myhome.absolutePath()+"/"+athlete_fileBackup);}
             QDir config() { return QDir(myhome.absolutePath()+"/"+athlete_config);}
             QDir cache() { return QDir(myhome.absolutePath()+"/"+athlete_cache);}
             QDir calendar() { return QDir(myhome.absolutePath()+"/"+athlete_calendar);}
@@ -180,6 +176,7 @@ class AthleteDirectoryStructure : public QObject {
             QString getActivitiesSubDir() {return athlete_activities; }
             QString getImportsSubDir() {return athlete_imports; }
             QString getDownloadsSubDir() {return athlete_downloads; }
+            QString getFileBackupSubDir() {return athlete_fileBackup;}
             QString getConfigSubDir() {return athlete_config; }
             QString getCacheSubDir() {return athlete_cache; }
             QString getWorkoutsSubDir() {return athlete_workouts; }
@@ -199,6 +196,7 @@ class AthleteDirectoryStructure : public QObject {
             QString athlete_imports;
             QString athlete_records;
             QString athlete_downloads;
+            QString athlete_fileBackup;
             QString athlete_config;
             QString athlete_cache;
             QString athlete_calendar;
