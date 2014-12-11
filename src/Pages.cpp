@@ -127,22 +127,32 @@ GeneralPage::GeneralPage(Context *context) : context(context)
     QLabel *wheelSizeLabel = new QLabel(tr("Wheelsize:"), this);
     int wheelSize = appsettings->value(this, GC_WHEELSIZE, 2100).toInt();
 
-    wheelSizeCombo = new QComboBox();
-    wheelSizeCombo->addItem(tr("Road/Cross (700C/622)")); // 2100mm
-    wheelSizeCombo->addItem(tr("Tri/TT (650C)")); // 1960mm
-    wheelSizeCombo->addItem(tr("Mountain (26\")")); // 1985mm
-    wheelSizeCombo->addItem(tr("BMX (20\")")); // 1750mm
+    rimSizeCombo = new QComboBox();
+    rimSizeCombo->addItems(WheelSize::RIM_SIZES);
 
-    switch (wheelSize) {
-    default:
-    case 2100 : wheelSizeCombo->setCurrentIndex(0); break;
-    case 1960 : wheelSizeCombo->setCurrentIndex(1); break;
-    case 1985 : wheelSizeCombo->setCurrentIndex(2); break;
-    case 1750 : wheelSizeCombo->setCurrentIndex(3); break;
-    }
+    tireSizeCombo = new QComboBox();
+    tireSizeCombo->addItems(WheelSize::TIRE_SIZES);
+
+
+    wheelSizeEdit = new QLineEdit(QString("%1").arg(wheelSize),this);
+    wheelSizeEdit->setInputMask("0000");
+    wheelSizeEdit->setFixedWidth(40);
+
+    QLabel *wheelSizeUnitLabel = new QLabel(tr("mm"), this);
+
+    QHBoxLayout *wheelSizeLayout = new QHBoxLayout();
+    wheelSizeLayout->addWidget(rimSizeCombo);
+    wheelSizeLayout->addWidget(tireSizeCombo);
+    wheelSizeLayout->addWidget(wheelSizeEdit);
+    wheelSizeLayout->addWidget(wheelSizeUnitLabel);
+
+    connect(rimSizeCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(calcWheelSize()));
+    connect(tireSizeCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(calcWheelSize()));
+    connect(wheelSizeEdit, SIGNAL(textEdited(QString)), this, SLOT(resetWheelSize()));
 
     configLayout->addWidget(wheelSizeLabel, 2,0, Qt::AlignRight);
-    configLayout->addWidget(wheelSizeCombo, 2,1, Qt::AlignLeft);
+    configLayout->addLayout(wheelSizeLayout, 2,1, Qt::AlignLeft);
+
 
     //
     // Garmin crap
@@ -253,6 +263,21 @@ GeneralPage::GeneralPage(Context *context) : context(context)
 }
 
 void
+GeneralPage::calcWheelSize()
+{
+   int diameter = WheelSize::calcPerimeter(rimSizeCombo->currentIndex(), tireSizeCombo->currentIndex());
+   if (diameter>0)
+        wheelSizeEdit->setText(QString("%1").arg(diameter));
+}
+
+void
+GeneralPage::resetWheelSize()
+{
+   rimSizeCombo->setCurrentIndex(0);
+   tireSizeCombo->setCurrentIndex(0);
+}
+
+void
 GeneralPage::saveClicked()
 {
     // Language
@@ -267,11 +292,7 @@ GeneralPage::saveClicked()
     appsettings->setValue(GC_CRANKLENGTH, crankLengthCombo->currentText());
 
     // save wheel size
-    static const int wheelSizes[] = {
-        2100, 1960, 1985, 1750
-    };
-
-    appsettings->setValue(GC_WHEELSIZE, wheelSizes[wheelSizeCombo->currentIndex()]);
+    appsettings->setValue(GC_WHEELSIZE, wheelSizeEdit->text().toInt());
 
     // Bike score estimation
     appsettings->setValue(GC_WORKOUTDIR, workoutDirectory->text());
@@ -565,37 +586,6 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
     grid->addWidget(wiPass, row, 1, Qt::AlignLeft | Qt::AlignVCenter);
 
     //////////////////////////////////////////////////
-    // Zeo Sleep Data
-
-    QLabel *zeo = new QLabel(tr("Zeo Sleep Data"));
-    zeo->setFont(current);
-
-    QLabel *zeourlLabel = new QLabel(tr("Website"));
-    QLabel *zeouserLabel = new QLabel(tr("User"));
-    QLabel *zeopassLabel = new QLabel(tr("Password"));
-
-    zeoURL = new QLineEdit(this);
-    zeoURL->setText(appsettings->cvalue(context->athlete->cyclist, GC_ZEOURL, "http://app-pro.myzeo.com:8080/").toString());
-
-    zeoUser = new QLineEdit(this);
-    zeoUser->setText(appsettings->cvalue(context->athlete->cyclist, GC_ZEOUSER, "").toString());
-
-    zeoPass = new QLineEdit(this);
-    zeoPass->setEchoMode(QLineEdit::Password);
-    zeoPass->setText(appsettings->cvalue(context->athlete->cyclist, GC_ZEOPASS, "").toString());
-
-    grid->addWidget(zeo, ++row, 0);
-
-    grid->addWidget(zeourlLabel, ++row, 0);
-    grid->addWidget(zeoURL, row, 1, 0);
-
-    grid->addWidget(zeouserLabel, ++row, 0);
-    grid->addWidget(zeoUser, row, 1, Qt::AlignLeft | Qt::AlignVCenter);
-
-    grid->addWidget(zeopassLabel, ++row, 0);
-    grid->addWidget(zeoPass, row, 1, Qt::AlignLeft | Qt::AlignVCenter);
-
-    //////////////////////////////////////////////////
     // Web Calendar
 
     QLabel *webcal = new QLabel(tr("Web Calendar"));
@@ -806,9 +796,6 @@ CredentialsPage::saveClicked()
     appsettings->setCValue(context->athlete->cyclist, GC_WIURL, wiURL->text());
     appsettings->setCValue(context->athlete->cyclist, GC_WIUSER, wiUser->text());
     appsettings->setCValue(context->athlete->cyclist, GC_WIKEY, wiPass->text());
-    appsettings->setCValue(context->athlete->cyclist, GC_ZEOURL, zeoURL->text());
-    appsettings->setCValue(context->athlete->cyclist, GC_ZEOUSER, zeoUser->text());
-    appsettings->setCValue(context->athlete->cyclist, GC_ZEOPASS, zeoPass->text());
     appsettings->setCValue(context->athlete->cyclist, GC_WEBCAL_URL, webcalURL->text());
 
     // escape the at character

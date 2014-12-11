@@ -28,6 +28,7 @@
 #include <QVector>
 
 class RideFile;
+class RideCache;
 class Context;
 
 Q_DECLARE_METATYPE(RideItem*)
@@ -40,6 +41,8 @@ class RideItem : public QObject
 
 
     protected:
+
+        friend class ::RideCache;
 
         // ridefile
         RideFile *ride_;
@@ -70,6 +73,9 @@ class RideItem : public QObject
         bool isstale;     // metric data is out of date and needs recomputing
         bool isedit;      // is being edited at the moment
 
+        // set from another, e.g. during load of rideDB.json
+        void setFrom(RideItem&);
+
         // get at the data
         QString path;
         QString fileName;
@@ -79,12 +85,14 @@ class RideItem : public QObject
         unsigned long fingerprint; // zones
         unsigned long crc, timestamp; // file content
         int dbversion; // metric version
+        double weight; // what weight was used ?
 
         // access to the cached data !
         RideFile *ride(bool open=true);
         QVector<double> &metrics() { return metrics_; }
         QMap<QString, QString> &metadata() { return metadata_; }
         const QStringList errors() { return errors_; }
+        double getWeight();
 
         // ride() will open the ride if it isn't already when open=true
         // if we pass false then it will just return ride_ so we can
@@ -93,6 +101,7 @@ class RideItem : public QObject
         bool isOpen();
 
         // create and destroy
+        RideItem();
         RideItem(RideFile *ride, Context *context);
         RideItem(QString path, QString fileName, QDateTime &dateTime, Context *context);
         RideItem(RideFile *ride, QDateTime &dateTime, Context *context);
@@ -103,6 +112,9 @@ class RideItem : public QObject
         bool checkStale(); // check if we need to refresh
         bool isStale() { return isstale; }
         bool isRun() { return ride_ ? ride_->isRun() : false; }
+
+        // refresh when stale
+        void refresh();
 
         // get/set
         void setRide(RideFile *);

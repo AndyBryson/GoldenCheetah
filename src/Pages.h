@@ -77,9 +77,11 @@ class GeneralPage : public QWidget
         QComboBox *langCombo;
         QComboBox *unitCombo;
         QComboBox *crankLengthCombo;
-        QComboBox *wheelSizeCombo;
+        QComboBox *rimSizeCombo;
+        QComboBox *tireSizeCombo;
         QComboBox *wbalForm;
         QCheckBox *garminSmartRecord;
+        QLineEdit *wheelSizeEdit;
         QLineEdit *garminHWMarkedit;
         QLineEdit *hystedit;
         QLineEdit *athleteDirectory;
@@ -100,6 +102,10 @@ class GeneralPage : public QWidget
         QCheckBox *showSBToday;
         QIntValidator *perfManSTSavgValidator;
         QIntValidator *perfManLTSavgValidator;
+
+    private slots:
+        void calcWheelSize();
+        void resetWheelSize();
 };
 
 class RiderPage : public QWidget
@@ -192,10 +198,6 @@ class CredentialsPage : public QScrollArea
         QLineEdit *wiURL; // url for withings
         QLineEdit *wiUser;
         QLineEdit *wiPass;
-
-        QLineEdit *zeoURL; // url for myzeo
-        QLineEdit *zeoUser;
-        QLineEdit *zeoPass;
 
         QLineEdit *webcalURL; // url for webcal calendar (read only, TP.com, Google Calendar)
 

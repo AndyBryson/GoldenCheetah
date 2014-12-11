@@ -29,11 +29,17 @@
 #include "HrZones.h"
 #include "PaceZones.h"
 
+#include "JsonRideFile.h" // for DATETIME_FORMAT
+
 RideCache::RideCache(Context *context) : context(context)
 {
     progress_ = 100;
     exiting = false;
-    configChanged();
+
+    // get the new zone configuration fingerprint
+    fingerprint = static_cast<unsigned long>(context->athlete->zones()->getFingerprint(context))
+                  + static_cast<unsigned long>(context->athlete->paceZones()->getFingerprint())
+                  + static_cast<unsigned long>(context->athlete->hrZones()->getFingerprint());
 
     // set the list
     // populate ride list
@@ -48,18 +54,27 @@ RideCache::RideCache(Context *context) : context(context)
         }
     }
 
-
     // load the store - will unstale once cache restored
     load();
 
+    // now refresh just in case.
+    refresh();
+
     // do we have any stale items ?
-    //XXX moved to tab during testing XXX refresh();
     connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+
+    // future watching
+    connect(&watcher, SIGNAL(finished()), context, SLOT(notifyRefreshEnd()));
+    connect(&watcher, SIGNAL(started()), context, SLOT(notifyRefreshStart()));
+    connect(&watcher, SIGNAL(progressValueChanged(int)), this, SLOT(progressing(int)));
 }
 
 RideCache::~RideCache()
 {
     exiting = true;
+
+    // cancel any refresh that may be running
+    cancel();
 
     // save to store
     save();
@@ -106,12 +121,14 @@ RideCache::addRide(QString name, bool dosignal)
     qSort(rides_); // sort by date
 
     // refresh metrics for *this ride only* 
-    // XXX not implemented yet XXX
+    last->refresh();
 
     if (dosignal) context->notifyRideAdded(last); // here so emitted BEFORE rideSelected is emitted!
 
+#ifdef GC_HAVE_INTERVALS
     //Search routes
     context->athlete->routes->searchRoutesInRide(last->ride());
+#endif
 
     // notify everyone to select it
     context->ride = last;
@@ -203,76 +220,159 @@ RideCache::removeCurrentRide()
     context->notifyRideSelected(select);
 }
 
-// work with "rideDB.json" XXX not implemented yet
-void RideCache::load() {}
-void RideCache::save() {}
+// Escape special characters (JSON compliance)
+static QString protect(const QString string)
+{
+    QString s = string;
+    s.replace("\\", "\\\\"); // backslash
+    s.replace("\"", "\\\""); // quote
+    s.replace("\t", "\\t");  // tab
+    s.replace("\n", "\\n");  // newline
+    s.replace("\r", "\\r");  // carriage-return
+    s.replace("\b", "\\b");  // backspace
+    s.replace("\f", "\\f");  // formfeed
+    s.replace("/", "\\/");   // solidus
+
+    // add a trailing space to avoid conflicting with GC special tokens
+    s += " "; 
+
+    return s;
+}
+
+// NOTE:
+// We use a bison parser to reduce memory
+// overhead and (believe it or not) simplicity
+// RideCache::load() -- see RideDB.y
+
+// save cache to disk, "cache/rideDB.json"
+void RideCache::save()
+{
+
+    // now save data away
+    QFile rideDB(QString("%1/rideDB.json").arg(context->athlete->home->cache().canonicalPath()));
+    if (rideDB.open(QFile::WriteOnly)) {
+
+        const RideMetricFactory &factory = RideMetricFactory::instance();
+
+        // ok, lets write out the cache
+        QTextStream stream(&rideDB);
+        stream.setCodec("UTF-8");
+        stream.setGenerateByteOrderMark(true);
+
+        stream << "{" ;
+        stream << "\n  \"VERSION\":\"1.0\",";
+        stream << "\n  \"RIDES\":[\n";
+
+        bool firstRide = true;
+        foreach(RideItem *item, rides()) {
+
+            // skip if not loaded/refreshed, a special case
+            // if saving during an initial refresh
+            if (item->metrics().count() == 0) continue;
+
+            // comma separate each ride
+            if (!firstRide) stream << ",\n";
+            firstRide = false;
+
+            // basic ride information
+            stream << "\t{\n";
+            stream << "\t\t\"filename\":\"" <<item->fileName <<"\",\n";
+            stream << "\t\t\"date\":\"" <<item->dateTime.toUTC().toString(DATETIME_FORMAT) << "\",\n";
+            stream << "\t\t\"fingerprint\":\"" <<item->fingerprint <<"\",\n";
+            stream << "\t\t\"crc\":\"" <<item->crc <<"\",\n";
+            stream << "\t\t\"timestamp\":\"" <<item->timestamp <<"\",\n";
+            stream << "\t\t\"dbversion\":\"" <<item->dbversion <<"\",\n";
+            stream << "\t\t\"weight\":\"" <<item->weight <<"\",\n";
+
+            // pre-computed metrics
+            stream << "\n\t\t\"METRICS\":{\n";
+
+            bool firstMetric = true;
+            for(int i=0; i<factory.metricCount(); i++) {
+                QString name = factory.metricName(i);
+                int index = factory.rideMetric(name)->index();
+
+                if (!firstMetric) stream << ",\n";
+                firstMetric = false;
+
+                stream << "\t\t\t\"" << name << "\":\"" << QString("%1").arg(item->metrics()[index], 0, 'f', 5) <<"\"";
+            }
+            stream << "\n\t\t}";
+
+            // pre-loaded metadata
+            if (item->metadata().count()) {
+
+                stream << ",\n\t\t\"TAGS\":{\n";
+
+                QMap<QString,QString>::const_iterator i;
+                for (i=item->metadata().constBegin(); i != item->metadata().constEnd(); i++) {
+
+                    stream << "\t\t\t\"" << i.key() << "\":\"" << protect(i.value()) << "\"";
+                    if (i+1 != item->metadata().constEnd()) stream << ",\n";
+                    else stream << "\n";
+                }
+
+                // end of the tags
+                stream << "\n\t\t}";
+
+            }
+
+            // end of the ride
+            stream << "\n\t}";
+        }
+
+        stream << "\n  ]\n}";
+
+        rideDB.close();
+    }
+}
+
+void
+itemRefresh(RideItem *&item)
+{
+    // need parser to be reentrant !item->refresh();
+    if (item->isstale) item->refresh();
+}
+
+void
+RideCache::progressing(int value)
+{
+    // we're working away, notfy everyone where we got
+    progress_ = 100.0f * (double(value) / double(watcher.progressMaximum()));
+    context->notifyRefreshUpdate();
+}
+
+// cancel the refresh map, we're about to exit !
+void
+RideCache::cancel()
+{
+    if (future.isRunning()) {
+        future.cancel();
+        future.waitForFinished();
+    }
+}
 
 // check if we need to refresh the metrics then start the thread if needed
 void
 RideCache::refresh()
 {
-
     // already on it !
-    if (isRunning()) return;
+    if (future.isRunning()) return;
 
-
-    bool stale = false;
+    // how many need refreshing ?
+    int staleCount = 0;
 
     foreach(RideItem *item, rides_) {
 
         // ok set stale so we refresh
-        if (item->checkStale()) stale = true;
+        if (item->checkStale()) 
+            staleCount++;
     }
 
     // start if there is work to do
-    if (stale) start();
-}
-
-void RideCache::run()
-{
-
-    bool haveStale = true;
-
-    do {
-
-        context->notifyRefreshStart();
-
-        // run through each ride and refresh cache if needed
-        foreach(RideItem *item, rides()) {
-
-            // lets update metrics and meta etc
-            // XXX NO REFRESH CODE YET XXX
-            // XXX SIMULATE WITH A SLEEP XXX
-            msleep(10);
-
-            // now clear stale flag
-            item->isstale = false;
-
-            // update fingerprints etc, crc done above
-            item->fingerprint = fingerprint;
-            item->dbversion = DBSchemaVersion;
-            item->timestamp = QDateTime::currentDateTime().toTime_t();
-
-            // update progress
-            progress_ = 100.0f * ((rides_.indexOf(item)+1) / double(rides_.count()));
-
-            // update progress bar
-            context->notifyRefreshUpdate();
-            QApplication::processEvents();
-        }
-
-        context->notifyRefreshEnd();
-
-        // trap any changes after we swept through
-        haveStale=false;
-        if (!exiting) {
-            foreach(RideItem *item, rides_) {
-                if (item->isstale) {
-                    haveStale = true;
-                    break;
-                }
-            }
-        }
-
-    } while (!exiting && haveStale);
+    // and future watcher can notify of updates
+    if (staleCount)  {
+        future = QtConcurrent::map(rides_, itemRefresh);
+        watcher.setFuture(future);
+    }
 }

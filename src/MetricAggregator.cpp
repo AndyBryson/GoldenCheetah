@@ -315,7 +315,7 @@ void MetricAggregator::refreshMetrics(QDateTime forceAfterThisDate)
         }
 
         // now do intervals
-        refreshBestIntervals();
+        //refreshBestIntervals();
 
 #endif
 
@@ -515,7 +515,7 @@ bool MetricAggregator::importRide(QDir /* no longer used ? */, RideFile *ride, Q
 
     dbaccess->importRide(&summaryMetric, ride, color, fingerprint, modify);
 #ifdef GC_HAVE_LUCENE
-    context->athlete->lucene->importRide(&summaryMetric, ride, color, fingerprint, modify);
+    context->athlete->lucene->importRide(ride);
 #endif
 
     return true;
@@ -570,12 +570,6 @@ bool MetricAggregator::importInterval(IntervalItem *interval, QString type, QStr
     dbaccess->importInterval(&summaryMetric, interval, type, group, color, fingerprint, modify);
 
     return true;
-}
-
-void
-MetricAggregator::importMeasure(SummaryMetrics *sm)
-{
-    dbaccess->importMeasure(sm);
 }
 
 /*----------------------------------------------------------------------
@@ -668,25 +662,6 @@ MetricAggregator::getAllMetricsFor(QString filename)
     dbaccess->getRide(filename, results, color);
     dbaccess->connection().commit();
     return results;
-}
-
-QList<SummaryMetrics>
-MetricAggregator::getAllMeasuresFor(DateRange dr)
-{
-    return getAllMeasuresFor(QDateTime(dr.from, QTime(0,0,0)), QDateTime(dr.to, QTime(23,59,59)));
-}
-
-QList<SummaryMetrics>
-MetricAggregator::getAllMeasuresFor(QDateTime start, QDateTime end)
-{
-    QList<SummaryMetrics> empty;
-
-    // only if we have established a connection to the database
-    if (dbaccess == NULL) {
-        qDebug()<<"lost db connection?";
-        return empty;
-    }
-    return dbaccess->getAllMeasuresFor(start, end);
 }
 
 SummaryMetrics

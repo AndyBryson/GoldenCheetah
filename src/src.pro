@@ -21,7 +21,7 @@ LIBS += -lm $${LIBZ_LIBS}
 #            5.2.0 or higher
 #
 ## common modules
-QT += xml sql network script svg
+QT += xml sql network script svg concurrent
 
 lessThan(QT_MAJOR_VERSION, 5) {
 
@@ -430,6 +430,7 @@ HEADERS += \
         SmfRideFile.h \
         SrdRideFile.h \
         SrmRideFile.h \
+        Statistic.h \
         StressCalculator.h \
         SummaryMetrics.h \
         SummaryWindow.h \
@@ -455,13 +456,12 @@ HEADERS += \
         WorkoutPlotWindow.h \
         WorkoutWizard.h \
         WPrime.h \
-        ZeoDownload.h \
         Zones.h \
         ZoneScaleDraw.h \
         ../qtsolutions/json/mvjson.h
 
-YACCSOURCES += JsonRideFile.y WithingsParser.y
-LEXSOURCES  += JsonRideFile.l WithingsParser.l
+LEXSOURCES  += JsonRideFile.l WithingsParser.l RideDB.l
+YACCSOURCES += JsonRideFile.y WithingsParser.y RideDB.y
 
 #-t turns on debug, use with caution
 #QMAKE_YACCFLAGS = -t -d
@@ -652,6 +652,7 @@ SOURCES += \
         SmfRideFile.cpp \
         SrdRideFile.cpp \
         SrmRideFile.cpp \
+        Statistic.cpp \
         StressCalculator.cpp \
         SummaryMetrics.cpp \
         SummaryWindow.cpp \
@@ -681,7 +682,6 @@ SOURCES += \
         WorkoutPlotWindow.cpp \
         WorkoutWizard.cpp \
         WPrime.cpp \
-        ZeoDownload.cpp \
         Zones.cpp \
         main.cpp \
         ../qtsolutions/json/mvjson.cpp
