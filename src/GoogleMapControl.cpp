@@ -30,6 +30,7 @@
 #include "Colors.h"
 #include "Units.h"
 #include "TimeUtils.h"
+#include "HelpWhatsThis.h"
 
 // overlay helper
 #include "TabView.h"
@@ -38,9 +39,10 @@
 #include <QDebug>
 
 GoogleMapControl::GoogleMapControl(Context *context) : GcChartWindow(context), context(context), 
-                                                       range(-1), current(NULL), firstShow(true)
+                                                       range(-1), current(NULL), firstShow(true), stale(false)
 {
     setControls(NULL);
+
     setContentsMargins(0,0,0,0);
     layout = new QVBoxLayout();
     layout->setSpacing(0);
@@ -55,6 +57,9 @@ GoogleMapControl::GoogleMapControl(Context *context) : GcChartWindow(context), c
     view->setAcceptDrops(false);
     layout->addWidget(view);
 
+    HelpWhatsThis *help = new HelpWhatsThis(view);
+    view->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_Map));
+
     webBridge = new WebBridge(context, this);
 
     // put a helper on the screen for mouse over intervals...
@@ -66,13 +71,14 @@ GoogleMapControl::GoogleMapControl(Context *context) : GcChartWindow(context), c
     //
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
     connect(view->page()->mainFrame(), SIGNAL(javaScriptWindowObjectCleared()), this, SLOT(updateFrame()));
+    connect(context, SIGNAL(rideChanged(RideItem*)), this, SLOT(forceReplot()));
     connect(context, SIGNAL(intervalsChanged()), webBridge, SLOT(intervalsChanged()));
     connect(context, SIGNAL(intervalSelected()), webBridge, SLOT(intervalsChanged()));
     connect(context, SIGNAL(intervalZoom(IntervalItem*)), this, SLOT(zoomInterval(IntervalItem*)));
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 
     first = true;
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 GoogleMapControl::~GoogleMapControl()
@@ -81,12 +87,19 @@ GoogleMapControl::~GoogleMapControl()
 }
 
 void 
-GoogleMapControl::configChanged()
+GoogleMapControl::configChanged(qint32)
 {
     setProperty("color", GColor(CPLOTBACKGROUND));
 #ifndef Q_OS_MAC
     overlayIntervals->setStyleSheet(TabView::ourStyleSheet());
 #endif
+}
+
+void
+GoogleMapControl::forceReplot()
+{
+    stale=true;
+    rideSelected();
 }
 
 void
@@ -100,8 +113,13 @@ GoogleMapControl::rideSelected()
 
     // skip display if data already drawn or invalid
     if (myRideItem == NULL || !amVisible()) return;
-    if (ride == current || !ride || !ride->ride()) return;
-    else current = ride;
+
+    // nothing to plot
+    if (!ride || !ride->ride()) return;
+    else if (!stale && ride == current) return;
+    
+    // remember what we last plotted
+    current = ride;
 
     // Route metadata ...
     setSubTitle(ride->ride()->getTag("Route", tr("Route")));
@@ -109,6 +127,7 @@ GoogleMapControl::rideSelected()
     // default to ..
     range = -1;
     rideCP = 300;
+    stale = false;
 
     if (context->athlete->zones()) {
         range = context->athlete->zones()->whichRange(ride->dateTime.date());

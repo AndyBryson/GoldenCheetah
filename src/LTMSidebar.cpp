@@ -20,8 +20,11 @@
 #include "MainWindow.h"
 #include "Context.h"
 #include "Athlete.h"
+#include "RideCache.h"
 #include "Settings.h"
+#include "Colors.h"
 #include "Units.h"
+#include "HelpWhatsThis.h"
 
 #include <QApplication>
 #include <QWebView>
@@ -45,12 +48,15 @@
 #include "Lucene.h"
 #endif
 
+// ride cache
+#include "RideCache.h"
+#include "RideItem.h"
+#include "Specification.h"
+
 // metadata support
 #include "RideMetadata.h"
 #include "SpecialFields.h"
 
-#include "MetricAggregator.h"
-#include "SummaryMetrics.h"
 
 LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context(context), active(false),
                                            isqueryfilter(false), isautofilter(false)
@@ -86,7 +92,10 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
 #endif
     seasonsWidget->addWidget(dateRangeTree);
 
-    // events
+    HelpWhatsThis *helpDateRange = new HelpWhatsThis(dateRangeTree);
+    dateRangeTree->setWhatsThis(helpDateRange->getWhatsThisText(HelpWhatsThis::SideBarTrendsView_DateRanges));
+
+     // events
     eventsWidget = new GcSplitterItem(tr("Events"), iconFromPNG(":images/sidebar/bookmark.png"), this);
     QAction *moreEventAct = new QAction(iconFromPNG(":images/sidebar/extra.png"), tr("Menu"), this);
     eventsWidget->addAction(moreEventAct);
@@ -112,7 +121,11 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
     cde = QStyleFactory::create(OS_STYLE);
     eventTree->verticalScrollBar()->setStyle(cde);
 #endif
+
     eventsWidget->addWidget(eventTree);
+
+    HelpWhatsThis *helpEventsTree = new HelpWhatsThis(eventTree);
+    eventTree->setWhatsThis(helpEventsTree->getWhatsThisText(HelpWhatsThis::SideBarTrendsView_Events));
 
     // charts
     chartsWidget = new GcSplitterItem(tr("Charts"), iconFromPNG(":images/sidebar/charts.png"), this);
@@ -142,6 +155,9 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
     chartTree->verticalScrollBar()->setStyle(cde);
 #endif
     chartsWidget->addWidget(chartTree);
+
+    HelpWhatsThis *helpChartsTree = new HelpWhatsThis(chartTree);
+    chartTree->setWhatsThis(helpChartsTree->getWhatsThisText(HelpWhatsThis::SideBarTrendsView_Charts));
 
     // setup for first time
     presetsChanged();
@@ -179,6 +195,10 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
     // we cast the filter tree and this because we use the same constructor XXX fix this!!!
     filterSplitter = new GcSubSplitter(Qt::Vertical, (GcSplitterControl*)filterTree, (GcSplitter*)this, true);
     filtersWidget->addWidget(filterSplitter);
+
+    HelpWhatsThis *helpFilterTree = new HelpWhatsThis(filterTree);
+    filterTree->setWhatsThis(helpFilterTree->getWhatsThisText(HelpWhatsThis::SideBarTrendsView_Filter));
+
 #endif
 
     seasons = context->athlete->seasons;
@@ -186,7 +206,7 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
     resetFilters(); // reset the filters list
 
     autoFilterMenu = new QMenu(tr("Autofilter"),this);
-    configChanged(); // will reset the metric tree and the autofilters
+    configChanged(CONFIG_APPEARANCE); // will reset the metric tree and the autofilters
 
     splitter = new GcSplitter(Qt::Vertical);
     splitter->addWidget(seasonsWidget); // goes alongside events
@@ -206,6 +226,9 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
     summary->setAcceptDrops(false);
 
     summaryWidget->addWidget(summary);
+
+    HelpWhatsThis *helpSummary = new HelpWhatsThis(summary);
+    summary->setWhatsThis(helpSummary->getWhatsThisText(HelpWhatsThis::SideBarTrendsView_Summary));
 
     QFont defaultFont; // mainwindow sets up the defaults.. we need to apply
     summary->settings()->setFontSize(QWebSettings::DefaultFontSize, defaultFont.pointSize());
@@ -227,10 +250,7 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
     connect(eventTree,SIGNAL(customContextMenuRequested(const QPoint &)), this, SLOT(eventPopup(const QPoint &)));
 
     // GC signal
-#ifdef GC_HAVE_LUCENE
-    connect(context->athlete->metricDB, SIGNAL(dataChanged()), this, SLOT(autoFilterRefresh()));
-#endif
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
     connect(seasons, SIGNAL(seasonsChanged()), this, SLOT(resetSeasons()));
     connect(context->athlete, SIGNAL(namedSearchesChanged()), this, SLOT(resetFilters()));
 
@@ -239,7 +259,7 @@ LTMSidebar::LTMSidebar(Context *context) : QWidget(context->mainWindow), context
     connect(chartTree,SIGNAL(itemSelectionChanged()), this, SLOT(presetTreeWidgetSelectionChanged()));
 
     // setup colors
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 void
@@ -270,7 +290,7 @@ LTMSidebar::presetTreeWidgetSelectionChanged()
 }
 
 void
-LTMSidebar::configChanged()
+LTMSidebar::configChanged(qint32)
 {
     seasonsWidget->setStyleSheet(GCColor::stylesheet());
     eventsWidget->setStyleSheet(GCColor::stylesheet());
@@ -278,7 +298,6 @@ LTMSidebar::configChanged()
 #ifdef GC_HAVE_LUCENE
     filtersWidget->setStyleSheet(GCColor::stylesheet());
 #endif
-
     setAutoFilterMenu();
 
     // set or reset the autofilter widgets
@@ -631,12 +650,15 @@ LTMSidebar::autoFilterChanged()
             item->addWidget(tree);
             filterSplitter->addWidget(item);
 
+            HelpWhatsThis *helpFilterTree = new HelpWhatsThis(tree);
+            tree->setWhatsThis(helpFilterTree->getWhatsThisText(HelpWhatsThis::SideBarTrendsView_Filter));
+
             // Convert field names for Internal to Display (to work with the translated values)
             SpecialFields sp;
             // update the values available in the tree
             foreach(FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
                 if (sp.displayName(field.name) == action->text()) {
-                    foreach (QString value, context->athlete->metricDB->db()->getDistinctValues(field)) {
+                    foreach (QString value, context->athlete->rideCache->getDistinctValues(field.name)) {
                         if (value == "") value = tr("(blank)");
                         QTreeWidgetItem *add = new QTreeWidgetItem(tree->invisibleRootItem(), 0);
 
@@ -796,7 +818,7 @@ LTMSidebar::autoFilterRefresh()
         // update the values available in the tree
         foreach(FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
             if (field.name == fieldname) {
-                foreach (QString value, context->athlete->metricDB->db()->getDistinctValues(field)) {
+                foreach (QString value, context->athlete->rideCache->getDistinctValues(field.name)) {
                     if (value == "") value = tr("(blank)");
                     QTreeWidgetItem *add = new QTreeWidgetItem(tree->invisibleRootItem(), 0);
 
@@ -813,7 +835,6 @@ void
 LTMSidebar::autoFilterSelectionChanged()
 {
     // only fetch when we know we need to filter ..
-    QList<SummaryMetrics> allRides;
     QSet<QString> matched;
 
     // assume nothing to do...
@@ -831,29 +852,26 @@ LTMSidebar::autoFilterSelectionChanged()
             // we have a selection!
             if (isautofilter == false) {
                 isautofilter = true;
-                allRides = context->athlete->metricDB->getAllMetricsFor(QDateTime(), QDateTime());
-                foreach(SummaryMetrics x, allRides) matched << x.getFileName();
+                foreach(RideItem *x, context->athlete->rideCache->rides()) matched << x->fileName;
             }
 
-            // translate fields back from Display Name to internal Name !
-            SpecialFields sp;
-
             // what is the field?
-            QString fieldname = sp.internalName(item->splitterHandle->title());
+            QString fieldname = item->splitterHandle->title();
 
             // what values are highlighted
             QStringList values;
-            foreach (QTreeWidgetItem *wi, tree->selectedItems()) values << sp.internalName(wi->text(0));
+            foreach (QTreeWidgetItem *wi, tree->selectedItems()) 
+                values << wi->text(0);
 
             // get a set of filenames that match
             QSet<QString> matches;
-            foreach(SummaryMetrics x, allRides) {
+            foreach(RideItem *x, context->athlete->rideCache->rides()) {
 
                 // we use XXX___XXX___XXX because it is not likely to exist
-                QString value = x.getText(fieldname, "XXX___XXX___XXX");
+                QString value = x->getText(fieldname, "XXX___XXX___XXX");
                 if (value == "") value = tr("(blank)"); // match blanks!
 
-                if (values.contains(value)) matches << x.getFileName();
+                if (values.contains(value)) matches << x->fileName;
             }
 
             // now remove items from the matched list that
@@ -1181,8 +1199,8 @@ LTMSidebar::setSummary(DateRange dateRange)
         from = newFrom;
         to = newTo;
 
-        // lets get the metrics
-        QList<SummaryMetrics>results = context->athlete->metricDB->getAllMetricsFor(QDateTime(from,QTime(0,0,0)), QDateTime(to, QTime(24,59,59)));
+        Specification spec;
+        spec.setDateRange(DateRange(from,to));
 
         // foreach of the metrics get an aggregated value
         // header of summary
@@ -1235,7 +1253,7 @@ LTMSidebar::setSummary(DateRange dateRange)
                 const RideMetric *metric = RideMetricFactory::instance().rideMetric(metricname);
 
                 QStringList empty; // filter list not used at present
-                QString value = SummaryMetrics::getAggregated(context, metricname, results, empty, false, context->athlete->useMetricUnits);
+                QString value = context->athlete->rideCache->getAggregate(metricname, spec, context->athlete->useMetricUnits);
 
                 // Maximum Max and Average Average looks nasty, remove from name for display
                 QString s = metric ? metric->name().replace(QRegExp(tr("^(Average|Max) ")), "") : "unknown";

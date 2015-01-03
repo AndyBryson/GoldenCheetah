@@ -72,22 +72,6 @@ void MetricAggregator::refreshMetrics()
 {
     refreshMetrics(QDateTime());
 }
-QStringList
-MetricAggregator::allActivityFilenames()
-{
-    QStringList returning;
-
-    // get a Hash map of statistic records and timestamps
-    QSqlQuery query(dbaccess->connection());
-    bool rc = query.exec("SELECT filename FROM metrics ORDER BY ride_date;");
-    while (rc && query.next()) {
-        QString filename = query.value(0).toString();
-        returning << filename;
-    }
-
-    return returning;
-}
-
 
 // Refresh not up to date metrics and metrics after date
 void MetricAggregator::refreshMetrics(QDateTime forceAfterThisDate)
@@ -189,7 +173,8 @@ void MetricAggregator::refreshMetrics(QDateTime forceAfterThisDate)
         long elapsedtime = elapsed.elapsed();
         if ((!forceAfterThisDate.isNull() || first || elapsedtime > 6000) && bar == NULL) {
             bar = new GProgressDialog(title, 0, filenames.count(), context->mainWindow->init, context->mainWindow);
-            bar->show(); // lets hide until elapsed time is > 6 seconds
+            // bar->show(); // lets hide until elapsed time is > 6 seconds
+            bar->hide();
 
             // lets make sure it goes to the center!
             QApplication::processEvents();
@@ -219,7 +204,7 @@ void MetricAggregator::refreshMetrics(QDateTime forceAfterThisDate)
 
             // but still update if we're doing this because settings changed not the ride!
             QString fullPath =  QString(context->athlete->home->activities().absolutePath()) + "/" + name;
-            if ((crc == 0 || crc != DBAccess::computeFileCRC(fullPath)) ||
+            if ((crc == 0 || crc != RideFile::computeFileCRC(fullPath)) ||
                 zoneFingerPrint != fingerprint ||
                 (!forceAfterThisDate.isNull() && name >= forceAfterThisDate.toString("yyyy_MM_dd_hh_mm_ss"))) {
 
@@ -363,9 +348,60 @@ void MetricAggregator::refreshMetrics(QDateTime forceAfterThisDate)
 }
 
 #ifdef GC_HAVE_INTERVALS
-bool greaterThan(const SummaryBest &s1, const SummaryBest &s2)
+bool greaterThan(const AthleteBest &s1, const AthleteBest &s2)
 {
      return s1.nvalue > s2.nvalue;
+}
+
+bool MetricAggregator::importInterval(IntervalItem *interval, QString type, QString group, unsigned long fingerprint, bool modify)
+{
+    SummaryMetrics summaryMetric;
+
+    const RideFile* ride = interval->ride;
+
+    RideFile subride(const_cast<RideFile*>(ride));
+    int start = ride->timeIndex(interval->start);
+    int end = ride->timeIndex(interval->stop);
+    for (int i = start; i <= end; ++i) {
+        const RideFilePoint *p = ride->dataPoints()[i];
+        subride.appendPoint(p->secs, p->cad, p->hr, p->km, p->kph, p->nm,
+                      p->watts, p->alt, p->lon, p->lat, p->headwind, p->slope, p->temp, p->lrbalance,
+                      p->lte, p->rte, p->lps, p->rps, p->smo2, p->thb,
+                      p->rvert, p->rcad, p->rcontact, 0);
+
+        // derived data
+        RideFilePoint *l = subride.dataPoints().last();
+        l->np = p->np;
+        l->xp = p->xp;
+        l->apower = p->apower;
+    }
+
+    summaryMetric.setFileName(ride->getTag("Filename",""));
+    summaryMetric.setRideDate(ride->startTime());
+    summaryMetric.setId(ride->id());
+    summaryMetric.setIsRun(ride->isRun());
+
+    const RideMetricFactory &factory = RideMetricFactory::instance();
+    QStringList metrics;
+
+    for (int i = 0; i < factory.metricCount(); ++i)
+        metrics << factory.metricName(i);
+
+    // compute all the metrics
+    QHash<QString, RideMetricPtr> computed = RideMetric::computeMetrics(context, &subride, context->athlete->zones(), context->athlete->hrZones(), metrics);
+
+    // get metrics into summaryMetric QMap
+    for(int i = 0; i < factory.metricCount(); ++i) {
+        // check for override
+        summaryMetric.setForSymbol(factory.metricName(i), computed.value(factory.metricName(i))->value(true));
+    }
+
+    // what color will this ride be?
+    QColor color = colorEngine->colorFor(ride->getTag(context->athlete->rideMetadata()->getColorField(), ""));
+
+    dbaccess->importInterval(&summaryMetric, interval, type, group, color, fingerprint, modify);
+
+    return true;
 }
 
 void
@@ -385,7 +421,7 @@ MetricAggregator::refreshBestIntervals()
     //                   XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX
     QList<SummaryMetrics> allRides = context->athlete->metricDB->getAllMetricsFor(QDateTime(), QDateTime());
 
-    QList<SummaryBest> bests;
+    QList<AthleteBest> bests;
 
     // get the metric details, so we can convert etc
     const RideMetric *metric = RideMetricFactory::instance().rideMetric(symbol);
@@ -395,7 +431,7 @@ MetricAggregator::refreshBestIntervals()
     foreach (SummaryMetrics rideMetrics, allRides) {
 
         // get this value
-        SummaryBest add;
+        AthleteBest add;
         add.nvalue = rideMetrics.getForSymbol(symbol);
         add.date = rideMetrics.getRideDate().date();
         add.fileName = rideMetrics.getFileName();
@@ -419,7 +455,7 @@ MetricAggregator::refreshBestIntervals()
 
 
     int pos=1;
-    foreach(SummaryBest best, bests) {
+    foreach(AthleteBest best, bests) {
         /*qDebug() << QString("%1. %2W le %3")
                    .arg(pos)
                    .arg(best.value)
@@ -455,8 +491,6 @@ MetricAggregator::refreshBestIntervals()
     // END Best
 }
 #endif
-
-
 
 /*----------------------------------------------------------------------
  * Calculate the metrics for a ride file using the metrics factory
@@ -519,370 +553,4 @@ bool MetricAggregator::importRide(QDir /* no longer used ? */, RideFile *ride, Q
 #endif
 
     return true;
-}
-
-bool MetricAggregator::importInterval(IntervalItem *interval, QString type, QString group, unsigned long fingerprint, bool modify)
-{
-    SummaryMetrics summaryMetric;
-
-    const RideFile* ride = interval->ride;
-
-    RideFile subride(const_cast<RideFile*>(ride));
-    int start = ride->timeIndex(interval->start);
-    int end = ride->timeIndex(interval->stop);
-    for (int i = start; i <= end; ++i) {
-        const RideFilePoint *p = ride->dataPoints()[i];
-        subride.appendPoint(p->secs, p->cad, p->hr, p->km, p->kph, p->nm,
-                      p->watts, p->alt, p->lon, p->lat, p->headwind, p->slope, p->temp, p->lrbalance,
-                      p->lte, p->rte, p->lps, p->rps, p->smo2, p->thb,
-                      p->rvert, p->rcad, p->rcontact, 0);
-
-        // derived data
-        RideFilePoint *l = subride.dataPoints().last();
-        l->np = p->np;
-        l->xp = p->xp;
-        l->apower = p->apower;
-    }
-
-    summaryMetric.setFileName(ride->getTag("Filename",""));
-    summaryMetric.setRideDate(ride->startTime());
-    summaryMetric.setId(ride->id());
-    summaryMetric.setIsRun(ride->isRun());
-
-    const RideMetricFactory &factory = RideMetricFactory::instance();
-    QStringList metrics;
-
-    for (int i = 0; i < factory.metricCount(); ++i)
-        metrics << factory.metricName(i);
-
-    // compute all the metrics
-    QHash<QString, RideMetricPtr> computed = RideMetric::computeMetrics(context, &subride, context->athlete->zones(), context->athlete->hrZones(), metrics);
-
-    // get metrics into summaryMetric QMap
-    for(int i = 0; i < factory.metricCount(); ++i) {
-        // check for override
-        summaryMetric.setForSymbol(factory.metricName(i), computed.value(factory.metricName(i))->value(true));
-    }
-
-    // what color will this ride be?
-    QColor color = colorEngine->colorFor(ride->getTag(context->athlete->rideMetadata()->getColorField(), ""));
-
-    dbaccess->importInterval(&summaryMetric, interval, type, group, color, fingerprint, modify);
-
-    return true;
-}
-
-/*----------------------------------------------------------------------
- * Query functions are wrappers around DBAccess functions
- *----------------------------------------------------------------------*/
-void
-MetricAggregator::writeAsCSV(QString filename)
-{
-    // write all metrics as a CSV file
-    QList<SummaryMetrics> all = getAllMetricsFor(QDateTime(), QDateTime());
-
-    // write headings
-    if (!all.count()) return; // no dice
-
-    // open file.. truncate if exists already
-    QFile file(filename);
-    file.open(QFile::WriteOnly);
-    file.resize(0);
-    QTextStream out(&file);
-
-    // write headings
-    out<<"date, time, filename,";
-    QMapIterator<QString, double>i(all[0].values());
-    while (i.hasNext()) {
-        i.next();
-        out<<i.key()<<",";
-    }
-    out<<"\n";
-
-    // write values
-    foreach(SummaryMetrics x, all) {
-        out<<x.getRideDate().date().toString("MM/dd/yy")<<","
-           <<x.getRideDate().time().toString()<<","
-           <<x.getFileName()<<",";
-
-        QMapIterator<QString, double>i(x.values());
-        while (i.hasNext()) {
-            i.next();
-            out<<i.value()<<",";
-        }
-        out<<"\n";
-    }
-    file.close();
-}
-
-QList<SummaryMetrics>
-MetricAggregator::getAllMetricsFor(DateRange dr)
-{
-    return getAllMetricsFor(QDateTime(dr.from, QTime(0,0,0)), QDateTime(dr.to, QTime(23,59,59)));
-}
-
-QList<SummaryMetrics>
-MetricAggregator::getAllMetricsFor(QDateTime start, QDateTime end)
-{
-    if (context->athlete->isclean == false) refreshMetrics(); // get them up-to-date
-
-    QList<SummaryMetrics> empty;
-
-    // only if we have established a connection to the database
-    if (dbaccess == NULL) {
-        qDebug()<<"lost db connection?";
-        return empty;
-    }
-
-    // apparently using transactions for queries
-    // can improve performance!
-    dbaccess->connection().transaction();
-    QList<SummaryMetrics> results = dbaccess->getAllMetricsFor(start, end);
-    dbaccess->connection().commit();
-    return results;
-}
-
-SummaryMetrics
-MetricAggregator::getAllMetricsFor(QString filename)
-{
-    if (context->athlete->isclean == false) refreshMetrics(); // get them up-to-date
-
-    SummaryMetrics results;
-    QColor color; // ignored for now...
-
-    // only if we have established a connection to the database
-    if (dbaccess == NULL) {
-        qDebug()<<"lost db connection?";
-        return results;
-    }
-
-    // apparently using transactions for queries
-    // can improve performance!
-    dbaccess->connection().transaction();
-    dbaccess->getRide(filename, results, color);
-    dbaccess->connection().commit();
-    return results;
-}
-
-SummaryMetrics
-MetricAggregator::getRideMetrics(QString filename)
-{
-    if (context->athlete->isclean == false) refreshMetrics(); // get them up-to-date
-
-    SummaryMetrics empty;
-
-    // only if we have established a connection to the database
-    if (dbaccess == NULL) {
-        qDebug()<<"lost db connection?";
-        return empty;
-    }
-    return dbaccess->getRideMetrics(filename);
-}
-
-void
-MetricAggregator::refreshCPModelMetrics(bool bg)
-{
-    // this needs to be done once all the other metrics
-    // Calculate a *monthly* estimate of CP, W' etc using
-    // bests data from the previous 3 months
-
-    // clear any previous calculations
-    context->athlete->PDEstimates.clear(); 
-
-    // we do this by aggregating power data into bests
-    // for each month, and having a rolling set of 3 aggregates
-    // then aggregating those up into a rolling 3 month 'bests'
-    // which we feed to the models to get the estimates for that
-    // point in time based upon the available data
-    QDate from, to;
-
-    // what dates have any power data ?
-    QSqlQuery query(dbaccess->connection());
-    bool rc = query.exec("SELECT ride_date FROM metrics WHERE present LIKE '%P%' ORDER BY ride_date;");
-    bool first = true;
-    while (rc && query.next()) {
-        if (first) {
-            from = query.value(0).toDate();
-            if (from.year() >= 1990) first = false; // ignore daft dates
-        } else {
-            to = query.value(0).toDate();
-        }
-    }
-
-    // if we don't have 2 rides or more then skip this but add a blank estimate
-    if (to == QDate()) {
-        context->athlete->PDEstimates << PDEstimate();
-        return;
-    }
-
-    // run through each month with a rolling bests
-    int year = from.year();
-    int month = from.month();
-    int lastYear = to.year();
-    int lastMonth = to.month();
-    int count = 0;
-
-    // lets make sure we don't run wild when there is bad
-    // ride dates etc -- ignore data before 1990 and after 
-    // next year. This is belt and braces really
-    if (year < 1990) year = 1990;
-    if (lastYear > QDate::currentDate().year()+1) lastYear = QDate::currentDate().year()+1;
-
-    // if we have a progress dialog lets update the bar to show
-    // progress for the model parameters
-    GProgressDialog *bar = NULL;
-    if (!bg) {
-        bar = new GProgressDialog(tr("Update Model Estimates"), 1, (lastYear*12 + lastMonth) - (year*12 + month), 
-                                  context->mainWindow->init, context->mainWindow);
-        bar->setValue(1);
-        bar->show(); // lets hide until elapsed time is > 6 seconds
-        QApplication::processEvents();
-    }
-
-    QList< QVector<float> > months;
-    QList< QVector<float> > monthsKG;
-
-    // set up the models we support
-    CP2Model p2model(context);
-    CP3Model p3model(context);
-    MultiModel multimodel(context);
-    ExtendedModel extmodel(context);
-
-    QList <PDModel *> models;
-    models << &p2model;
-    models << &p3model;
-    models << &multimodel;
-    models << &extmodel;
-
-
-    // loop through
-    while (year < lastYear || (year == lastYear && month <= lastMonth)) {
-
-        QDate firstOfMonth = QDate(year, month, 01);
-        QDate lastOfMonth = firstOfMonth.addMonths(1).addDays(-1);
-
-        // let others know where we got to...
-        emit modelProgress(year, month);
-
-        // months is a rolling 3 months sets of bests
-        QVector<float> wpk; // for getting the wpk values
-        months << RideFileCache::meanMaxPowerFor(context, wpk, firstOfMonth, lastOfMonth);
-        monthsKG << wpk;
-
-        if (months.count() > 2) {
-            months.removeFirst();
-            monthsKG.removeFirst();
-        }
-
-        // create a rolling merge of all those months
-        QVector<float> rollingBests = months[0];
-        QVector<float> rollingBestsKG = monthsKG[0];
-
-        switch(months.count()) {
-            case 1 : // first time through we are done!
-                break;
-
-            case 2 : // second time through just apply month(1)
-                {
-                    // watts
-                    if (months[1].size() > rollingBests.size()) rollingBests.resize(months[1].size());
-                    for (int i=0; i<months[1].size(); i++)
-                        if (months[1][i] > rollingBests[i]) rollingBests[i] = months[1][i];
-
-                    // wattsKG
-                    if (monthsKG[1].size() > rollingBestsKG.size()) rollingBestsKG.resize(monthsKG[1].size());
-                    for (int i=0; i<monthsKG[1].size(); i++)
-                        if (monthsKG[1][i] > rollingBestsKG[i]) rollingBestsKG[i] = monthsKG[1][i];
-                }
-                break;
-
-            case 3 : // third time through resize to largest and compare to 1 and 2 XXX not used as limits to 2 month window
-                {
-
-                    // watts
-                    if (months[1].size() > rollingBests.size()) rollingBests.resize(months[1].size());
-                    if (months[2].size() > rollingBests.size()) rollingBests.resize(months[2].size());
-                    for (int i=0; i<months[1].size(); i++) if (months[1][i] > rollingBests[i]) rollingBests[i] = months[1][i];
-                    for (int i=0; i<months[2].size(); i++) if (months[2][i] > rollingBests[i]) rollingBests[i] = months[2][i];
-
-                    // wattsKG
-                    if (monthsKG[1].size() > rollingBestsKG.size()) rollingBestsKG.resize(monthsKG[1].size());
-                    if (monthsKG[2].size() > rollingBestsKG.size()) rollingBestsKG.resize(monthsKG[2].size());
-                    for (int i=0; i<monthsKG[1].size(); i++) if (monthsKG[1][i] > rollingBestsKG[i]) rollingBestsKG[i] = monthsKG[1][i];
-                    for (int i=0; i<monthsKG[2].size(); i++) if (monthsKG[2][i] > rollingBestsKG[i]) rollingBestsKG[i] = monthsKG[2][i];
-                }
-        }
-
-        // got some data lets rock
-        if (rollingBests.size()) {
-
-            // we now have the data
-            foreach(PDModel *model, models) {
-
-                PDEstimate add;
-
-                // set the data
-                model->setData(rollingBests);
-                model->saveParameters(add.parameters); // save the computed parms
-
-                add.wpk = false;
-                add.from = firstOfMonth;
-                add.to = lastOfMonth;
-                add.model = model->code();
-                add.WPrime = model->hasWPrime() ? model->WPrime() : 0;
-                add.CP = model->hasCP() ? model->CP() : 0;
-                add.PMax = model->hasPMax() ? model->PMax() : 0;
-                add.FTP = model->hasFTP() ? model->FTP() : 0;
-
-                if (add.CP && add.WPrime) add.EI = add.WPrime / add.CP ;
-
-                // so long as the model derived values are sensible ...
-                if (add.WPrime > 1000 && add.CP > 100 && add.PMax > 100 && add.FTP > 100)
-                    context->athlete->PDEstimates << add;
-
-                //qDebug()<<add.from<<model->code()<< "W'="<< model->WPrime() <<"CP="<< model->CP() <<"pMax="<<model->PMax();
-
-                // set the wpk data
-                model->setData(rollingBestsKG);
-                model->saveParameters(add.parameters); // save the computed parms
-
-                add.wpk = true;
-                add.from = firstOfMonth;
-                add.to = lastOfMonth;
-                add.model = model->code();
-                add.WPrime = model->hasWPrime() ? model->WPrime() : 0;
-                add.CP = model->hasCP() ? model->CP() : 0;
-                add.PMax = model->hasPMax() ? model->PMax() : 0;
-                add.FTP = model->hasFTP() ? model->FTP() : 0;
-                if (add.CP && add.WPrime) add.EI = add.WPrime / add.CP ;
-
-                // so long as the model derived values are sensible ...
-                if (add.WPrime > 100.0f && add.CP > 1.0f && add.PMax > 1.0f && add.FTP > 1.0f)
-                    context->athlete->PDEstimates << add;
-
-                //qDebug()<<add.from<<model->code()<< "KG W'="<< model->WPrime() <<"CP="<< model->CP() <<"pMax="<<model->PMax();
-            }
-        }
-
-        // move onto the next month
-        count++;
-        if (month == 12) {
-            year ++;
-            month = 1;
-        } else {
-            month ++;
-        }
-
-        // show some progress
-        if (!bg) bar->setValue(count);
-    }
-
-    if (!bg) delete bar;
-
-    // add a dummy entry if we have no estimates to stop constantly trying to refresh
-    if (context->athlete->PDEstimates.count() == 0) {
-        context->athlete->PDEstimates << PDEstimate();
-    }
-
-    emit modelProgress(0, 0); // all done
 }

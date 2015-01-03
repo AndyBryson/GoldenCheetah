@@ -17,10 +17,10 @@
  */
 
 #include "RideMetadata.h"
-#include "MetricAggregator.h"
 #include "SpecialFields.h"
 
 #include "MainWindow.h"
+#include "RideCache.h"
 #include "RideItem.h"
 #include "Context.h"
 #include "Athlete.h"
@@ -29,6 +29,7 @@
 #include "Colors.h"
 #include "Units.h"
 #include "TabView.h"
+#include "HelpWhatsThis.h"
 
 #include <QXmlDefaultHandler>
 #include <QtGui>
@@ -53,6 +54,9 @@ RideMetadata::RideMetadata(Context *context, bool singlecolumn) :
     mainLayout->setSpacing(0);
     mainLayout->setContentsMargins(0,0,0,0);
 
+    HelpWhatsThis *help = new HelpWhatsThis(this);
+    this->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_Details));
+
     // setup the tabs widget
     tabs = new QTabWidget(this);
     tabs->setMovable(true);
@@ -69,10 +73,10 @@ RideMetadata::RideMetadata(Context *context, bool singlecolumn) :
 
     extraForm = new Form(this);
 
-    configUpdate();
+    configChanged(CONFIG_FIELDS | CONFIG_APPEARANCE);
 
     // watch for config changes
-    connect(context, SIGNAL(configChanged()), this, SLOT(configUpdate()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 
     // Extra tab is expensive to update so we only update if it
     // is visible. In this case we need to trigger refresh when the
@@ -215,7 +219,7 @@ RideMetadata::metadataChanged()
 }
 
 void
-RideMetadata::configUpdate()
+RideMetadata::configChanged(qint32)
 {
     setProperty("color", GColor(CPLOTBACKGROUND));
 
@@ -245,7 +249,7 @@ RideMetadata::configUpdate()
     // read metadata.xml
     QString filename = context->athlete->home->config().absolutePath()+"/metadata.xml";
     if (!QFile(filename).exists()) filename = ":/xml/metadata.xml";
-    readXML(filename, keywordDefinitions, fieldDefinitions, colorfield);
+    readXML(filename, keywordDefinitions, fieldDefinitions, colorfield, defaultDefinitions);
 
     // wipe existing tabs
     QMapIterator<QString, Form*> d(tabList);
@@ -256,6 +260,7 @@ RideMetadata::configUpdate()
            delete d.value();
     }
     tabList.clear();
+    formFields.empty();
 
 
     // create forms and populate with fields
@@ -295,6 +300,18 @@ RideMetadata::configUpdate()
 
     metadataChanged(); // re-read the values!
 }
+
+void
+RideMetadata::addFormField(FormField *f)
+{
+    formFields.append(f);
+}
+
+QVector<FormField *> RideMetadata::getFormFields()
+{
+    return formFields;
+}
+
 
 /*----------------------------------------------------------------------
  * Forms (one per tab)
@@ -357,6 +374,7 @@ Form::addField(FieldDefinition &x)
 {
     FormField *p = new FormField(x, meta);
     fields.append(p);
+    meta->addFormField(p);
 }
 
 void
@@ -570,6 +588,8 @@ FormField::FormField(FieldDefinition field, RideMetadata *meta) : definition(fie
 
     // if save is being called flush all the values out ready to save as they are
     connect(meta->context, SIGNAL(metadataFlush()), this, SLOT(editFinished()));
+
+    active = false;
 }
 
 FormField::~FormField()
@@ -649,6 +669,7 @@ FormField::editFinished()
     case FIELD_TIME : text = ((QTimeEdit*)widget)->time().toString("hh:mm:ss.zzz"); break;
     }
 
+    active = true;
 
     // Update special field
     if (definition.name == "Device") {
@@ -713,8 +734,15 @@ FormField::editFinished()
 
             // just update the tags QMap!
             ourRideItem->ride()->setTag(definition.name, text);
+
+            // and update !
+            ourRideItem->notifyRideMetadataChanged();
         }
     }
+    active = false; 
+
+    // default values
+    setLinkedDefault(text);
 
     // Construct the summary text used on the calendar
     QString calendarText;
@@ -728,6 +756,29 @@ FormField::editFinished()
 
     // rideFile is now dirty!
     ourRideItem->setDirty(true);
+}
+
+void
+FormField::setLinkedDefault(QString text)
+{
+    foreach (DefaultDefinition adefault, meta->getDefaults()) {
+        if (adefault.field == definition.name && adefault.value == text) {
+            //qDebug() << "Default for" << adefault.linkedField << ":" << adefault.linkedValue;
+
+            if (ourRideItem->ride()->getTag(adefault.linkedField, "") == "")
+                ourRideItem->ride()->setTag(adefault.linkedField, adefault.linkedValue);
+
+            foreach (FormField *formField, meta->getFormFields()) {
+                if (formField->definition.name == adefault.linkedField) {
+                    formField->metadataChanged();
+                    formField->setLinkedDefault(adefault.linkedValue);
+                }
+            }
+
+
+        }
+
+    }
 }
 
 void
@@ -777,6 +828,8 @@ FormField::stateChanged(int state)
 void
 FormField::metadataChanged()
 {
+    if (active == true) return;
+
     active = true;
     edited = false;
     QString value;
@@ -827,14 +880,11 @@ FormField::metadataChanged()
     case FIELD_TEXT : // text
     case FIELD_SHORTTEXT : // shorttext
         { 
-            if (meta->context->athlete->metricDB && completer && 
+            if (meta->context->athlete->rideCache && completer && 
                 definition.values.count() == 1 && definition.values.at(0) == "*") {
 
                 // set completer if needed for wildcard matching
-                QStringList values;
-                QSqlQuery query(meta->context->athlete->metricDB->db()->connection());
-                bool rc = query.exec(QString("SELECT Z%1 FROM metrics;").arg(meta->context->specialFields.makeTechName(definition.name)));
-                while (rc && query.next()) values << query.value(0).toString();
+                QStringList values = meta->context->athlete->rideCache->getDistinctValues(definition.name);
 
                 delete completer;
                 completer = new QCompleter(values, this);
@@ -896,6 +946,38 @@ FormField::metadataChanged()
     active = false;
 }
 
+unsigned long
+FieldDefinition::fingerprint(QList<FieldDefinition> list)
+{
+    QByteArray ba;
+
+    foreach(FieldDefinition def, list) {
+
+        ba.append(def.tab);
+        ba.append(def.name);
+        ba.append(def.type);
+        ba.append(def.diary);
+        ba.append(def.values.join(""));
+    }
+
+    return qChecksum(ba, ba.length());
+}
+
+unsigned long
+KeywordDefinition::fingerprint(QList<KeywordDefinition> list)
+{
+    QByteArray ba;
+
+    foreach(KeywordDefinition def, list) {
+
+        ba.append(def.name);
+        ba.append(def.color.name());
+        ba.append(def.tokens.join(""));
+    }
+
+    return qChecksum(ba, ba.length());
+}
+
 /*----------------------------------------------------------------------
  * Read / Write metadata.xml file
  *--------------------------------------------------------------------*/
@@ -917,7 +999,7 @@ static QString xmlprotect(QString string)
 }
 
 void
-RideMetadata::serialize(QString filename, QList<KeywordDefinition>keywordDefinitions, QList<FieldDefinition>fieldDefinitions, QString colorfield)
+RideMetadata::serialize(QString filename, QList<KeywordDefinition>keywordDefinitions, QList<FieldDefinition>fieldDefinitions, QString colorfield, QList<DefaultDefinition>defaultDefinitions)
 {
     // open file - truncate contents
     QFile file(filename);
@@ -952,7 +1034,7 @@ RideMetadata::serialize(QString filename, QList<KeywordDefinition>keywordDefinit
     out <<"\t</keywords>\n";
 
     //
-    // Last we write out the field definitions
+    // we write out the field definitions
     //
     out << "\t<fields>\n";
     // write out to file
@@ -967,6 +1049,23 @@ RideMetadata::serialize(QString filename, QList<KeywordDefinition>keywordDefinit
         out<<QString("\t\t</field>\n");
     }
     out <<"\t</fields>\n";
+
+    //
+    // Last we write out the default definitions
+    //
+    out << "\t<defaults>\n";
+    // write out to file
+    foreach (DefaultDefinition adefault, defaultDefinitions) {
+        // chart name
+        out<<QString("\t\t<default>\n");
+        out<<QString("\t\t\t<defaultfield>\"%1\"</defaultfield>\n").arg(xmlprotect(adefault.field));
+        out<<QString("\t\t\t<defaultvalue>\"%1\"</defaultvalue>\n").arg(xmlprotect(adefault.value));
+        out<<QString("\t\t\t<defaultlinkedfield>\"%1\"</defaultlinkedfield>\n").arg(xmlprotect(adefault.linkedField));
+        out<<QString("\t\t\t<defaultlinkedvalue>\"%1\"</defaultlinkedvalue>\n").arg(xmlprotect(adefault.linkedValue));
+        out<<QString("\t\t</default>\n");
+    }
+    out <<"\t</defaults>\n";
+
 
     // end document
     out << "</metadata>\n";
@@ -994,7 +1093,7 @@ static QString unprotect(QString buffer)
 }
 
 void
-RideMetadata::readXML(QString filename, QList<KeywordDefinition>&keywordDefinitions, QList<FieldDefinition>&fieldDefinitions, QString &colorfield)
+RideMetadata::readXML(QString filename, QList<KeywordDefinition>&keywordDefinitions, QList<FieldDefinition>&fieldDefinitions, QString &colorfield, QList<DefaultDefinition> &defaultDefinitions)
 {
     QFile metadataFile(filename);
     QXmlInputSource source( &metadataFile );
@@ -1009,14 +1108,14 @@ RideMetadata::readXML(QString filename, QList<KeywordDefinition>&keywordDefiniti
     keywordDefinitions = handler.getKeywords();
     fieldDefinitions = handler.getFields();
     colorfield = handler.getColorField();
+    defaultDefinitions = handler.getDefaults();
 
     // backwards compatible
     if (colorfield == "") colorfield = "Calendar Text";
 
     // now auto append special fields, in case
     // the user wiped them or we have introduced
-    // them in this release. This is to ensure
-    // they get written to metricDB
+    // them in this release.
     bool hasCalendarText = false;
     bool hasData = false;
 
@@ -1072,6 +1171,10 @@ bool MetadataXMLParser::endElement( const QString&, const QString&, const QStrin
     } else if(qName == "fieldvalues") {
         field.values = unprotect(buffer).split(",", QString::SkipEmptyParts);
     } else if (qName == "fielddiary") field.diary = (buffer.trimmed().toInt() != 0);
+    else if(qName == "defaultfield") adefault.field =  unprotect(buffer);
+    else if(qName == "defaultvalue") adefault.value =  unprotect(buffer);
+    else if(qName == "defaultlinkedfield") adefault.linkedField =  unprotect(buffer);
+    else if(qName == "defaultlinkedvalue") adefault.linkedValue =  unprotect(buffer);
 
     //
     // Complex Elements
@@ -1082,6 +1185,8 @@ bool MetadataXMLParser::endElement( const QString&, const QString&, const QStrin
         fieldDefinitions.append(field);
     else if (qName == "colorfield")
         colorfield = unprotect(buffer);
+    else if (qName == "default") // <default></default> block
+        defaultDefinitions.append(adefault);
 
     return true;
 }
@@ -1106,6 +1211,10 @@ bool MetadataXMLParser::startElement( const QString&, const QString&, const QStr
             if (attrs.qName(i) == "blue") blue=attrs.value(i).toInt();
         }
     }
+    else if (name == "defaults")
+        defaultDefinitions.clear();
+    else if (name == "default")
+        adefault = DefaultDefinition();
 
     return true;
 }

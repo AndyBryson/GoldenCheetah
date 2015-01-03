@@ -22,6 +22,7 @@
 #include "Context.h"
 #include "Athlete.h"
 #include "TabView.h"
+#include "AllPlotInterval.h"
 #include "AllPlotWindow.h"
 #include "AllPlot.h"
 #include "RideFile.h"
@@ -55,6 +56,9 @@
 // tooltip
 #include "LTMWindow.h"
 
+// help
+#include "HelpWhatsThis.h"
+
 // overlay helper
 #include "GcOverlayWidget.h"
 #include "IntervalSummaryWindow.h"
@@ -67,6 +71,8 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     // basic setup
     setContentsMargins(0,0,0,0);
     QWidget *c = new QWidget;
+    HelpWhatsThis *helpConfig = new HelpWhatsThis(c);
+    c->setWhatsThis(helpConfig->getWhatsThisText(HelpWhatsThis::ChartRides_Performance));
     setControls(c);
     QVBoxLayout *clv = new QVBoxLayout(c);
 
@@ -87,6 +93,9 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     basicControls->addStretch();
     st->addTab(basic, tr("Basic"));
 
+    HelpWhatsThis *basicHelp = new HelpWhatsThis(basic);
+    basic->setWhatsThis(basicHelp->getWhatsThisText(HelpWhatsThis::ChartRides_Performance_Config_Basic));
+
     // data series
     QWidget *series = new QWidget(this); // data series selection
     QHBoxLayout *seriesControls = new QHBoxLayout(series);
@@ -94,8 +103,10 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     QFormLayout *seriesRight = new QFormLayout(); // ride side series
     seriesControls->addLayout(seriesLeft);
     seriesControls->addLayout(seriesRight); // ack I swapped them around !
-
     st->addTab(series, tr("Curves"));
+
+    HelpWhatsThis *seriesHelp = new HelpWhatsThis(series);
+    series->setWhatsThis(seriesHelp->getWhatsThisText(HelpWhatsThis::ChartRides_Performance_Config_Series));
 
     // Main layout
     //QGridLayout *mainLayout = new QGridLayout();
@@ -167,6 +178,10 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     showFull = new QCheckBox(tr("Full plot"), this);
     showFull->setCheckState(Qt::Checked);
     guiControls->addRow(new QLabel(""), showFull);
+
+    showInterval = new QCheckBox(tr("Intervals"), this);
+    showInterval->setCheckState(Qt::Checked);
+    guiControls->addRow(new QLabel(""), showInterval);
 
     showHelp = new QCheckBox(tr("Overlay"), this);
     showHelp->setCheckState(Qt::Unchecked);
@@ -360,6 +375,9 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     allStack->addWidget(allPlot);
     allStack->setCurrentIndex(0);
 
+    HelpWhatsThis *help = new HelpWhatsThis(allPlot);
+    allPlot->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_Performance));
+
     // sort out default values
     smoothSlider->setValue(allPlot->smooth);
     smoothLineEdit->setText(QString("%1").arg(allPlot->smooth));
@@ -404,6 +422,7 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     allPlot->tooltip->setEnabled(true);
 
     allPlot->_canvasPicker = new LTMCanvasPicker(allPlot);
+
     connect(context, SIGNAL(intervalHover(RideFileInterval)), allPlot, SLOT(intervalHover(RideFileInterval)));
     connect(allPlot->_canvasPicker, SIGNAL(pointHover(QwtPlotCurve*, int)), allPlot, SLOT(pointHover(QwtPlotCurve*, int)));
     connect(allPlot->tooltip, SIGNAL(moved(const QPoint &)), this, SLOT(plotPickerMoved(const QPoint &)));
@@ -553,9 +572,32 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     fullPlot->setFixedHeight(100);
     fullPlot->setCanvasBackground(GColor(CRIDEPLOTBACKGROUND));
     fullPlot->setHighlightIntervals(false);
+    fullPlot->setPaintBrush(0);
     static_cast<QwtPlotCanvas*>(fullPlot->canvas())->setBorderRadius(0);
     fullPlot->setWantAxis(false);
     fullPlot->setContentsMargins(0,0,0,0);
+
+    HelpWhatsThis *helpFull = new HelpWhatsThis(fullPlot);
+    fullPlot->setWhatsThis(helpFull->getWhatsThisText(HelpWhatsThis::ChartRides_Performance));
+
+    intervalPlot = new AllPlotInterval(this, context);
+    intervalPlot->setFixedHeight(100);
+    intervalPlot->setCanvasBackground(GColor(CRIDEPLOTBACKGROUND));
+    static_cast<QwtPlotCanvas*>(intervalPlot->canvas())->setBorderRadius(0);
+    intervalPlot->setContentsMargins(0,0,0,0);
+
+    // tooltip on hover over point
+    /*intervalPlot->tooltip = new LTMToolTip(QwtPlot::xBottom, QwtAxis::yLeft,
+                               QwtPicker::VLineRubberBand,
+                               QwtPicker::AlwaysOn,
+                               intervalPlot->canvas(),
+                               "");
+    intervalPlot->tooltip->setRubberBand(QwtPicker::VLineRubberBand);
+    intervalPlot->tooltip->setMousePattern(QwtEventPattern::MouseSelect1, Qt::LeftButton);
+    intervalPlot->tooltip->setTrackerPen(QColor(Qt::black));
+    intervalPlot->tooltip->setRubberBandPen(inv);
+    intervalPlot->tooltip->setEnabled(true);*/
+
 
     // allPlotStack contains the allPlot and the stack by series
     // because both want the optional fullplot at the bottom
@@ -564,8 +606,14 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     allPlotStack->addWidget(seriesstackFrame);
     allPlotStack->setCurrentIndex(0);
 
+    HelpWhatsThis *helpStack = new HelpWhatsThis(allPlotStack);
+    allPlotStack->setWhatsThis(helpStack->getWhatsThisText(HelpWhatsThis::ChartRides_Performance));
+
     allPlotLayout->addWidget(allPlotStack);
     allPlotFrame->setLayout(allPlotLayout);
+
+    allPlotLayout->addWidget(intervalPlot);
+
 
     // controls...
     controlsLayout = new QGridLayout;
@@ -641,6 +689,7 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     connect(showTE, SIGNAL(stateChanged(int)), this, SLOT(setShowTE(int)));
     connect(showGrid, SIGNAL(stateChanged(int)), this, SLOT(setShowGrid(int)));
     connect(showFull, SIGNAL(stateChanged(int)), this, SLOT(setShowFull(int)));
+    connect(showInterval, SIGNAL(stateChanged(int)), this, SLOT(setShowInterval(int)));
     connect(showHelp, SIGNAL(stateChanged(int)), this, SLOT(setShowHelp(int)));
     connect(showStack, SIGNAL(stateChanged(int)), this, SLOT(showStackChanged(int)));
     connect(rStack, SIGNAL(stateChanged(int)), this, SLOT(showStackChanged(int)));
@@ -667,7 +716,8 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     // GC signals
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
     connect(context, SIGNAL(rideDirty(RideItem*)), this, SLOT(rideSelected()));
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(rideChanged(RideItem*)), this, SLOT(forceReplot()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
     connect(context->athlete, SIGNAL(zonesChanged()), this, SLOT(zonesChanged()));
     connect(context, SIGNAL(intervalsChanged()), this, SLOT(intervalsChanged()));
     connect(context, SIGNAL(intervalZoom(IntervalItem*)), this, SLOT(zoomInterval(IntervalItem*)));
@@ -680,11 +730,11 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     connect(context, SIGNAL(compareIntervalsChanged()), this, SLOT(compareChanged()));
 
     // set initial colors
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 void
-AllPlotWindow::configChanged()
+AllPlotWindow::configChanged(qint32 state)
 {
     setUpdatesEnabled(false);
 
@@ -726,20 +776,20 @@ AllPlotWindow::configChanged()
 
     fullPlot->setCanvasBackground(GColor(CRIDEPLOTBACKGROUND));
     fullPlot->setPalette(palette);
-    fullPlot->configChanged();
+    fullPlot->configChanged(state);
     fullPlot->update();
 
     // allPlot of course
     allPlot->setCanvasBackground(GColor(CRIDEPLOTBACKGROUND));
     allPlot->setPalette(palette);
-    allPlot->configChanged();
+    allPlot->configChanged(state);
     allPlot->update();
 
     // and then the stacked plot
     foreach (AllPlot *plot, allPlots) {
         plot->setCanvasBackground(GColor(CRIDEPLOTBACKGROUND));
         plot->setPalette(palette);
-        plot->configChanged();
+        plot->configChanged(state);
         plot->update();
     }
 
@@ -747,7 +797,7 @@ AllPlotWindow::configChanged()
     foreach (AllPlot *plot, seriesPlots) {
         plot->setCanvasBackground(GColor(CRIDEPLOTBACKGROUND));
         plot->setPalette(palette);
-        plot->configChanged();
+        plot->configChanged(state);
         plot->update();
     }
 
@@ -755,7 +805,7 @@ AllPlotWindow::configChanged()
     foreach (AllPlot *plot, allComparePlots) {
         plot->setCanvasBackground(GColor(CRIDEPLOTBACKGROUND));
         plot->setPalette(palette);
-        plot->configChanged();
+        plot->configChanged(state);
         plot->update();
     }
 
@@ -784,6 +834,10 @@ AllPlotWindow::configChanged()
         redrawAllPlot();
         redrawStackPlot();
     }
+
+    // just force a replot if wbal changed
+    // and we are actually plotting wbal !
+    if (state & CONFIG_WBAL && showW->isChecked()) forceReplot();
 }
 
 bool
@@ -838,6 +892,12 @@ AllPlotWindow::compareChanged()
         // and even if the current ride is blank, we're not
         // going to be blank !!
         setIsBlank(false);
+
+        //
+        // SETUP INTERVALPLOT FOR COMPARE MODE
+        //
+        // No interval plot in compare mode yet
+        intervalPlot->hide();
 
         //
         // SETUP FULLPLOT FOR COMPARE MODE
@@ -1020,7 +1080,6 @@ AllPlotWindow::compareChanged()
             connect(plot->_canvasPicker, SIGNAL(pointHover(QwtPlotCurve*, int)), plot, SLOT(pointHover(QwtPlotCurve*, int)));
             // No x axis titles
             plot->bydist = fullPlot->bydist;
-            plot->showAltSlopeState = fullPlot->showAltSlopeState;
             if (x.one == RideFile::watts) plot->setShadeZones(showPower->currentIndex() == 0);
             else plot->setShadeZones(false);
             plot->setAxisVisible(QwtPlot::xBottom, true);
@@ -1037,6 +1096,8 @@ AllPlotWindow::compareChanged()
             // y-axis title and colour
             if (x.one == RideFile::alt && x.two == RideFile::slope) {
                 plot->setAxisTitle(QwtPlot::yLeft, tr("Alt/Slope"));
+                plot->showAltSlopeState = allPlot->showAltSlopeState;
+                plot->setAltSlopePlotStyle(allPlot->standard->altSlopeCurve);
                } else {
                 plot->setAxisTitle(QwtPlot::yLeft, RideFile::seriesName(x.one));
             }
@@ -1081,6 +1142,9 @@ AllPlotWindow::compareChanged()
         // ok, we're done
 
     } else {
+
+        if (showInterval->isChecked())
+            intervalPlot->show();
 
         // reset to normal view?
         fullPlot->standard->setVisible(true);
@@ -1161,6 +1225,30 @@ AllPlotWindow::redrawFullPlot()
                                                 ride->ride()->dataPoints().last()->secs/60);
 
     fullPlot->replot();
+}
+
+void
+AllPlotWindow::redrawIntervalPlot()
+{
+    // always performed since the data is used
+    // by both the stack plots and the allplot
+    RideItem *ride = current;
+
+    // null rides are possible on new cyclist
+    if (!ride) return;
+
+    static_cast<QwtPlotCanvas*>(intervalPlot->canvas())->setBorderRadius(0);
+
+    // use the ride to decide
+    if (intervalPlot->bydist)
+        intervalPlot->setAxisScale(QwtPlot::xBottom,
+        ride->ride()->dataPoints().first()->km * (context->athlete->useMetricUnits ? 1 : MILES_PER_KM),
+        ride->ride()->dataPoints().last()->km * (context->athlete->useMetricUnits ? 1 : MILES_PER_KM));
+    else
+        intervalPlot->setAxisScale(QwtPlot::xBottom, ride->ride()->dataPoints().first()->secs/60,
+                                                ride->ride()->dataPoints().last()->secs/60);
+
+    intervalPlot->replot();
 }
 
 void
@@ -1257,6 +1345,13 @@ AllPlotWindow::moveRight()
 }
 
 void
+AllPlotWindow::forceReplot()
+{
+    stale=true;
+    rideSelected();
+}
+
+void
 AllPlotWindow::rideSelected()
 {
     // compare mode ignores ride selection
@@ -1304,6 +1399,7 @@ AllPlotWindow::rideSelected()
 
     // setup the charts to reflect current ride selection
     fullPlot->setDataFromRide(ride);
+    intervalPlot->setDataFromRide(ride);
 
 
     // Fixup supplied by Josef Gebel
@@ -1321,6 +1417,7 @@ AllPlotWindow::rideSelected()
     // to see if they are currently visible
     // and only redraw if neccessary
     redrawFullPlot();
+    redrawIntervalPlot();
     redrawAllPlot();
 
     // we need to reset the stacks as the ride has changed
@@ -1372,6 +1469,9 @@ AllPlotWindow::intervalsChanged()
     // show selection on fullplot too
     fullPlot->refreshIntervalMarkers();
     fullPlot->replot();
+
+    intervalPlot->refreshIntervals();
+    intervalPlot->replot();
 
     // allPlot of course
     allPlot->refreshIntervalMarkers();
@@ -2321,18 +2421,11 @@ AllPlotWindow::setShowAltSlope(int value)
 
     // compare mode selfcontained update
     if (isCompare()) {
-
-       // transfer changes of setting here (which is more than on/off) also to other plot settings
-       fullPlot->showAltSlopeState = value;
-       fullPlot->setAltSlopePlotStyle(fullPlot->standard->altSlopeCurve);
        allPlot->showAltSlopeState = value;
-       allPlot->setAltSlopePlotStyle(allPlot->standard->altSlopeCurve);
        compareChanged();
-       active = false;
        return;
     }
 
-    fullPlot->setShowAltSlope(value);
     allPlot->setShowAltSlope(value);
 
     foreach (AllPlot *plot, allPlots)
@@ -2689,6 +2782,20 @@ AllPlotWindow::setShowFull(int value)
 }
 
 void
+AllPlotWindow::setShowInterval(int value)
+{
+    showInterval->setChecked(value);
+    if (showInterval->isChecked()) {
+        intervalPlot->show();
+        //allPlotLayout->setStretch(1,20);
+    }
+    else {
+        intervalPlot->hide();
+        //allPlotLayout->setStretch(1,0);
+    }
+}
+
+void
 AllPlotWindow::setShowGrid(int value)
 {
     showGrid->setChecked(value);
@@ -2749,6 +2856,7 @@ AllPlotWindow::setByDistance(int value)
     }
 
     fullPlot->setByDistance(value);
+    intervalPlot->setByDistance(value);
     allPlot->setByDistance(value);
 
     // refresh controls, specifically spanSlider
@@ -2760,6 +2868,7 @@ AllPlotWindow::setByDistance(int value)
     redrawAllPlot();
     setupStackPlots();
     setupSeriesStackPlots();
+    redrawIntervalPlot();
 
     active = false;
 }

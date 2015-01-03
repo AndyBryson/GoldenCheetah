@@ -18,6 +18,8 @@
  */
 
 #include "HistogramWindow.h"
+#include "Specification.h"
+#include "HelpWhatsThis.h"
 
 // predefined deltas for each series
 static const double wattsDelta = 1.0;
@@ -43,8 +45,12 @@ static const int gearDigits  = 2;
 //
 HistogramWindow::HistogramWindow(Context *context, bool rangemode) : GcChartWindow(context), context(context), stale(true), source(NULL), active(false), bactive(false), rangemode(rangemode), compareStale(false), useCustom(false), useToToday(false), precision(99)
 {
+
     QWidget *c = new QWidget;
     c->setContentsMargins(0,0,0,0);
+    HelpWhatsThis *helpConfig = new HelpWhatsThis(c);
+    if (rangemode) c->setWhatsThis(helpConfig->getWhatsThisText(HelpWhatsThis::ChartTrends_Distribution));
+    else c->setWhatsThis(helpConfig->getWhatsThisText(HelpWhatsThis::ChartRides_Histogram));
     QFormLayout *cl = new QFormLayout(c);
     cl->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     cl->setSpacing(5);
@@ -87,6 +93,10 @@ HistogramWindow::HistogramWindow(Context *context, bool rangemode) : GcChartWind
     powerHist = new PowerHist(context, rangemode);
     vlayout->addWidget(powerHist);
 
+    HelpWhatsThis *help = new HelpWhatsThis(powerHist);
+    if (rangemode) powerHist->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartTrends_Distribution));
+    else powerHist->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_Histogram));
+
     setChartLayout(vlayout);
 
 #ifdef GC_HAVE_LUCENE
@@ -100,10 +110,14 @@ HistogramWindow::HistogramWindow(Context *context, bool rangemode) : GcChartWind
         cl->addRow(new QLabel(tr("Filter")), searchBox);
         cl->addWidget(new QLabel(""));
     }
+    HelpWhatsThis *searchHelp = new HelpWhatsThis(searchBox);
+    searchBox->setWhatsThis(searchHelp->getWhatsThisText(HelpWhatsThis::SearchFilterBox));
 #endif
 
     // date selection
     dateSetting = new DateSettingsEdit(this);
+    HelpWhatsThis *dateSettingHelp = new HelpWhatsThis(dateSetting);
+    dateSetting->setWhatsThis(dateSettingHelp->getWhatsThisText(HelpWhatsThis::ChartTrends_DateRange));
 
     if (rangemode) {
 
@@ -287,9 +301,8 @@ HistogramWindow::HistogramWindow(Context *context, bool rangemode) : GcChartWind
         connect(distMetricTree, SIGNAL(itemSelectionChanged()), this, SLOT(treeSelectionChanged()));
         connect(totalMetricTree, SIGNAL(itemSelectionChanged()), this, SLOT(treeSelectionChanged()));
 
-        lagger = new QTimer;
-        lagger->setSingleShot(true);
-        connect(lagger, SIGNAL(timeout()), this, SLOT(treeSelectionTimeout()));
+        // replot when background refresh is progressing
+        connect(context, SIGNAL(refreshUpdate(QDate)), this, SLOT(refreshUpdate(QDate)));
 
         // comparing things
         connect(context, SIGNAL(compareDateRangesStateChanged(bool)), this, SLOT(compareChanged()));
@@ -298,6 +311,7 @@ HistogramWindow::HistogramWindow(Context *context, bool rangemode) : GcChartWind
     } else {
         dateSetting->hide();
         connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
+        connect(context, SIGNAL(rideChanged(RideItem*)), this, SLOT(forceReplot()));
         connect(context, SIGNAL(intervalSelected()), this, SLOT(intervalSelected()));
         connect(context, SIGNAL(intervalHover(RideFileInterval)), powerHist, SLOT(intervalHover(RideFileInterval)));
 
@@ -319,22 +333,23 @@ HistogramWindow::HistogramWindow(Context *context, bool rangemode) : GcChartWind
     connect(showSumY, SIGNAL(currentIndexChanged(int)), this, SLOT(forceReplot()));
 
     connect(context->athlete, SIGNAL(zonesChanged()), this, SLOT(zonesChanged()));
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 
     connect(context, SIGNAL(rideAdded(RideItem*)), this, SLOT(rideAddorRemove(RideItem*)));
     connect(context, SIGNAL(rideDeleted(RideItem*)), this, SLOT(rideAddorRemove(RideItem*)));
+    connect(context, SIGNAL(rideSaved(RideItem*)), this, SLOT(rideAddorRemove(RideItem*)));
     connect(context, SIGNAL(filterChanged()), this, SLOT(forceReplot()));
     connect(context, SIGNAL(homeFilterChanged()), this, SLOT(forceReplot()));
 
     // set colors etc
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 void
-HistogramWindow::configChanged()
+HistogramWindow::configChanged(qint32 state)
 {
     setProperty("color", GColor(CPLOTBACKGROUND)); // called on config change
-    powerHist->configChanged();
+    powerHist->configChanged(state);
 }
 
 bool
@@ -635,7 +650,7 @@ HistogramWindow::switchMode()
         colorButton->show();
 
         // select the series.. (but without the half second delay)
-        treeSelectionTimeout();
+        treeSelectionChanged();
     }
 
     stale = true;
@@ -648,13 +663,6 @@ HistogramWindow::switchMode()
 //
 void
 HistogramWindow::treeSelectionChanged()
-{
-    stale = true;
-    lagger->start(500);
-}
-
-void
-HistogramWindow::treeSelectionTimeout()
 {
     // new metric chosen, so set up all the bin width, line edit
     // delta, precision etc
@@ -767,6 +775,7 @@ void
 HistogramWindow::rideAddorRemove(RideItem *)
 {
     stale = true;
+    if (amVisible()) updateChart();
 }
 
 void
@@ -893,6 +902,15 @@ HistogramWindow::setShade(int x)
 }
 
 void
+HistogramWindow::refreshUpdate(QDate past)
+{
+    if (!rangemode || cfrom > past || (lastupdate != QTime() && lastupdate.secsTo(QTime::currentTime()) < 5)) return;
+    lastupdate = QTime::currentTime();
+    forceReplot();
+
+}
+
+void
 HistogramWindow::forceReplot()
 {
     stale = true;
@@ -992,24 +1010,21 @@ HistogramWindow::updateChart()
                     // remember the last lot we collected
                     last = use;
 
-                    // plotting a metric, reread the metrics for the selected date range
-                    results = context->athlete->metricDB->getAllMetricsFor(use);
-
                 }
 
-                if (results.count() == 0) setIsBlank(true);
-                else setIsBlank(false);
+                FilterSet fs;
+#ifdef GC_HAVE_LUCENE
+                fs.addFilter(isfiltered, files);
+                fs.addFilter(context->isfiltered, context->filters);
+                fs.addFilter(context->ishomefiltered, context->homeFilters);
+#endif
 
                 // setData using the summary metrics -- always reset since filters may
                 // have changed, or perhaps the bin width...
                 powerHist->setSeries(RideFile::none);
                 powerHist->setDelta(getDelta());
                 powerHist->setDigits(getDigits());
-#ifdef GC_HAVE_LUCENE
-                powerHist->setData(results, totalMetric(), distMetric(), isfiltered, files, &powerHist->standard);
-#else
-                powerHist->setData(results, totalMetric(), distMetric(), false, QStringList(), &powerHist->standard);
-#endif
+                powerHist->setData(Specification(use,fs), totalMetric(), distMetric(), &powerHist->standard);
                 powerHist->setColor(colorButton->getColor());
 
             }

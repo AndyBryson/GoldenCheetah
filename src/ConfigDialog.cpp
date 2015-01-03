@@ -26,6 +26,7 @@
 #include "Pages.h"
 #include "Settings.h"
 #include "Zones.h"
+#include "HelpWhatsThis.h"
 
 #include "AddDeviceWizard.h"
 #include "MainWindow.h"
@@ -114,26 +115,39 @@ ConfigDialog::ConfigDialog(QDir _home, Zones *_zones, Context *context) :
 
     // create those config pages
     general = new GeneralConfig(_home, _zones, context);
+    HelpWhatsThis *generalHelp = new HelpWhatsThis(general);
+    general->setWhatsThis(generalHelp->getWhatsThisText(HelpWhatsThis::Preferences_General));
     pagesWidget->addWidget(general);
 
     athlete = new AthleteConfig(_home, _zones, context);
+    HelpWhatsThis *athleteHelp = new HelpWhatsThis(athlete);
+    athlete->setWhatsThis(athleteHelp->getWhatsThisText(HelpWhatsThis::Preferences_Athlete_About));
     pagesWidget->addWidget(athlete);
 
     password = new PasswordConfig(_home, _zones, context);
+    HelpWhatsThis *passwordHelp = new HelpWhatsThis(password);
+    password->setWhatsThis(passwordHelp->getWhatsThisText(HelpWhatsThis::Preferences_Passwords));
     pagesWidget->addWidget(password);
 
     appearance = new AppearanceConfig(_home, _zones, context);
+    HelpWhatsThis *appearanceHelp = new HelpWhatsThis(appearance);
+    appearance->setWhatsThis(appearanceHelp->getWhatsThisText(HelpWhatsThis::Preferences_Appearance));
     pagesWidget->addWidget(appearance);
 
     data = new DataConfig(_home, _zones, context);
+    HelpWhatsThis *dataHelp = new HelpWhatsThis(data);
+    data->setWhatsThis(dataHelp->getWhatsThisText(HelpWhatsThis::Preferences_DataFields));
     pagesWidget->addWidget(data);
 
     metric = new MetricConfig(_home, _zones, context);
+    HelpWhatsThis *metricHelp = new HelpWhatsThis(metric);
+    metric->setWhatsThis(metricHelp->getWhatsThisText(HelpWhatsThis::Preferences_Metrics));
     pagesWidget->addWidget(metric);
 
     device = new DeviceConfig(_home, _zones, context);
+    HelpWhatsThis *deviceHelp = new HelpWhatsThis(device);
+    device->setWhatsThis(deviceHelp->getWhatsThisText(HelpWhatsThis::Preferences_TrainDevices));
     pagesWidget->addWidget(device);
-
 
     closeButton = new QPushButton(tr("Close"));
     saveButton = new QPushButton(tr("Save"));
@@ -184,13 +198,16 @@ void ConfigDialog::closeClicked()
 //   ! new mode: change the CP associated with the present mode
 void ConfigDialog::saveClicked()
 {
-    general->saveClicked();
-    athlete->saveClicked();
-    appearance->saveClicked();
-    password->saveClicked();
-    metric->saveClicked();
-    data->saveClicked();
-    device->saveClicked();
+    // what changed ?
+    qint32 changed = 0;
+
+    changed |= general->saveClicked();
+    changed |= athlete->saveClicked();
+    changed |= appearance->saveClicked();
+    changed |= password->saveClicked();
+    changed |= metric->saveClicked();
+    changed |= data->saveClicked();
+    changed |= device->saveClicked();
 
     hide();
 
@@ -235,7 +252,7 @@ void ConfigDialog::saveClicked()
     } 
 
     // we're done.
-    context->notifyConfigChanged();
+    context->notifyConfigChanged(changed);
     close();
 }
 
@@ -251,9 +268,9 @@ GeneralConfig::GeneralConfig(QDir home, Zones *zones, Context *context) :
     setContentsMargins(0,0,0,0);
 }
 
-void GeneralConfig::saveClicked()
+qint32 GeneralConfig::saveClicked()
 {
-    generalPage->saveClicked();
+    return generalPage->saveClicked();
 }
 
 // ATHLETE CONFIG
@@ -262,10 +279,24 @@ AthleteConfig::AthleteConfig(QDir home, Zones *zones, Context *context) :
 {
     // the widgets
     athletePage = new RiderPage(this, context);
+    HelpWhatsThis *athleteHelp = new HelpWhatsThis(athletePage);
+    athletePage->setWhatsThis(athleteHelp->getWhatsThisText(HelpWhatsThis::Preferences_Athlete_About));
+
     zonePage = new ZonePage(context);
+    HelpWhatsThis *zoneHelp = new HelpWhatsThis(zonePage);
+    zonePage->setWhatsThis(zoneHelp->getWhatsThisText(HelpWhatsThis::Preferences_Athlete_TrainingZones_Power));
+
     hrZonePage = new HrZonePage(context);
+    HelpWhatsThis *hrZoneHelp = new HelpWhatsThis(hrZonePage);
+    hrZonePage->setWhatsThis(hrZoneHelp->getWhatsThisText(HelpWhatsThis::Preferences_Athlete_TrainingZones_HR));
+
     paceZonePage = new PaceZonePage(context);
+    HelpWhatsThis *paceZoneHelp = new HelpWhatsThis(paceZonePage);
+    paceZonePage->setWhatsThis(paceZoneHelp->getWhatsThisText(HelpWhatsThis::Preferences_Athlete_TrainingZones_Pace));
+
     autoImportPage = new AutoImportPage(context);
+    HelpWhatsThis *autoImportHelp = new HelpWhatsThis(autoImportPage);
+    autoImportPage->setWhatsThis(autoImportHelp->getWhatsThisText(HelpWhatsThis::Preferences_Athlete_Autoimport));
 
     setContentsMargins(0,0,0,0);
     QHBoxLayout *mainLayout = new QHBoxLayout(this);
@@ -282,13 +313,17 @@ AthleteConfig::AthleteConfig(QDir home, Zones *zones, Context *context) :
     mainLayout->addWidget(tabs);
 }
 
-void AthleteConfig::saveClicked()
+qint32 AthleteConfig::saveClicked()
 {
-    athletePage->saveClicked();
-    zonePage->saveClicked();
-    hrZonePage->saveClicked();
-    paceZonePage->saveClicked();
-    autoImportPage->saveClicked();
+    qint32 state = 0;
+
+    state |= athletePage->saveClicked();
+    state |= zonePage->saveClicked();
+    state |= hrZonePage->saveClicked();
+    state |= paceZonePage->saveClicked();
+    state |= autoImportPage->saveClicked();
+
+    return state;
 }
 
 // APPEARANCE CONFIG
@@ -303,9 +338,9 @@ AppearanceConfig::AppearanceConfig(QDir home, Zones *zones, Context *context) :
     setContentsMargins(0,0,0,0);
 }
 
-void AppearanceConfig::saveClicked()
+qint32 AppearanceConfig::saveClicked()
 {
-    appearancePage->saveClicked();
+    return appearancePage->saveClicked();
 }
 
 // PASSWORD CONFIG
@@ -320,9 +355,9 @@ PasswordConfig::PasswordConfig(QDir home, Zones *zones, Context *context) :
     setContentsMargins(0,0,0,0);
 }
 
-void PasswordConfig::saveClicked()
+qint32 PasswordConfig::saveClicked()
 {
-    passwordPage->saveClicked();
+    return passwordPage->saveClicked();
 }
 
 // METADATA CONFIG
@@ -337,9 +372,9 @@ DataConfig::DataConfig(QDir home, Zones *zones, Context *context) :
     setContentsMargins(0,0,0,0);
 }
 
-void DataConfig::saveClicked()
+qint32 DataConfig::saveClicked()
 {
-    dataPage->saveClicked();
+    return dataPage->saveClicked();
 }
 
 // GENERAL CONFIG
@@ -364,11 +399,15 @@ MetricConfig::MetricConfig(QDir home, Zones *zones, Context *context) :
     mainLayout->addWidget(tabs);
 }
 
-void MetricConfig::saveClicked()
+qint32 MetricConfig::saveClicked()
 {
-    bestsPage->saveClicked();
-    summaryPage->saveClicked();
-    intervalsPage->saveClicked();
+    qint32 state = 0;
+
+    state |= bestsPage->saveClicked();
+    state |= summaryPage->saveClicked();
+    state |= intervalsPage->saveClicked();
+
+    return state;
 }
 
 // GENERAL CONFIG
@@ -383,7 +422,7 @@ DeviceConfig::DeviceConfig(QDir home, Zones *zones, Context *context) :
     setContentsMargins(0,0,0,0);
 }
 
-void DeviceConfig::saveClicked()
+qint32 DeviceConfig::saveClicked()
 {
-    devicePage->saveClicked();
+    return devicePage->saveClicked();
 }

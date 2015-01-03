@@ -46,18 +46,21 @@ CONFIG(debug, debug|release) {
     QMAKE_CXXFLAGS += -DGC_DEBUG
 }
 
-!isEmpty( LIBOAUTH_INSTALL ) {
-    isEmpty( LIBOAUTH_INCLUDE ) { LIBOAUTH_INCLUDE += $${LIBOAUTH_INSTALL}/include }
-    isEmpty( LIBOAUTH_LIBS ) {
-        LIBOAUTH_LIBS = $${LIBOAUTH_INSTALL}/lib/liboauth.a \
-                        -lcurl -lcrypto -lz
+
+# KQOAuth .pro in default creates different libs for release and debug
+!isEmpty( KQOAUTH_INSTALL ) {
+    isEmpty( KQOAUTH_INCLUDE ) { KQOAUTH_INCLUDE += $${KQOAUTH_INSTALL}/src }
+    isEmpty( KQOAUTH_LIBS ) {
+        #KQOAUTH_LIBS = $${KQOAUTH_INSTALL}/lib/libkqoauth0.a
+        KQOAUTH_LIBS = -lkqoauth
     }
-    INCLUDEPATH += $${LIBOAUTH_INCLUDE}
-    LIBS        += $${LIBOAUTH_LIBS}
-    DEFINES     += GC_HAVE_LIBOAUTH
-    SOURCES     += OAuthDialog.cpp TwitterDialog.cpp
-    HEADERS     += OAuthDialog.h TwitterDialog.h
+    INCLUDEPATH += $${KQOAUTH_INCLUDE}
+    LIBS        += $${KQOAUTH_LIBS}
+    DEFINES     += GC_HAVE_KQOAUTH
+    SOURCES     += TwitterDialog.cpp
+    HEADERS     += TwitterDialog.h
 }
+
 
 !isEmpty( D2XX_INCLUDE ) {
     INCLUDEPATH += $${D2XX_INCLUDE}
@@ -97,7 +100,7 @@ CONFIG(debug, debug|release) {
                       $${KML_INSTALL}/lib/libkmlengine.a \
                       $${KML_INSTALL}/lib/libkmlbase.a
     }
-    INCLUDEPATH += $${KML_INCLUDE} $${BOOST_INCLUDE}
+    INCLUDEPATH += $${KML_INCLUDE}  $${BOOST_INCLUDE}
     LIBS        += $${KML_LIBS}
     DEFINES     += GC_HAVE_KML
     SOURCES     += KmlRideFile.cpp
@@ -262,6 +265,7 @@ HEADERS += \
         Aerolab.h \
         AerolabWindow.h \
         AllPlot.h \
+        AllPlotInterval.h \
         AllPlotWindow.h \
         AllPlotSlopeCurve.h \
         AnalysisSidebar.h \
@@ -297,7 +301,6 @@ HEADERS += \
         CriticalPowerWindow.h \
         CsvRideFile.h \
         DataProcessor.h \
-        DBAccess.h \
         DaysScaleDraw.h \
         Device.h \
         DeviceTypes.h \
@@ -332,6 +335,7 @@ HEADERS += \
         GpxParser.h \
         GpxRideFile.h \
         HelpWindow.h \
+        HelpWhatsThis.h \
         HistogramWindow.h \
         HomeWindow.h \
         HrZones.h \
@@ -363,13 +367,13 @@ HEADERS += \
         ManualRideFile.h \
         MergeActivityWizard.h \
         MetadataWindow.h \
-        MetricAggregator.h \
         MoxyDevice.h \
         MUPlot.h \
         MUPool.h \
         MUWidget.h \
         NewCyclistDialog.h \
         NullController.h \
+        OAuthDialog.h \
         PaceZones.h \
         Pages.h \
         PDModel.h \
@@ -391,6 +395,7 @@ HEADERS += \
         RealtimePlot.h \
         RideAutoImportConfig.h \
         RideCache.h \
+        RideCacheModel.h \
         RideEditor.h \
         RideFile.h \
         RideFileCache.h \
@@ -420,6 +425,7 @@ HEADERS += \
         Settings.h \
         ShareDialog.h \
         SpecialFields.h \
+        Specification.h \
         SpinScanPlot.h \
         SpinScanPolarPlot.h \
         SpinScanPlotWindow.h \
@@ -431,8 +437,7 @@ HEADERS += \
         SrdRideFile.h \
         SrmRideFile.h \
         Statistic.h \
-        StressCalculator.h \
-        SummaryMetrics.h \
+        PMCData.h \
         SummaryWindow.h \
         SyncRideFile.h \
         Tab.h \
@@ -474,6 +479,7 @@ SOURCES += \
         Aerolab.cpp \
         AerolabWindow.cpp \
         AllPlot.cpp \
+        AllPlotInterval.cpp \
         AllPlotWindow.cpp \
         AllPlotSlopeCurve.cpp \
         AnalysisSidebar.cpp \
@@ -512,7 +518,6 @@ SOURCES += \
         CsvRideFile.cpp \
         DanielsPoints.cpp \
         DataProcessor.cpp \
-        DBAccess.cpp \
         Device.cpp \
         DeviceTypes.cpp \
         DeviceConfiguration.cpp \
@@ -555,6 +560,7 @@ SOURCES += \
         GpxParser.cpp \
         GpxRideFile.cpp \
         HelpWindow.cpp \
+        HelpWhatsThis.cpp \
         HistogramWindow.cpp \
         HomeWindow.cpp \
         HrTimeInZone.cpp \
@@ -586,12 +592,12 @@ SOURCES += \
         ManualRideFile.cpp \
         MergeActivityWizard.cpp \
         MetadataWindow.cpp \
-        MetricAggregator.cpp \
         MoxyDevice.cpp \
         MUPlot.cpp \
         MUWidget.cpp \
         NewCyclistDialog.cpp \
         NullController.cpp \
+        OAuthDialog.cpp \
         PaceTimeInZone.cpp \
         PaceZones.cpp \
         Pages.cpp \
@@ -615,6 +621,7 @@ SOURCES += \
         ReferenceLineDialog.cpp \
         RideAutoImportConfig.cpp \
         RideCache.cpp \
+        RideCacheModel.cpp \
         RideEditor.cpp \
         RideFile.cpp \
         RideFileCache.cpp \
@@ -642,6 +649,7 @@ SOURCES += \
         ShareDialog.cpp \
         SmallPlot.cpp \
         SpecialFields.cpp \
+        Specification.cpp \
         SpinScanPlot.cpp \
         SpinScanPolarPlot.cpp \
         SpinScanPlotWindow.cpp \
@@ -653,8 +661,7 @@ SOURCES += \
         SrdRideFile.cpp \
         SrmRideFile.cpp \
         Statistic.cpp \
-        StressCalculator.cpp \
-        SummaryMetrics.cpp \
+        PMCData.cpp \
         SummaryWindow.cpp \
         SyncRideFile.cpp \
         Tab.cpp \

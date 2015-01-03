@@ -20,14 +20,13 @@
 #include "MainWindow.h"
 #include "Context.h"
 #include "Athlete.h"
+#include "RideCache.h"
 #include "Zones.h"
 #include "HrZones.h"
 #include "PaceZones.h"
-#include "MetricAggregator.h"
-#include "SummaryMetrics.h"
 #include "LTMSettings.h" // getAllBestsFor needs this
 
-#include <math.h> // for pow()
+#include <cmath> // for pow()
 #include <QDebug>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -36,8 +35,8 @@
 static const int maxcache = 25; // lets max out at 25 caches
 
 // cache from ride
-RideFileCache::RideFileCache(Context *context, QString fileName, RideFile *passedride, bool check) :
-               context(context), rideFileName(fileName), ride(passedride)
+RideFileCache::RideFileCache(Context *context, QString fileName, RideFile *passedride, bool check, bool refresh) :
+               incomplete(false), context(context), rideFileName(fileName), ride(passedride)
 {
     // resize all the arrays to zero
     wattsMeanMax.resize(0);
@@ -97,7 +96,7 @@ RideFileCache::RideFileCache(Context *context, QString fileName, RideFile *passe
 
             // its more recent -or- the crc is the same
             if (rideFileInfo.lastModified() <= cacheFileInfo.lastModified() ||
-                head.crc == DBAccess::computeFileCRC(rideFileName)) {
+                head.crc == RideFile::computeFileCRC(rideFileName)) {
  
                 // it is the same ?
                 if (head.version == RideFileCacheVersion) {
@@ -111,38 +110,74 @@ RideFileCache::RideFileCache(Context *context, QString fileName, RideFile *passe
     }
 
     // NEED TO UPDATE!!
+    if (refresh) {
 
-    // not up-to-date we need to refresh from the ridefile
-    if (ride) {
-
-        // we got passed the ride - so update from that
-        refreshCache();
-
-    } else {
-
-        // we need to open it to update since we were not passed one
-        QStringList errors;
-        QFile file(rideFileName);
-
-        ride = RideFileFactory::instance().openRideFile(context, file, errors);
-
+        // not up-to-date we need to refresh from the ridefile
         if (ride) {
-            ride->getWeight(); // before threads are created
+
+            // we got passed the ride - so update from that
             refreshCache();
-            delete ride;
+
+        } else {
+
+            // we need to open it to update since we were not passed one
+            QStringList errors;
+            QFile file(rideFileName);
+
+            ride = RideFileFactory::instance().openRideFile(context, file, errors);
+
+            if (ride) {
+                ride->getWeight(); // before threads are created
+                refreshCache();
+                delete ride;
+            }
+            ride = 0;
         }
-        ride = 0;
+    } else {
+        incomplete = true; // data not available !
     }
 }
 
-// get the date from the ride file name
-static QDate dateFromFileName(const QString filename) {
-    QRegExp rx("^(\\d\\d\\d\\d)_(\\d\\d)_(\\d\\d)_\\d\\d_\\d\\d_\\d\\d\\..*$");
-    if (rx.exactMatch(filename)) {
-        QDate date(rx.cap(1).toInt(), rx.cap(2).toInt(), rx.cap(3).toInt());
-        if (date.isValid()) return date;
+bool 
+RideFileCache::checkStale(Context *context, RideItem*item)
+{
+    // check if we're stale ?
+    // Get info for ride file and cache file
+    QString rideFileName = context->athlete->home->activities().canonicalPath() + "/" + item->fileName;
+    QFileInfo rideFileInfo(rideFileName);
+    QString cacheFileName = context->athlete->home->cache().canonicalPath() + "/" + rideFileInfo.baseName() + ".cpx";
+    QFileInfo cacheFileInfo(cacheFileName);
+
+    // is it up-to-date?
+    if (cacheFileInfo.exists() && cacheFileInfo.size() >= (int)sizeof(struct RideFileCacheHeader)) {
+
+        // we have a file, it is more recent than the ride file
+        // but is it the latest version?
+        RideFileCacheHeader head;
+        QFile cacheFile(cacheFileName);
+        if (cacheFile.open(QIODevice::ReadOnly) == true) {
+
+            // read the header
+            QDataStream inFile(&cacheFile);
+            inFile.readRawData((char *) &head, sizeof(head));
+            cacheFile.close();
+
+            // its more recent -or- the crc is the same
+            if (rideFileInfo.lastModified() <= cacheFileInfo.lastModified() ||
+                head.crc == RideFile::computeFileCRC(rideFileName)) {
+ 
+                // it is the same ?
+                if (head.version == RideFileCacheVersion) {
+
+                    // WE'RE GOOD
+                    return false;
+                }
+            }
+        }
     }
-    return QDate(); // nil date
+
+    // its stale !
+    return true;
 }
 
 // returns offset from end of head
@@ -251,16 +286,15 @@ QVector<float> RideFileCache::meanMaxPowerFor(Context *context, QVector<float> &
     bool first = true;
 
     // look at all the rides
-    foreach (QString rideFileName, RideFileFactory::instance().listRideFiles(context->athlete->home->activities())) {
-        QDate rideDate = dateFromFileName(rideFileName);
+    foreach (RideItem *item, context->athlete->rideCache->rides()) {
 
-        if (rideDate < from || rideDate > to) continue; // not one we want
+        if (item->dateTime.date() < from || item->dateTime.date() > to) continue; // not one we want
 
         // get the power data
         if (first == true) {
 
             // first time through the whole thing is going to be best
-            returning =  meanMaxPowerFor(context, returningwpk, context->athlete->home->activities().canonicalPath() + "/" + rideFileName);
+            returning =  meanMaxPowerFor(context, returningwpk, context->athlete->home->activities().canonicalPath() + "/" + item->fileName);
             first = false;
 
         } else {
@@ -268,7 +302,7 @@ QVector<float> RideFileCache::meanMaxPowerFor(Context *context, QVector<float> &
             QVector<float> thiswpk;
 
             // next time through we should only pick out better times
-            QVector<float> ridebest = meanMaxPowerFor(context, thiswpk, context->athlete->home->activities().canonicalPath() + "/" + rideFileName);
+            QVector<float> ridebest = meanMaxPowerFor(context, thiswpk, context->athlete->home->activities().canonicalPath() + "/" + item->fileName);
 
             // do we need to increase the returning array?
             if (returning.size() < ridebest.size()) returning.resize(ridebest.size());
@@ -349,7 +383,7 @@ QVector<float> RideFileCache::meanMaxPowerFor(Context *context, QVector<float>&w
 }
 
 RideFileCache::RideFileCache(RideFile *ride) :
-               context(ride->context), rideFileName(""), ride(ride)
+               incomplete(false), context(ride->context), rideFileName(""), ride(ride)
 {
     // resize all the arrays to zero
     wattsMeanMax.resize(0);
@@ -393,35 +427,6 @@ RideFileCache::RideFileCache(RideFile *ride) :
 
     // calculate all the arrays
     compute();
-
-    // setup the doubles the users use
-    doubleArray(wattsMeanMaxDouble, wattsMeanMax, RideFile::watts);
-    doubleArray(hrMeanMaxDouble, hrMeanMax, RideFile::hr);
-    doubleArray(cadMeanMaxDouble, cadMeanMax, RideFile::cad);
-    doubleArray(nmMeanMaxDouble, nmMeanMax, RideFile::nm);
-    doubleArray(kphMeanMaxDouble, kphMeanMax, RideFile::kph);
-    doubleArray(kphdMeanMaxDouble, kphdMeanMax, RideFile::kphd);
-    doubleArray(wattsdMeanMaxDouble, wattsdMeanMax, RideFile::wattsd);
-    doubleArray(caddMeanMaxDouble, caddMeanMax, RideFile::cadd);
-    doubleArray(nmdMeanMaxDouble, nmdMeanMax, RideFile::nmd);
-    doubleArray(hrdMeanMaxDouble, hrdMeanMax, RideFile::hrd);
-    doubleArray(npMeanMaxDouble, npMeanMax, RideFile::NP);
-    doubleArray(vamMeanMaxDouble, vamMeanMax, RideFile::vam);
-    doubleArray(xPowerMeanMaxDouble, xPowerMeanMax, RideFile::xPower);
-    doubleArray(wattsKgMeanMaxDouble, wattsKgMeanMax, RideFile::wattsKg);
-    doubleArray(aPowerMeanMaxDouble, aPowerMeanMax, RideFile::aPower);
-
-    doubleArrayForDistribution(wattsDistributionDouble, wattsDistribution);
-    doubleArrayForDistribution(hrDistributionDouble, hrDistribution);
-    doubleArrayForDistribution(cadDistributionDouble, cadDistribution);
-    doubleArrayForDistribution(gearDistributionDouble, gearDistribution);
-    doubleArrayForDistribution(nmDistributionDouble, nmDistribution);
-    doubleArrayForDistribution(kphDistributionDouble, kphDistribution);
-    doubleArrayForDistribution(xPowerDistributionDouble, xPowerDistribution);
-    doubleArrayForDistribution(npDistributionDouble, npDistribution);
-    doubleArrayForDistribution(wattsKgDistributionDouble, wattsKgDistribution);
-    doubleArrayForDistribution(aPowerDistributionDouble, aPowerDistribution);
-    doubleArrayForDistribution(smo2DistributionDouble, smo2Distribution);
 }
 
 int
@@ -672,7 +677,7 @@ RideFileCache::refreshCache()
     static bool writeerror=false;
 
     // set head crc
-    crc = DBAccess::computeFileCRC(rideFileName);
+    crc = RideFile::computeFileCRC(rideFileName);
 
     // update cache!
     QFile cacheFile(cacheFileName);
@@ -719,6 +724,19 @@ RideFileCache::refreshCache()
         // send a console message instead...
         qDebug()<<"cannot create cache file"<<cacheFileName;
     }
+}
+
+// if you already have a cache open and want
+// to refresh it from in-memory data then refresh()
+// does that
+void RideFileCache::refresh(RideFile *file)
+{
+    // set and refresh
+    if (file == NULL && ride == NULL) return;
+    if (file) ride = file;
+
+    // just call compute!
+    compute();
 }
 
 // this function is a candidate for supporting
@@ -775,6 +793,35 @@ void RideFileCache::RideFileCache::compute()
     thread13.wait();
     thread14.wait();
     thread15.wait();
+
+    // setup the doubles the users use
+    doubleArray(wattsMeanMaxDouble, wattsMeanMax, RideFile::watts);
+    doubleArray(hrMeanMaxDouble, hrMeanMax, RideFile::hr);
+    doubleArray(cadMeanMaxDouble, cadMeanMax, RideFile::cad);
+    doubleArray(nmMeanMaxDouble, nmMeanMax, RideFile::nm);
+    doubleArray(kphMeanMaxDouble, kphMeanMax, RideFile::kph);
+    doubleArray(kphdMeanMaxDouble, kphdMeanMax, RideFile::kphd);
+    doubleArray(wattsdMeanMaxDouble, wattsdMeanMax, RideFile::wattsd);
+    doubleArray(caddMeanMaxDouble, caddMeanMax, RideFile::cadd);
+    doubleArray(nmdMeanMaxDouble, nmdMeanMax, RideFile::nmd);
+    doubleArray(hrdMeanMaxDouble, hrdMeanMax, RideFile::hrd);
+    doubleArray(npMeanMaxDouble, npMeanMax, RideFile::NP);
+    doubleArray(vamMeanMaxDouble, vamMeanMax, RideFile::vam);
+    doubleArray(xPowerMeanMaxDouble, xPowerMeanMax, RideFile::xPower);
+    doubleArray(wattsKgMeanMaxDouble, wattsKgMeanMax, RideFile::wattsKg);
+    doubleArray(aPowerMeanMaxDouble, aPowerMeanMax, RideFile::aPower);
+
+    doubleArrayForDistribution(wattsDistributionDouble, wattsDistribution);
+    doubleArrayForDistribution(hrDistributionDouble, hrDistribution);
+    doubleArrayForDistribution(cadDistributionDouble, cadDistribution);
+    doubleArrayForDistribution(gearDistributionDouble, gearDistribution);
+    doubleArrayForDistribution(nmDistributionDouble, nmDistribution);
+    doubleArrayForDistribution(kphDistributionDouble, kphDistribution);
+    doubleArrayForDistribution(xPowerDistributionDouble, xPowerDistribution);
+    doubleArrayForDistribution(npDistributionDouble, npDistribution);
+    doubleArrayForDistribution(wattsKgDistributionDouble, wattsKgDistribution);
+    doubleArrayForDistribution(aPowerDistributionDouble, aPowerDistribution);
+    doubleArrayForDistribution(smo2DistributionDouble, smo2Distribution);
 }
 
 //----------------------------------------------------------------------
@@ -1048,8 +1095,8 @@ MeanMaxComputer::run()
             first = false;
         }
 
-        // drag back to start at 0s
-        double psecs = p->secs - offset;
+        // drag back to start at 1s or whatever recIntSecs() is !
+        double psecs = p->secs - offset + ride->recIntSecs();
 
         // fill in any gaps in recording - use same dodgy rounding as before
         int count = (psecs - lastsecs - ride->recIntSecs()) / ride->recIntSecs();
@@ -1360,7 +1407,7 @@ static void distAggregate(QVector<double> &into, QVector<double> &other)
 }
 
 RideFileCache::RideFileCache(Context *context, QDate start, QDate end, bool filter, QStringList files, bool onhome)
-               : start(start), end(end), context(context), rideFileName(""), ride(0) 
+               : start(start), end(end), incomplete(false), context(context), rideFileName(""), ride(0)
 {
 
     // remember parameters for getting heat
@@ -1426,56 +1473,64 @@ RideFileCache::RideFileCache(Context *context, QDate start, QDate end, bool filt
 
     // Iterate over the ride files (not the cpx files since they /might/ not
     // exist, or /might/ be out of date.
-    foreach (QString rideFileName, RideFileFactory::instance().listRideFiles(context->athlete->home->activities())) {
-        QDate rideDate = dateFromFileName(rideFileName);
-        if (((filter == true && files.contains(rideFileName)) || filter == false) &&
+    foreach (RideItem *item, context->athlete->rideCache->rides()) {
+
+        QDate rideDate = item->dateTime.date();
+
+        if (((filter == true && files.contains(item->fileName)) || filter == false) &&
             rideDate >= start && rideDate <= end) {
 
             // skip globally filtered values
-            if (context->isfiltered && !context->filters.contains(rideFileName)) continue;
-            if (onhome && context->ishomefiltered && !context->homeFilters.contains(rideFileName)) continue;
+            if (context->isfiltered && !context->filters.contains(item->fileName)) continue;
+            if (onhome && context->ishomefiltered && !context->homeFilters.contains(item->fileName)) continue;
 
-            // get its cached values (will refresh if needed...)
-            RideFileCache rideCache(context, context->athlete->home->activities().canonicalPath() + "/" + rideFileName);
+            // get its cached values (will NOT! refresh if needed...)
+            // the true means it will check only
+            RideFileCache rideCache(context, context->athlete->home->activities().canonicalPath() + "/" + item->fileName, NULL, false, false);
+            if (rideCache.incomplete == true) {
+                // ack, data not available !
+                incomplete = true;
+            } else {
 
-            // lets aggregate
-            meanMaxAggregate(wattsMeanMaxDouble, rideCache.wattsMeanMaxDouble, wattsMeanMaxDate, rideDate);
-            meanMaxAggregate(hrMeanMaxDouble, rideCache.hrMeanMaxDouble, hrMeanMaxDate, rideDate);
-            meanMaxAggregate(cadMeanMaxDouble, rideCache.cadMeanMaxDouble, cadMeanMaxDate, rideDate);
-            meanMaxAggregate(nmMeanMaxDouble, rideCache.nmMeanMaxDouble, nmMeanMaxDate, rideDate);
-            meanMaxAggregate(kphMeanMaxDouble, rideCache.kphMeanMaxDouble, kphMeanMaxDate, rideDate);
-            meanMaxAggregate(kphdMeanMaxDouble, rideCache.kphdMeanMaxDouble, kphdMeanMaxDate, rideDate);
-            meanMaxAggregate(wattsdMeanMaxDouble, rideCache.wattsdMeanMaxDouble, wattsdMeanMaxDate, rideDate);
-            meanMaxAggregate(caddMeanMaxDouble, rideCache.caddMeanMaxDouble, caddMeanMaxDate, rideDate);
-            meanMaxAggregate(nmdMeanMaxDouble, rideCache.nmdMeanMaxDouble, nmdMeanMaxDate, rideDate);
-            meanMaxAggregate(hrdMeanMaxDouble, rideCache.hrdMeanMaxDouble, hrdMeanMaxDate, rideDate);
-            meanMaxAggregate(xPowerMeanMaxDouble, rideCache.xPowerMeanMaxDouble, xPowerMeanMaxDate, rideDate);
-            meanMaxAggregate(npMeanMaxDouble, rideCache.npMeanMaxDouble, npMeanMaxDate, rideDate);
-            meanMaxAggregate(vamMeanMaxDouble, rideCache.vamMeanMaxDouble, vamMeanMaxDate, rideDate);
-            meanMaxAggregate(wattsKgMeanMaxDouble, rideCache.wattsKgMeanMaxDouble, wattsKgMeanMaxDate, rideDate);
-            meanMaxAggregate(aPowerMeanMaxDouble, rideCache.aPowerMeanMaxDouble, aPowerMeanMaxDate, rideDate);
+                // lets aggregate
+                meanMaxAggregate(wattsMeanMaxDouble, rideCache.wattsMeanMaxDouble, wattsMeanMaxDate, rideDate);
+                meanMaxAggregate(hrMeanMaxDouble, rideCache.hrMeanMaxDouble, hrMeanMaxDate, rideDate);
+                meanMaxAggregate(cadMeanMaxDouble, rideCache.cadMeanMaxDouble, cadMeanMaxDate, rideDate);
+                meanMaxAggregate(nmMeanMaxDouble, rideCache.nmMeanMaxDouble, nmMeanMaxDate, rideDate);
+                meanMaxAggregate(kphMeanMaxDouble, rideCache.kphMeanMaxDouble, kphMeanMaxDate, rideDate);
+                meanMaxAggregate(kphdMeanMaxDouble, rideCache.kphdMeanMaxDouble, kphdMeanMaxDate, rideDate);
+                meanMaxAggregate(wattsdMeanMaxDouble, rideCache.wattsdMeanMaxDouble, wattsdMeanMaxDate, rideDate);
+                meanMaxAggregate(caddMeanMaxDouble, rideCache.caddMeanMaxDouble, caddMeanMaxDate, rideDate);
+                meanMaxAggregate(nmdMeanMaxDouble, rideCache.nmdMeanMaxDouble, nmdMeanMaxDate, rideDate);
+                meanMaxAggregate(hrdMeanMaxDouble, rideCache.hrdMeanMaxDouble, hrdMeanMaxDate, rideDate);
+                meanMaxAggregate(xPowerMeanMaxDouble, rideCache.xPowerMeanMaxDouble, xPowerMeanMaxDate, rideDate);
+                meanMaxAggregate(npMeanMaxDouble, rideCache.npMeanMaxDouble, npMeanMaxDate, rideDate);
+                meanMaxAggregate(vamMeanMaxDouble, rideCache.vamMeanMaxDouble, vamMeanMaxDate, rideDate);
+                meanMaxAggregate(wattsKgMeanMaxDouble, rideCache.wattsKgMeanMaxDouble, wattsKgMeanMaxDate, rideDate);
+                meanMaxAggregate(aPowerMeanMaxDouble, rideCache.aPowerMeanMaxDouble, aPowerMeanMaxDate, rideDate);
 
-            distAggregate(wattsDistributionDouble, rideCache.wattsDistributionDouble);
-            distAggregate(hrDistributionDouble, rideCache.hrDistributionDouble);
-            distAggregate(cadDistributionDouble, rideCache.cadDistributionDouble);
-            distAggregate(gearDistributionDouble, rideCache.gearDistributionDouble);
-            distAggregate(nmDistributionDouble, rideCache.nmDistributionDouble);
-            distAggregate(kphDistributionDouble, rideCache.kphDistributionDouble);
-            distAggregate(xPowerDistributionDouble, rideCache.xPowerDistributionDouble);
-            distAggregate(npDistributionDouble, rideCache.npDistributionDouble);
-            distAggregate(wattsKgDistributionDouble, rideCache.wattsKgDistributionDouble);
-            distAggregate(aPowerDistributionDouble, rideCache.aPowerDistributionDouble);
-            distAggregate(smo2DistributionDouble, rideCache.smo2DistributionDouble);
+                distAggregate(wattsDistributionDouble, rideCache.wattsDistributionDouble);
+                distAggregate(hrDistributionDouble, rideCache.hrDistributionDouble);
+                distAggregate(cadDistributionDouble, rideCache.cadDistributionDouble);
+                distAggregate(gearDistributionDouble, rideCache.gearDistributionDouble);
+                distAggregate(nmDistributionDouble, rideCache.nmDistributionDouble);
+                distAggregate(kphDistributionDouble, rideCache.kphDistributionDouble);
+                distAggregate(xPowerDistributionDouble, rideCache.xPowerDistributionDouble);
+                distAggregate(npDistributionDouble, rideCache.npDistributionDouble);
+                distAggregate(wattsKgDistributionDouble, rideCache.wattsKgDistributionDouble);
+                distAggregate(aPowerDistributionDouble, rideCache.aPowerDistributionDouble);
+                distAggregate(smo2DistributionDouble, rideCache.smo2DistributionDouble);
 
-            // cumulate timeinzones
-            for (int i=0; i<10; i++) {
-                paceTimeInZone[i] += rideCache.paceTimeInZone[i];
-                hrTimeInZone[i] += rideCache.hrTimeInZone[i];
-                wattsTimeInZone[i] += rideCache.wattsTimeInZone[i];
-                if (i<4) {
-                    paceCPTimeInZone[i] += rideCache.paceCPTimeInZone[i];
-                    hrCPTimeInZone[i] += rideCache.hrCPTimeInZone[i];
-                    wattsCPTimeInZone[i] += rideCache.wattsCPTimeInZone[i];
+                // cumulate timeinzones
+                for (int i=0; i<10; i++) {
+                    paceTimeInZone[i] += rideCache.paceTimeInZone[i];
+                    hrTimeInZone[i] += rideCache.hrTimeInZone[i];
+                    wattsTimeInZone[i] += rideCache.wattsTimeInZone[i];
+                    if (i<4) {
+                        paceCPTimeInZone[i] += rideCache.paceCPTimeInZone[i];
+                        hrCPTimeInZone[i] += rideCache.hrCPTimeInZone[i];
+                        wattsCPTimeInZone[i] += rideCache.wattsCPTimeInZone[i];
+                    }
                 }
             }
         }
@@ -1484,8 +1539,8 @@ RideFileCache::RideFileCache(Context *context, QDate start, QDate end, bool filt
     // set the cursor back to normal
     context->mainWindow->setCursor(Qt::ArrowCursor);
 
-    // lets add to the cache for others to re-use -- but not if filtered
-    if (!context->isfiltered && (!context->ishomefiltered || !onhome) && !filter) {
+    // lets add to the cache for others to re-use -- but not if filtered or incomplete
+    if (incomplete == false && !context->isfiltered && (!context->ishomefiltered || !onhome) && !filter) {
 
         if (context->athlete->cpxCache.count() > maxcache) {
             delete(context->athlete->cpxCache.at(0));
@@ -1493,7 +1548,6 @@ RideFileCache::RideFileCache(Context *context, QDate start, QDate end, bool filt
         }
         context->athlete->cpxCache.append(new RideFileCache(this));
     }
-
 }
 
 //
@@ -1509,18 +1563,19 @@ QVector<float> &RideFileCache::heatMeanMaxArray()
 
     // ok, we need to iterate again and compute heat based upon
     // how close to the absolute best we've got
-    foreach (QString rideFileName, RideFileFactory::instance().listRideFiles(context->athlete->home->activities())) {
+    foreach(RideItem *item, context->athlete->rideCache->rides()) {
 
-        QDate rideDate = dateFromFileName(rideFileName);
-        if (((filter == true && files.contains(rideFileName)) || filter == false) &&
+        QDate rideDate = item->dateTime.date();
+
+        if (((filter == true && files.contains(item->fileName)) || filter == false) &&
             rideDate >= start && rideDate <= end) {
 
             // skip globally filtered values
-            if (context->isfiltered && !context->filters.contains(rideFileName)) continue;
-            if (onhome && context->ishomefiltered && !context->homeFilters.contains(rideFileName)) continue;
+            if (context->isfiltered && !context->filters.contains(item->fileName)) continue;
+            if (onhome && context->ishomefiltered && !context->homeFilters.contains(item->fileName)) continue;
 
             // get its cached values (will refresh if needed...)
-            RideFileCache rideCache(context, context->athlete->home->activities().canonicalPath() + "/" + rideFileName);
+            RideFileCache rideCache(context, context->athlete->home->activities().canonicalPath() + "/" + item->fileName);
 
             for(int i=0; i<rideCache.wattsMeanMaxDouble.count() && i<wattsMeanMaxDouble.count(); i++) {
 
@@ -1748,6 +1803,34 @@ void RideFileCache::doubleArrayForDistribution(QVector<double> &into, QVector<fl
     return;
 }
 
+// get a list of all values for the spec, series and duration and see where the value ranks
+int RideFileCache::rank(Context *context, RideFile::SeriesType series, int duration, 
+         double value, Specification spec, int &of)
+{
+
+    QList<double> values;
+
+    foreach(RideItem*item, context->athlete->rideCache->rides()) {
+        if (!spec.pass(item)) continue;
+
+        // get the best for this one
+        values << RideFileCache::best(context, item->fileName, series, duration);
+    }
+
+    // sort the list
+    qSort(values.begin(), values.end(), qGreater<double>());
+
+    // get the ranking and count
+    of = values.count();
+
+    // where do we fit?
+    for (int i=0; i<values.count(); i++)
+        if (values.at(i) <= value)
+            return (i+1);
+
+    return values.count();
+}
+
 double 
 RideFileCache::best(Context *context, QString filename, RideFile::SeriesType series, int duration)
 {
@@ -1824,7 +1907,7 @@ RideFileCache::tiz(Context *context, QString filename, RideFile::SeriesType seri
 }
 
 // get best values (as passed in the list of MetricDetails between the dates specified
-// and return as an array of SummaryMetrics.
+// and return as an array of RideBests)
 //
 // this is to 're-use' the metric api (especially in the LTM code) for passing back multiple
 // bests across multiple rides in one object. We do this so we can optimise the read/seek across
@@ -1836,10 +1919,10 @@ RideFileCache::tiz(Context *context, QString filename, RideFile::SeriesType seri
 // like the metric code works.
 // 
 //
-QList<SummaryMetrics>
-RideFileCache::getAllBestsFor(Context *context, QList<MetricDetail> metrics, QDateTime from, QDateTime to)
+QList<RideBest>
+RideFileCache::getAllBestsFor(Context *context, QList<MetricDetail> metrics, Specification specification)
 {
-    QList<SummaryMetrics> results;
+    QList<RideBest> results;
     QList<MetricDetail> worklist;
 
     // lets get a worklist
@@ -1851,44 +1934,34 @@ RideFileCache::getAllBestsFor(Context *context, QList<MetricDetail> metrics, QDa
     if (worklist.count() == 0) return results; // no work to do
 
     // get a list of rides & iterate over them
-    foreach(QString filename, context->athlete->metricDB->allActivityFilenames()) {
+    foreach(RideItem *ride, context->athlete->rideCache->rides()) {
 
-        QDateTime datetime;
-        QRegExp rx ("^((\\d\\d\\d\\d)_(\\d\\d)_(\\d\\d)_(\\d\\d)_(\\d\\d)_(\\d\\d))\\.(.+)$");
+        if (!specification.pass(ride)) continue;
 
-        if (rx.exactMatch(filename)) {
+        // get the ride cache name
 
-            QDate date(rx.cap(2).toInt(), rx.cap(3).toInt(),rx.cap(4).toInt());
-            QTime time(rx.cap(5).toInt(), rx.cap(6).toInt(),rx.cap(7).toInt());
-            datetime = QDateTime(date,time);
-
-        } else continue;
-
-        // is it in range?
-        if (datetime < from || datetime > to) continue;
-
-        // CPX filename
-        QFileInfo rideFileInfo(context->athlete->home->activities().canonicalPath() + "/" + filename);
+        // CPX ?
+        QFileInfo rideFileInfo(context->athlete->home->activities().canonicalPath() + "/" + ride->fileName);
         QString cacheFileName(context->athlete->home->cache().canonicalPath() + "/" + rideFileInfo.baseName() + ".cpx");
         RideFileCacheHeader head;
         QFile cacheFile(cacheFileName);
 
-        // open
+        // open ok ?
         if (cacheFile.open(QIODevice::ReadOnly | QIODevice::Unbuffered) == false) continue;
 
         // get header
         QDataStream inFile(&cacheFile);
         inFile.readRawData((char *) &head, sizeof(head));
 
-        // out of date 
+        // out of date - just skip
         if (head.version != RideFileCacheVersion) {
             cacheFile.close();
             continue;
         }
 
-        SummaryMetrics add;
-        add.setFileName(filename);
-        add.setRideDate(datetime);
+        RideBest add;
+        add.setFileName(ride->fileName);
+        add.setRideDate(ride->dateTime);
 
         // work through the worklist adding each best
         foreach (MetricDetail workitem, worklist) {
@@ -1923,4 +1996,24 @@ RideFileCache::getAllBestsFor(Context *context, QList<MetricDetail> metrics, QDa
 
     // all done, return results
     return results;
+}
+
+static
+const RideMetric *metricForSymbol(QString symbol)
+{
+    const RideMetricFactory &factory = RideMetricFactory::instance();
+    return factory.rideMetric(symbol);
+}
+
+double
+RideBest::getForSymbol(QString symbol, bool metric) const
+{
+    if (metric) return value.value(symbol, 0.0);
+    else {
+        const RideMetric *m = metricForSymbol(symbol);
+        double metricValue = value.value(symbol, 0.0);
+        metricValue *= m->conversion();
+        metricValue += m->conversionSum();
+        return metricValue;
+    }
 }

@@ -22,9 +22,10 @@
 #include "Athlete.h"
 #include "RideItem.h"
 #include "IntervalItem.h"
-#include "math.h"
+#include "cmath"
 #include "Units.h" // for MILES_PER_KM
 #include "Colors.h" // for MILES_PER_KM
+#include "HelpWhatsThis.h"
 
 #include <QtGui>
 #include <QString>
@@ -58,6 +59,8 @@ ModelWindow::ModelWindow(Context *context) :
     GcChartWindow(context), context(context), ride(NULL), current(NULL)
 {
     QWidget *c = new QWidget(this);
+    HelpWhatsThis *helpConfig = new HelpWhatsThis(c);
+    c->setWhatsThis(helpConfig->getWhatsThisText(HelpWhatsThis::ChartRides_3D));
     QFormLayout *cl = new QFormLayout(c);
     setControls(c);
 
@@ -72,6 +75,9 @@ ModelWindow::ModelWindow(Context *context) :
     mainLayout->addWidget(zpane);
     mainLayout->addWidget(modelPlot);
     setChartLayout(mainLayout);
+
+    HelpWhatsThis *help = new HelpWhatsThis(modelPlot);
+    modelPlot->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_3D));
 
     // preset Values
     presetLabel = new QLabel(tr("Analyse"), this);
@@ -163,14 +169,14 @@ ModelWindow::ModelWindow(Context *context) :
     connect(binWidthSlider, SIGNAL(valueChanged(int)), this, SLOT(setBinWidthFromSlider()));
     connect(binWidthLineEdit, SIGNAL(editingFinished()), this, SLOT(setBinWidthFromLineEdit()));
     connect(zpane, SIGNAL(valueChanged(int)), this, SLOT(setZPane(int)));
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 
     // set colors on first run
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 void
-ModelWindow::configChanged()
+ModelWindow::configChanged(qint32)
 {
     setProperty("color", GColor(CPLOTBACKGROUND));
 }

@@ -35,8 +35,6 @@
 #include "SpecialFields.h"
 #include "RideMetadata.h"
 
-extern int DBSchemaVersion;
-
 class RideFile;
 class Zones;
 class RideMetric;
@@ -53,7 +51,6 @@ class DBAccess
 
         // get schema version
         int getDBVersion();
-        static unsigned int computeFileCRC(QString); 
 
         // create and drop connections
 	    DBAccess(Context *context);
@@ -66,22 +63,16 @@ class DBAccess
         // Create/Delete Intervals
         bool importInterval(SummaryMetrics *summaryMetrics, IntervalItem *interval, QString type, QString groupName, QColor color, unsigned long fingerprint, bool modify);
 
-        // Query Records
-        bool getRide(QString filename, SummaryMetrics &metrics, QColor&color);
-        SummaryMetrics getRideMetrics(QString filename); // for a filename
-
         QList<SummaryMetrics> getAllMetricsFor(QDateTime start, QDateTime end);
         QList<SummaryMetrics> getAllMetricsFor(DateRange dr) {
             return getAllMetricsFor(QDateTime(dr.from,QTime(0,0,0)), QDateTime(dr.to, QTime(23,59,59)));
         }
-        QList<QString> getDistinctValues(FieldDefinition field);
 
         bool getInterval(QString filename, QString type, QString groupName, int start, SummaryMetrics &summaryMetrics, QColor&color);
         bool getIntervalForRide(QString);
         bool deleteIntervalsForRide(QString filename);
         bool deleteIntervalsForTypeAndGroupName(QString type, QString groupName);
 
-	    QList<QDateTime> getAllDates();
         QList<Season> getAllSeasons();
 
 	private:

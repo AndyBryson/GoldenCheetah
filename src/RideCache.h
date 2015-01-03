@@ -23,6 +23,7 @@
 #include "MainWindow.h"
 #include "RideFile.h"
 #include "RideItem.h"
+#include "PDModel.h"
 
 #include <QVector>
 #include <QThread>
@@ -37,6 +38,9 @@
 
 class Context;
 class RideCacheBackgroundRefresh;
+class Specification;
+class AthleteBest;
+class RideCacheModel;
 
 class RideCache : public QObject
 {
@@ -47,6 +51,28 @@ class RideCache : public QObject
         RideCache(Context *context);
         ~RideCache();
 
+        // table model
+        RideCacheModel *model() { return model_; }
+
+        // query the cache
+        int count() const { return rides_.count(); }
+        RideItem *getRide(QString filename);
+	    QList<QDateTime> getAllDates();
+        QStringList getAllFilenames();
+
+        // get an aggregate applying the passed spec
+        QString getAggregate(QString name, Specification spec, bool useMetricUnits, bool nofmt=false);
+
+        // get top n bests
+        QList<AthleteBest> getBests(QString symbol, int n, Specification specification, bool useMetricUnits=true);
+
+        // metadata
+        QHash<QString,int> getRankedValues(QString name); // metadata
+        QStringList getDistinctValues(QString name); // metadata
+
+        // is running ?
+        bool isRunning() { return future.isRunning(); }
+
         // the ride list
 	    QVector<RideItem*>&rides() { return rides_; } 
 
@@ -54,18 +80,24 @@ class RideCache : public QObject
         void addRide(QString name, bool dosignal);
         void removeCurrentRide();
 
-        // restore / dump cache to disk (json)
-        void load();
-        void save();
+        // export metrics in CSV format
+        void writeAsCSV(QString filename);
 
         // the background refresher !
         void refresh();
         double progress() { return progress_; }
 
+        // PD Model refreshing (temporary move)
+        void refreshCPModelMetrics();
+
     public slots:
 
+        // restore / dump cache to disk (json)
+        void load();
+        void save();
+
         // user updated options/preferences
-        void configChanged();
+        void configChanged(qint32);
 
         // background refresh progress update
         void progressing(int);
@@ -73,12 +105,23 @@ class RideCache : public QObject
         // cancel background processing because about to exit
         void cancel();
 
+        // item telling us it changed
+        void itemChanged();
+
+    signals:
+
+        void modelProgress(int, int); // let others know when we're refreshing the model estimates
+
+        // us telling the world the item changed
+        void itemChanged(RideItem*);
+
     protected:
 
         friend class ::RideCacheBackgroundRefresh;
 
         Context *context;
-        QVector<RideItem*> rides_;
+        QVector<RideItem*> rides_, reverse_;
+        RideCacheModel *model_;
         bool exiting;
 	    double progress_; // percent
         unsigned long fingerprint; // zone configuration fingerprint
@@ -86,6 +129,20 @@ class RideCache : public QObject
         QFuture<void> future;
         QFutureWatcher<void> watcher;
 
+};
+
+class AthleteBest
+{
+    public:
+    double nvalue;
+    QString value; // formatted value
+    QDate date;
+#ifdef GC_HAVE_INTERVALS
+    QString fileName;
+#endif
+
+    // for qsort
+    bool operator< (AthleteBest right) const { return (nvalue < right.nvalue); }
 };
 
 #endif // _GC_RideCache_h

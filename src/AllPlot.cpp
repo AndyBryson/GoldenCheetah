@@ -801,7 +801,7 @@ AllPlot::AllPlot(QWidget *parent, AllPlotWindow *window, Context *context, RideF
     axisWidget(QwtAxisId(QwtAxis::yRight, 2))->installEventFilter(this);
     axisWidget(QwtAxisId(QwtAxis::yRight, 3))->installEventFilter(this);
 
-    configChanged(); // set colors
+    configChanged(CONFIG_APPEARANCE); // set colors
 }
 
 AllPlot::~AllPlot()
@@ -819,7 +819,7 @@ AllPlot::~AllPlot()
 }
 
 void
-AllPlot::configChanged()
+AllPlot::configChanged(qint32)
 {
     double width = appsettings->value(this, GC_LINEWIDTH, 0.5).toDouble();
     labelFont.fromString(appsettings->value(this, GC_FONT_CHARTLABELS, QFont().toString()).toString());
@@ -2958,7 +2958,7 @@ AllPlot::setDataFromPlot(AllPlot *plot, int startidx, int stopidx)
     //replot();
 
     // set all the colors ?
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 
     // remember the curves and colors
     isolation = false;
@@ -4087,7 +4087,6 @@ AllPlot::setDataFromPlots(QList<AllPlot *> plots)
                     ourASCurve->setSamples(array);
                     ourASCurve->setYAxis(yLeft);
                     ourASCurve->setBaseline(thereASCurve->baseline());
-//                    ourASCurve->setStyle(AllPlotSlopeCurve::SlopeDist3);
                     setAltSlopePlotStyle (ourASCurve);
 
                     if (ourASCurve->maxYValue() > MAXY) MAXY = ourASCurve->maxYValue();
@@ -5780,12 +5779,36 @@ double IntervalPlotData::x(size_t i) const
     IntervalItem *current = intervalNum(interval);
     if (current == NULL) return 0; // out of bounds !?
 
+    // overlap at right ?
+    double right = allPlot->bydist ? multiplier * current->stopKM : current->stop/60;
+
+
+    if (i%4 == 2 || i%4 == 3) {
+        for (int n=1; n<=intervalCount(); n++) {
+            IntervalItem *other = intervalNum(n);
+            if (other != current) {
+                if (other->start < current->stop && other->stop > current->stop) {
+                    if (other->start < current->start) {
+                        double _right = allPlot->bydist ? multiplier * current->startKM : current->start/60;
+                        if (_right<right)
+                            right = _right;
+                    } else  {
+                        double _right = allPlot->bydist ? multiplier * other->startKM : other->start/60;
+                        if (_right<right)
+                            right = _right;
+                    }
+                }
+            }
+        }
+    }
+
+
     // which point are we returning?
     switch (i%4) {
-    case 0 : return allPlot->bydist ? multiplier * current->startKM : current->start/60; // bottom left
-    case 1 : return allPlot->bydist ? multiplier * current->startKM : current->start/60; // top left
-    case 2 : return allPlot->bydist ? multiplier * current->stopKM : current->stop/60; // bottom right
-    case 3 : return allPlot->bydist ? multiplier * current->stopKM : current->stop/60; // bottom right
+        case 0 : return allPlot->bydist ? multiplier * current->startKM : current->start/60; // bottom left
+        case 1 : return allPlot->bydist ? multiplier * current->startKM : current->start/60; // top left
+        case 2 : return right; // top right
+        case 3 : return right; // bottom right
     }
     return 0; // shouldn't get here, but keeps compiler happy
 }
@@ -5795,11 +5818,11 @@ double IntervalPlotData::y(size_t i) const
 {
     // which point are we returning?
     switch (i%4) {
-    case 0 : return -20; // bottom left
-    case 1 : return 100; // top left - set to out of bound value
-    case 2 : return 100; // top right - set to out of bound value
-    case 3 : return -20;  // bottom right
-    }
+        case 0 : return -20; // bottom left
+        case 1 : return 100; // top left - set to out of bound value
+        case 2 : return 100; // top right - set to out of bound value
+        case 3 : return -20;  // bottom right
+        }
     return 0;
 }
 
@@ -5839,7 +5862,7 @@ AllPlot::pointHover(QwtPlotCurve *curve, int index)
         // for speed curve add pace with units according to settings
         // only when the activity is a run.
         QString paceStr;
-        if (curve->title() == tr("Speed") && rideItem && rideItem->isRun()) {
+        if (curve->title() == tr("Speed") && rideItem && rideItem->isRun) {
             bool metricPace = appsettings->value(this, GC_PACE, true).toBool();
             QString paceunit = metricPace ? tr("min/km") : tr("min/mile");
             paceStr = tr("\n%1 %2").arg(context->athlete->useMetricUnits ? kphToPace(yvalue, metricPace) : mphToPace(yvalue, metricPace)).arg(paceunit);

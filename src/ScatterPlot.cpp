@@ -214,13 +214,13 @@ ScatterPlot::ScatterPlot(Context *context) : context(context)
     sd->enableComponent(QwtScaleDraw::Backbone, false);
     setAxisScaleDraw(QwtPlot::yLeft, sd);
 
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
     connect(context, SIGNAL(intervalHover(RideFileInterval)), this, SLOT(intervalHover(RideFileInterval)));
 
     // lets watch the mouse move...
     new mouseTracker(this);
 
-    configChanged(); // use latest colors etc
+    configChanged(CONFIG_APPEARANCE | CONFIG_GENERAL); // use latest wheelsize/cranklength and colors
 }
 
 void ScatterPlot::setData (ScatterSettings *settings)
@@ -319,23 +319,9 @@ void ScatterPlot::setData (ScatterSettings *settings)
                 double xv = pointType(point, settings->x, side, context->athlete->useMetricUnits, cranklength);
                 double yv = pointType(point, settings->y, side, context->athlete->useMetricUnits, cranklength);
 
-                // skip zeroes? - special logic for Model Gear, since there value between 0.01 and 1 happen and are relevant
-                if ((settings->x != MODEL_GEAR && settings->y != MODEL_GEAR)
-                     && settings->ignore && (int(xv) == 0 || int(yv) == 0)) continue;
-                if ((settings->x != MODEL_GEAR && settings->y != MODEL_GEAR)
-                     && settings->ignore && (int(xv) == 0 || int(yv) == 0)) continue;
-                if ((settings->x == MODEL_GEAR)
-                     && settings->ignore && (xv == 0.0f || int(yv) == 0)) continue;
-                if ((settings->y == MODEL_GEAR)
-                     && settings->ignore && (int(xv) == 0 || yv == 0.0f)) continue;
-                if ((settings->x == MODEL_TEMP)
-                     && (xv == RideFile::NoTemp)) continue;
-                if ((settings->y == MODEL_TEMP)
-                     && (yv == RideFile::NoTemp)) continue;
-                if ((settings->x == MODEL_LRBALANCE)
-                     && settings->ignore && (xv == 100)) continue;
-                if ((settings->y == MODEL_LRBALANCE)
-                     && settings->ignore && (yv == 100)) continue;
+                // skip values ? Like zeroes...
+                if (skipValues(xv, yv, settings))
+                    continue;
 
                 // add it
                 x <<xv;
@@ -411,6 +397,7 @@ void ScatterPlot::setData (ScatterSettings *settings)
 
             // setup the framing curve
             if (intervals.count() == 0 || settings->frame) {
+                smooth(x, y, points, settings->smoothing);
 
                 if (side) {
 
@@ -465,7 +452,7 @@ void ScatterPlot::setData (ScatterSettings *settings)
                 int i=0;
                 if (settings->compareMode > 0)
                     i++;
-                for (i; i< context->compareIntervals.count(); i++) {
+                for (; i< context->compareIntervals.count(); i++) {
                     CompareInterval interval = context->compareIntervals.at(i);
 
                     if (interval.checked == false)
@@ -496,17 +483,22 @@ void ScatterPlot::setData (ScatterSettings *settings)
                             y = pointType(point, settings->y, side, context->athlete->useMetricUnits, cranklength);
                         }
 
+
+                        // skip values ?
+                        if (skipValues(x, y, settings))
+                            continue;
+
                         if (y > maxY) maxY = y;
                         if (y < minY) minY = y;
                         if (x > maxX) maxX = x;
                         if (x < minX) minX = x;
 
-                        if (!(settings->ignore && (x == 0 && y ==0))) {
-                            xval.append(x);
-                            yval.append(y);
-                            nbPoints++;
-                        }
+                        xval.append(x);
+                        yval.append(y);
+                        nbPoints++;
                     }
+
+                    smooth(xval, yval, nbPoints, settings->smoothing);
 
                     QColor intervalColor = interval.color;
                     // left / right are darker lighter
@@ -772,7 +764,7 @@ ScatterPlot::refreshIntervalMarkers(ScatterSettings *settings)
 }
 
 void
-ScatterPlot::configChanged()
+ScatterPlot::configChanged(qint32)
 {
     // setColors bg
     setCanvasBackground(GColor(CPLOTBACKGROUND));
@@ -850,8 +842,63 @@ ScatterPlot::addTrendLine(QVector<double> xval, QVector<double> yval, int nbPoin
 }
 
 void
-ScatterPlot::smooth(QVector<double> *xval, QVector<double> *yval, int *count, double recInterval, int applySmooth)
+ScatterPlot::smooth(QVector<double> &xval, QVector<double> &yval, int count, int applySmooth)
 {
+    if (applySmooth<2 || count < applySmooth)
+        return;
+
+    QVector<double> smoothX(count);
+    QVector<double> smoothY(count);
+
+    for (int i=0; i<count; i++) {
+        smoothX[i] = xval.value(i);
+        smoothY[i] = yval.value(i);
+    }
+
+    // initialise rolling average
+    double rXtot = 0;
+    double rYtot = 0;
+
+    for (int i=applySmooth; i>0 && count-i >=0; i--) {
+        rXtot += smoothX[count-i];
+        rYtot += smoothY[count-i];
+    }
+
+    // now run backwards setting the rolling average
+    for (int i=count-1; i>=applySmooth; i--) {
+        int hereX = smoothX[i];
+        smoothX[i] = rXtot / applySmooth;
+        rXtot -= hereX;
+        rXtot += smoothX[i-applySmooth];
+
+        int hereY = smoothY[i];
+        smoothY[i] = rYtot / applySmooth;
+        rYtot -= hereY;
+        rYtot += smoothY[i-applySmooth];
+    }
+
+    // Finish with smaller rolling average
+    for (int i=applySmooth-1; i>0; i--) {
+        int hereX = smoothX[i];
+        smoothX[i] = rXtot / (i+2);
+        rXtot -= hereX;
+
+        int hereY = smoothY[i];
+        smoothY[i] = rYtot / (i+2);
+        rYtot -= hereY;
+    }
+
+    xval = smoothX;
+    yval = smoothY;
+}
+
+void
+ScatterPlot::resample(QVector<double> &xval, QVector<double> &yval, int &count, double recInterval, int applySmooth)
+{
+    if (recInterval >= applySmooth)
+        return;
+
+
     int newcount=0;
     QVector<double> newxval;
     QVector<double> newyval;
@@ -862,17 +909,17 @@ ScatterPlot::smooth(QVector<double> *xval, QVector<double> *yval, int *count, do
 
         int j=0;
 
-        for (int i = 0; i < *count; i++) {
+        for (int i = 0; i < count; i++) {
             j++;
 
             if (j<applySmooth) {
-                totalX += xval->at(i)*recInterval;
-                totalY += yval->at(i)*recInterval;
+                totalX += xval.at(i)*recInterval;
+                totalY += yval.at(i)*recInterval;
             }
             else {
                 double part = recInterval-j+applySmooth;
-                totalX += xval->at(i)*part;
-                totalY += yval->at(i)*part;
+                totalX += xval.at(i)*part;
+                totalY += yval.at(i)*part;
 
                 double smoothX = totalX/applySmooth;
                 double smoothY = totalY/applySmooth;
@@ -882,13 +929,35 @@ ScatterPlot::smooth(QVector<double> *xval, QVector<double> *yval, int *count, do
                 newcount++;
 
                 j=0;
-                totalX = xval->at(i)*(recInterval-part);
-                totalY = yval->at(i)*(recInterval-part);
+                totalX = xval.at(i)*(recInterval-part);
+                totalY = yval.at(i)*(recInterval-part);
             }
         }
     }
 
-    count = &newcount;
-    xval = &newxval;
-    yval = &newyval;
+    count = newcount;
+    xval = newxval;
+    yval = newyval;
+}
+
+bool
+ScatterPlot::skipValues(double xv, double yv, ScatterSettings *settings) {
+
+    // skip zeroes? - special logic for Model Gear, since there value between 0.01 and 1 happen and are relevant
+    if ((settings->x != MODEL_GEAR && settings->y != MODEL_GEAR)
+         && settings->ignore && (int(xv) == 0 || int(yv) == 0)) return true;
+
+    // Model Gear
+    if ((settings->x == MODEL_GEAR)
+         && settings->ignore && (xv == 0.0f || int(yv) == 0)) return true;
+    if ((settings->y == MODEL_GEAR)
+         && settings->ignore && (int(xv) == 0 || yv == 0.0f)) return true;
+
+    // Temp 0 values are relevant
+    if ((settings->x == MODEL_TEMP && xv == RideFile::NoTemp) || (settings->y == MODEL_TEMP && yv == RideFile::NoTemp)) return true;
+
+    // LR Balance : if skip 0% skip also 100%
+    if ((settings->x == MODEL_LRBALANCE && settings->ignore && xv == 100) || (settings->y == MODEL_LRBALANCE && settings->ignore && yv == 100)) return true;
+
+    return false;
 }

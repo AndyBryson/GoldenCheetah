@@ -100,11 +100,12 @@ class GoogleMapControl : public GcChartWindow
         bool first;
 
     public slots:
+        void forceReplot();
         void rideSelected();
         void createMarkers();
         void drawShadedRoute();
         void zoomInterval(IntervalItem*);
-        void configChanged();
+        void configChanged(qint32);
 
     private:
         Context *context;
@@ -128,6 +129,7 @@ class GoogleMapControl : public GcChartWindow
 
     protected:
         bool event(QEvent *event);
+        bool stale;
 };
 
 #endif

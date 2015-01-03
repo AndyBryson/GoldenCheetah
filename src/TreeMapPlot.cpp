@@ -17,20 +17,17 @@
  */
 
 #include "Context.h"
+#include "Athlete.h"
 #include "TreeMapPlot.h"
 #include "LTMTool.h"
 #include "TreeMapWindow.h"
-#include "MetricAggregator.h"
-#include "SummaryMetrics.h"
+#include "RideCache.h"
 #include "RideMetric.h"
 #include "Settings.h"
 #include "Colors.h"
 
-#include "StressCalculator.h" // for LTS/STS calculation
-
 #include <QSettings>
-
-#include <math.h> // for isinf() isnan()
+#include <cmath> // for isinf() isnan()
 
 // Treemap sorter - reversed to do descending
 bool TreeMapLessThan(const TreeMap *a, const TreeMap *b) {
@@ -49,8 +46,8 @@ TreeMapPlot::TreeMapPlot(TreeMapWindow *parent, Context *context)
     // no margins
     setContentsMargins(0,0,0,0);
 
-    configUpdate(); // set basic colors
-    connect(context, SIGNAL(configChanged()), this, SLOT(configUpdate()));
+    configChanged(CONFIG_APPEARANCE); // set basic colors
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 }
 
 TreeMapPlot::~TreeMapPlot()
@@ -58,22 +55,21 @@ TreeMapPlot::~TreeMapPlot()
 }
 
 void
-TreeMapPlot::configUpdate() { }
+TreeMapPlot::configChanged(qint32) { }
 
 void
 TreeMapPlot::setData(TMSettings *settings)
 {
     root->clear();
 
-    foreach (SummaryMetrics rideMetrics, *(settings->data)) {
+    foreach (RideItem *item, context->athlete->rideCache->rides()) {
 
         // don't plot if filtered
-        if (context->isfiltered && !context->filters.contains(rideMetrics.getFileName())) continue;
-        if (context->ishomefiltered && !context->homeFilters.contains(rideMetrics.getFileName())) continue;
+        if (!settings->specification.pass(item)) continue;
 
-        double value = rideMetrics.getForSymbol(settings->symbol);
-        QString text1 = rideMetrics.getText(settings->field1, tr("(unknown)"));
-        QString text2 = rideMetrics.getText(settings->field2, tr("(unknown)"));
+        double value = item->getForSymbol(settings->symbol);
+        QString text1 = item->getText(settings->field1, tr("(unknown)"));
+        QString text2 = item->getText(settings->field2, tr("(unknown)"));
         if (text1 == "") text1 = tr("(unknown)");
         if (text2 == "") text2 = tr("(unknown)");
 

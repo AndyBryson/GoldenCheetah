@@ -26,7 +26,6 @@
 #include <QWebView>
 #include <QTimer>
 #include "Context.h"
-#include "MetricAggregator.h"
 #include "Season.h"
 #include "LTMPlot.h"
 #include "LTMPopup.h"
@@ -35,7 +34,7 @@
 #include "LTMCanvasPicker.h"
 #include "GcPane.h"
 
-#include <math.h>
+#include <cmath>
 
 class QwtPlotPanner;
 class QwtPlotPicker;
@@ -198,6 +197,7 @@ class LTMWindow : public GcChartWindow
         void zoomSliderChanged();
         void showLegendClicked(int);
         void applyClicked();
+        void refreshUpdate(QDate);
         void refresh();
         void pointClicked(QwtPlotCurve*, int);
         int groupForDate(QDate);
@@ -209,7 +209,7 @@ class LTMWindow : public GcChartWindow
         void exportData();
         QString dataTable(bool html=true); // true as html, false as csv
 
-        void configChanged();
+        void configChanged(qint32);
 
     private:
         // passed from Context *
@@ -237,9 +237,7 @@ class LTMWindow : public GcChartWindow
         bool compareDirty;
 
         LTMSettings settings; // all the plot settings
-        QList<SummaryMetrics> results;
-        QList<SummaryMetrics> measures;
-        QList<SummaryMetrics> bestsresults;
+        QList<RideBest> bestsresults;
 
         // when one curve per plot we split the settings
         QScrollArea *plotArea;
@@ -264,6 +262,8 @@ class LTMWindow : public GcChartWindow
         QxtStringSpinBox    *rGroupBy;
         QCheckBox           *rData,
                             *rStack;
+
+        QTime lastRefresh;
 };
 
 #endif // _GC_LTMWindow_h

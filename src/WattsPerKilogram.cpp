@@ -20,8 +20,7 @@
 #include "BestIntervalDialog.h"
 #include "Zones.h"
 #include "Settings.h"
-#include "MetricAggregator.h"
-#include <math.h>
+#include <cmath>
 #include <QApplication>
 
 class AverageWPK : public RideMetric {

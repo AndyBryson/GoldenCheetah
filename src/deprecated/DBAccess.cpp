@@ -160,25 +160,6 @@ DBAccess::initDatabase(QDir home)
     }
 }
 
-unsigned int
-DBAccess::computeFileCRC(QString filename)
-{
-    QFile file(filename);
-    QFileInfo fileinfo(file);
-
-    // open file
-    if (!file.open(QFile::ReadOnly)) return 0;
-
-    // allocate space
-    QScopedArrayPointer<char> data(new char[file.size()]);
-
-    // read entire file into memory
-    QDataStream *rawstream(new QDataStream(&file));
-    rawstream->readRawData(&data[0], file.size());
-    file.close();
-
-    return qChecksum(&data[0], file.size());
-}
 
 bool DBAccess::createMetricsTable()
 {
@@ -236,7 +217,7 @@ bool DBAccess::createMetricsTable()
 
         // add row to version database
         QString metadataXML =  QString(context->athlete->home->config().absolutePath()) + "/metadata.xml";
-        int metadatacrcnow = computeFileCRC(metadataXML);
+        int metadatacrcnow = RideFile::computeFileCRC(metadataXML);
         QDateTime timestamp = QDateTime::currentDateTime();
 
         // wipe current version row
@@ -318,7 +299,7 @@ bool DBAccess::createIntervalMetricsTable()
 
         // add row to version database
         QString metadataXML =  QString(context->athlete->home->config().absolutePath()) + "/metadata.xml";
-        int metadatacrcnow = computeFileCRC(metadataXML);
+        int metadatacrcnow = RideFile::computeFileCRC(metadataXML);
         QDateTime timestamp = QDateTime::currentDateTime();
 
         // wipe current version row
@@ -357,7 +338,7 @@ void DBAccess::checkDBVersion()
 
     // get a CRC for metadata.xml
     QString metadataXML =  QString(context->athlete->home->config().absolutePath()) + "/metadata.xml";
-    int metadatacrcnow = computeFileCRC(metadataXML);
+    int metadatacrcnow = RideFile::computeFileCRC(metadataXML);
 
     // can we get a version number?
     QSqlQuery query("SELECT table_name, schema_version, creation_date, metadata_crc from version;", db->database(sessionid));
@@ -494,7 +475,7 @@ bool DBAccess::importRide(SummaryMetrics *summaryMetrics, RideFile *ride, QColor
     QString fullPath =  QString(context->athlete->home->activities().absolutePath()) + "/" + summaryMetrics->getFileName();
 	query.addBindValue(summaryMetrics->getFileName());
 	query.addBindValue(summaryMetrics->getId());
-	query.addBindValue((int)computeFileCRC(fullPath));
+	query.addBindValue((int)RideFile::computeFileCRC(fullPath));
 	query.addBindValue(timestamp.toTime_t());
     query.addBindValue(summaryMetrics->getRideDate());
     query.addBindValue(summaryMetrics->isRun());
@@ -541,94 +522,6 @@ DBAccess::deleteRide(QString name)
     query.prepare("DELETE FROM metrics WHERE filename = ?;");
     query.addBindValue(name);
     return query.exec();
-}
-
-QList<QDateTime> DBAccess::getAllDates()
-{
-    QSqlQuery query("SELECT ride_date from metrics ORDER BY ride_date;", db->database(sessionid));
-    QList<QDateTime> dates;
-
-    query.exec();
-    while(query.next())
-    {
-        QDateTime date = query.value(0).toDateTime();
-        dates << date;
-    }
-    return dates;
-}
-
-bool
-DBAccess::getRide(QString filename, SummaryMetrics &summaryMetrics, QColor&color)
-{
-    // lookup a ride by filename returning true/false if found
-    bool found = false;
-
-    // construct the select statement
-    QString selectStatement = "SELECT filename, identifier, ride_date, isRun, color";
-    const RideMetricFactory &factory = RideMetricFactory::instance();
-    for (int i=0; i<factory.metricCount(); i++)
-        selectStatement += QString(", X%1 ").arg(factory.metricName(i));
-    foreach(FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
-        if (!context->specialFields.isMetric(field.name) && (field.type < 5 || field.type == 7)) {
-            selectStatement += QString(", Z%1 ").arg(context->specialFields.makeTechName(field.name));
-        }
-    }
-    selectStatement += " FROM metrics where filename = :name;";
-
-    // execute the select statement
-    QSqlQuery query(selectStatement, db->database(sessionid));
-    query.bindValue(":start", filename);
-    query.exec();
-
-    while(query.next())
-    {
-        found = true;
-
-        // filename and date
-        summaryMetrics.setFileName(query.value(0).toString());
-        summaryMetrics.setId(query.value(1).toString());
-        summaryMetrics.setRideDate(query.value(2).toDateTime());
-        summaryMetrics.setIsRun(query.value(3).toInt());
-        color = QColor(query.value(4).toString());
-
-        // the values
-        int i=0;
-        for (; i<factory.metricCount(); i++)
-            summaryMetrics.setForSymbol(factory.metricName(i), query.value(i+5).toDouble());
-
-        foreach(FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
-            if (!context->specialFields.isMetric(field.name) && (field.type == 3 || field.type == 4)) {
-                QString underscored = field.name;
-                summaryMetrics.setForSymbol(underscored.replace("_"," "), query.value(i+4).toDouble());
-                i++;
-            } else if (!context->specialFields.isMetric(field.name) && field.type < 3) {
-                QString underscored = field.name;
-                summaryMetrics.setText(underscored.replace("_"," "), query.value(i+4).toString());
-                i++;
-            }
-        }
-    }
-    query.finish();
-    return found;
-}
-
-QList<QString> DBAccess::getDistinctValues(FieldDefinition field)
-{
-    QStringList returning;
-
-    // what are we querying?
-    QString fieldname = QString("Z%1").arg(context->specialFields.makeTechName(field.name));
-
-    QString selectStatement = QString("SELECT DISTINCT(%1) FROM METRICS ORDER BY %1;").arg(fieldname);
-
-    QSqlQuery query(db->database(sessionid));
-    query.prepare(selectStatement);
-    query.exec();
-
-    while(query.next()) {
-        returning << query.value(0).toString();
-    }
-    return returning;
 }
 
 QList<SummaryMetrics> DBAccess::getAllMetricsFor(QDateTime start, QDateTime end)
@@ -689,53 +582,6 @@ QList<SummaryMetrics> DBAccess::getAllMetricsFor(QDateTime start, QDateTime end)
     return metrics;
 }
 
-SummaryMetrics DBAccess::getRideMetrics(QString filename)
-{
-    SummaryMetrics summaryMetrics;
-
-    // construct the select statement
-    QString selectStatement = "SELECT filename, identifier, isRun";
-    const RideMetricFactory &factory = RideMetricFactory::instance();
-    for (int i=0; i<factory.metricCount(); i++)
-        selectStatement += QString(", X%1 ").arg(factory.metricName(i));
-    foreach(FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
-        if (!context->specialFields.isMetric(field.name) && (field.type < 5 || field.type == 7)) {
-            selectStatement += QString(", Z%1 ").arg(context->specialFields.makeTechName(field.name));
-        }
-    }
-    selectStatement += " FROM metrics WHERE filename = :filename ;";
-
-    // execute the select statement
-    QSqlQuery query(db->database(sessionid));
-    query.prepare(selectStatement);
-    query.bindValue(":filename", QVariant(filename));
-
-    query.exec();
-    while(query.next())
-    {
-        // filename and date
-        summaryMetrics.setFileName(query.value(0).toString());
-        summaryMetrics.setId(query.value(1).toString());
-        summaryMetrics.setIsRun(query.value(2).toInt());
-        // the values
-        int i=0;
-        for (; i<factory.metricCount(); i++)
-            summaryMetrics.setForSymbol(factory.metricName(i), query.value(i+3).toDouble());
-        foreach(FieldDefinition field, context->athlete->rideMetadata()->getFields()) {
-            if (!context->specialFields.isMetric(field.name) && (field.type == 3 || field.type == 4)) {
-                QString underscored = field.name;
-                summaryMetrics.setForSymbol(underscored.replace(" ","_"), query.value(i+3).toDouble());
-                i++;
-            } else if (!context->specialFields.isMetric(field.name) && (field.type < 3 || field.type == 7)) {
-                QString underscored = field.name;
-                summaryMetrics.setText(underscored.replace("_"," "), query.value(i+3).toString());
-                i++;
-            }
-        }
-    }
-    return summaryMetrics;
-}
-
 /*----------------------------------------------------------------------
  * CRUD routines for Interval Metrics table
  *----------------------------------------------------------------------*/
@@ -793,7 +639,7 @@ bool DBAccess::importInterval(SummaryMetrics *summaryMetrics, IntervalItem *inte
     QString fullPath =  QString(context->athlete->home->activities().absolutePath()) + "/" + summaryMetrics->getFileName();
     query.addBindValue(summaryMetrics->getFileName()+"-"+interval->displaySequence);
     query.addBindValue(summaryMetrics->getFileName());
-    query.addBindValue((int)computeFileCRC(fullPath));
+    query.addBindValue((int)RideFile::computeFileCRC(fullPath));
     query.addBindValue(timestamp.toTime_t());
     query.addBindValue(summaryMetrics->getRideDate());
     query.addBindValue(type); // type

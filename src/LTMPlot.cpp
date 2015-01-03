@@ -24,14 +24,16 @@
 #include "LTMTrend2.h"
 #include "LTMOutliers.h"
 #include "LTMWindow.h"
-#include "MetricAggregator.h"
-#include "SummaryMetrics.h"
 #include "RideMetric.h"
+#include "RideCache.h"
 #include "RideFileCache.h"
 #include "Settings.h"
 #include "Colors.h"
 
-#include "StressCalculator.h" // for LTS/STS calculation
+#include "PMCData.h" // for LTS/STS calculation
+#include "Zones.h"
+#include "HrZones.h"
+#include "PaceZones.h"
 
 #include <QSettings>
 
@@ -44,7 +46,7 @@
 #include <qwt_plot_grid.h>
 #include <qwt_symbol.h>
 
-#include <math.h> // for isinf() isnan()
+#include <cmath> // for isinf() isnan()
 
 LTMPlot::LTMPlot(LTMWindow *parent, Context *context, bool first) : 
     bg(NULL), parent(parent), context(context), highlighter(NULL), first(first), isolation(false)
@@ -123,11 +125,10 @@ LTMPlot::LTMPlot(LTMWindow *parent, Context *context, bool first) :
     curveColors = new CurveColors(this);
 
     settings = NULL;
-    cogganPMC = skibaPMC = NULL; // cache when replotting a PMC
 
-    configUpdate(); // set basic colors
+    configChanged(CONFIG_APPEARANCE); // set basic colors
 
-    connect(context, SIGNAL(configChanged()), this, SLOT(configUpdate()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
     // connect pickers to ltmPlot
     connect(_canvasPicker, SIGNAL(pointHover(QwtPlotCurve*, int)), this, SLOT(pointHover(QwtPlotCurve*, int)));
     connect(_canvasPicker, SIGNAL(pointClicked(QwtPlotCurve*, int)), this, SLOT(pointClicked(QwtPlotCurve*, int)));
@@ -138,7 +139,7 @@ LTMPlot::~LTMPlot()
 }
 
 void
-LTMPlot::configUpdate()
+LTMPlot::configChanged(qint32)
 {
     // set basic plot colors
     setCanvasBackground(GColor(CPLOTBACKGROUND));
@@ -192,13 +193,6 @@ LTMPlot::setAxisTitle(QwtAxisId axis, QString label)
 }
 
 void
-LTMPlot::resetPMC()
-{
-    if (cogganPMC) { delete cogganPMC; cogganPMC=NULL; }
-    if (skibaPMC) { delete skibaPMC; skibaPMC=NULL; }
-}
-
-void
 LTMPlot::setData(LTMSettings *set)
 {
     QTime timer;
@@ -208,33 +202,31 @@ LTMPlot::setData(LTMSettings *set)
 
     //qDebug()<<"Starting.."<<timer.elapsed();
 
-    // wipe away last cached stress calculator
-    if (cogganPMC) { delete cogganPMC; cogganPMC=NULL; }
-    if (skibaPMC) { delete skibaPMC; skibaPMC=NULL; }
-
     settings = set;
 
     // For each metric in chart, translate units and name if default uname
     //XXX BROKEN XXX LTMTool::translateMetrics(context, settings);
 
     // crop dates to at least within a year of the data available, but only if we have some data
-    if (settings->data != NULL && (*settings->data).count() != 0) {
+    if (context->athlete->rideCache->rides().count()) {
+
+        QDateTime first = context->athlete->rideCache->rides().first()->dateTime;
+        QDateTime last = context->athlete->rideCache->rides().last()->dateTime;
+
         // if dates are null we need to set them from the available data
 
         // end
-        if (settings->end == QDateTime() ||
-            settings->end > (*settings->data).last().getRideDate().addDays(365)) {
+        if (settings->end == QDateTime() || settings->end > last.addDays(365)) {
             if (settings->end < QDateTime::currentDateTime()) {
                 settings->end = QDateTime::currentDateTime();
             } else {
-                settings->end = (*settings->data).last().getRideDate();
+                settings->end = last;
             }
         }
 
         // start
-        if (settings->start == QDateTime() ||
-            settings->start < (*settings->data).first().getRideDate().addDays(-365)) {
-            settings->start = (*settings->data).first().getRideDate();
+        if (settings->start == QDateTime() || settings->start < first.addDays(-365)) {
+            settings->start = first;
         }
     }
 
@@ -289,7 +281,7 @@ LTMPlot::setData(LTMSettings *set)
     for (int i=0; i<10; i++) minY[i]=0, maxY[i]=0;
 
     // no data to display so that all folks
-    if (settings->data == NULL || (*settings->data).count() == 0) {
+    if (context->athlete->rideCache->rides().count() == 0) {
 
         // tidy up the bottom axis
         maxX = groupForDate(settings->end.date(), settings->groupBy) -
@@ -1129,7 +1121,10 @@ LTMPlot::setData(LTMSettings *set)
         // set the scale on the axis
         if (i != xBottom && i != xTop) {
             maxY[i] *= 1.1; // add 10% headroom
-            setAxisScale(supportedAxes[i], minY[i], maxY[i]);
+            if (maxY[i] == minY[i] && maxY[i] == 0)
+                setAxisScale(supportedAxes[i], 0.0f, 100.0f); // to stop ugly
+            else
+                setAxisScale(supportedAxes[i], minY[i], maxY[i]);
         }
     }
 
@@ -1173,7 +1168,7 @@ LTMPlot::setData(LTMSettings *set)
     //qDebug()<<"Final tidy.."<<timer.elapsed();
 
     // update colours etc for plot chrome
-    configUpdate();
+    configChanged(CONFIG_APPEARANCE);
 
     // plot
     replot();
@@ -1259,10 +1254,28 @@ LTMPlot::setCompareData(LTMSettings *set)
         //int days;
         //Context *sourceContext;
 
-        // wipe away last cached stress calculator -- it gets redone for each curve
-        //                                            so pretty slow sadly
-        if (cogganPMC) { delete cogganPMC; cogganPMC=NULL; }
-        if (skibaPMC) { delete skibaPMC; skibaPMC=NULL; }
+        // no data to display so that all folks
+        if (context->athlete->rideCache->rides().count() == 0) continue;
+
+        QDateTime first = context->athlete->rideCache->rides().first()->dateTime;
+        QDateTime last = context->athlete->rideCache->rides().last()->dateTime;
+
+        // end
+        if (settings->end == QDateTime() ||
+            settings->end > last.addDays(365)) {
+            if (settings->end < QDateTime::currentDateTime()) {
+                settings->end = QDateTime::currentDateTime();
+            } else {
+                settings->end = last;
+            }
+        }
+
+        // start
+        if (settings->start == QDateTime() ||
+            settings->start < first.addDays(-365)) {
+            settings->start = first;
+        }
+
 
         settings->start = QDateTime(cd.start, QTime());
         settings->end = QDateTime(cd.end, QTime());
@@ -1270,38 +1283,14 @@ LTMPlot::setCompareData(LTMSettings *set)
         // For each metric in chart, translate units and name if default uname
         //XXX BROKEN XXX LTMTool::translateMetrics(context, settings);
 
-        // set the settings data source to the compare date range 
-        // QList<SummaryMetrics> metrics, measures;
-        settings->data = &cd.metrics;
-
         // we need to do this for each date range as they are dependant
         // on the metrics chosen and can't be pre-cached
-        QList<SummaryMetrics> herebests;
-        herebests = RideFileCache::getAllBestsFor(cd.sourceContext, settings->metrics, settings->start, settings->end);
+        settings->specification.setDateRange(DateRange(cd.start, cd.end));
+
+        // bests...
+        QList<RideBest> herebests;
+        herebests = RideFileCache::getAllBestsFor(cd.sourceContext, settings->metrics, settings->specification);
         settings->bests = &herebests;
-
-        // no data to display so that all folks
-        if (settings->data == NULL || (*settings->data).count() == 0) continue;
-
-        // crop dates to at least within a year of the data available, but only if we have some data
-        if (settings->data != NULL && (*settings->data).count() != 0) {
-
-            // end
-            if (settings->end == QDateTime() ||
-                settings->end > (*settings->data).last().getRideDate().addDays(365)) {
-                if (settings->end < QDateTime::currentDateTime()) {
-                    settings->end = QDateTime::currentDateTime();
-                } else {
-                    settings->end = (*settings->data).last().getRideDate();
-                }
-            }
-
-            // start
-            if (settings->start == QDateTime() ||
-                settings->start < (*settings->data).first().getRideDate().addDays(-365)) {
-                settings->start = (*settings->data).first().getRideDate();
-            }
-        }
 
         switch (settings->groupBy) {
             case LTM_TOD:
@@ -1569,7 +1558,7 @@ LTMPlot::setCompareData(LTMSettings *set)
 
             QVector<double> xdata, ydata;
 
-            int count;
+            int count=0;
             if (settings->groupBy != LTM_TOD)
                 createCurveData(cd.sourceContext, settings, metricDetail, xdata, ydata, count);
             else
@@ -2190,7 +2179,7 @@ LTMPlot::setCompareData(LTMSettings *set)
     updateLegend();
 
     // update colours etc for plot chrome
-    configUpdate();
+    configChanged(CONFIG_APPEARANCE);
 
     // plot
     replot();
@@ -2221,7 +2210,7 @@ LTMPlot::setMaxX(int x)
 }
 
 void
-LTMPlot::createTODCurveData(Context *context, LTMSettings *settings, MetricDetail metricDetail, QVector<double>&x,QVector<double>&y,int&n)
+LTMPlot::createTODCurveData(Context *context, LTMSettings *settings, MetricDetail metricDetail, QVector<double>&x,QVector<double>&y,int&n,bool)
 {
     y.clear();
     x.clear();
@@ -2232,15 +2221,14 @@ LTMPlot::createTODCurveData(Context *context, LTMSettings *settings, MetricDetai
 
     for (int i=0; i<(24); i++) x[i]=i;
 
-    foreach (SummaryMetrics rideMetrics, *(settings->data)) {
+    foreach (RideItem *ride, context->athlete->rideCache->rides()) {
 
-        // filter out unwanted rides
-        if (context->isfiltered && !context->filters.contains(rideMetrics.getFileName())) continue;
+        if (!settings->specification.pass(ride)) continue;
 
-        double value = rideMetrics.getForSymbol(metricDetail.symbol);
+        double value = ride->getForSymbol(metricDetail.symbol);
 
         // check values are bounded to stop QWT going berserk
-        if (isnan(value) || isinf(value)) value = 0;
+        if (std::isnan(value) || std::isinf(value)) value = 0;
 
         // Special computed metrics (LTS/STS) have a null metric pointer
         if (metricDetail.metric) {
@@ -2255,7 +2243,7 @@ LTMPlot::createTODCurveData(Context *context, LTMSettings *settings, MetricDetai
                 metricDetail.metric->units(true) == tr("seconds")) value /= 3600;
         }
 
-        int array = rideMetrics.getRideDate().time().hour();
+        int array = ride->dateTime.time().hour();
         int type = metricDetail.metric ? metricDetail.metric->type() : RideMetric::Average;
         bool aggZero = metricDetail.metric ? metricDetail.metric->aggregateZero() : false;
 
@@ -2292,9 +2280,29 @@ LTMPlot::createTODCurveData(Context *context, LTMSettings *settings, MetricDetai
 }
 
 void
-LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail metricDetail, QVector<double>&x,QVector<double>&y,int&n)
+LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail metricDetail, QVector<double>&x,QVector<double>&y,int&n, bool forceZero)
 {
-    QList<SummaryMetrics> *data = NULL;
+    // create curves depending on type ...
+    if (metricDetail.type == METRIC_DB || metricDetail.type == METRIC_META) {
+        createMetricData(context, settings, metricDetail, x,y,n, forceZero);
+        return;
+    } else if (metricDetail.type == METRIC_STRESS || metricDetail.type == METRIC_PM) {
+        createPMCData(context, settings, metricDetail, x,y,n, forceZero);
+        return;
+    } else if (metricDetail.type == METRIC_BEST) {
+        createBestsData(context,settings,metricDetail,x,y,n, forceZero);
+        return;
+    } else if (metricDetail.type == METRIC_ESTIMATE) {
+        createEstimateData(context, settings, metricDetail, x,y,n, forceZero);
+        return;
+    }
+
+}
+
+void
+LTMPlot::createMetricData(Context *context, LTMSettings *settings, MetricDetail metricDetail,
+                                              QVector<double>&x,QVector<double>&y,int&n, bool forceZero)
+{
 
     // resize the curve array to maximum possible size
     int maxdays = groupForDate(settings->end.date(), settings->groupBy)
@@ -2306,45 +2314,28 @@ LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail m
     // do we aggregate ?
     bool aggZero = metricDetail.metric ? metricDetail.metric->aggregateZero() : false;
 
-    // Get metric data, either from metricDB for RideFile metrics
-    // or from StressCalculator for PM type metrics
-    QList<SummaryMetrics> PMCdata;
-    if (metricDetail.type == METRIC_DB || metricDetail.type == METRIC_META) {
-        data = settings->data;
-    } else if (metricDetail.type == METRIC_PM) {
-        createPMCCurveData(context, settings, metricDetail, PMCdata);
-        data = &PMCdata;
-    } else if (metricDetail.type == METRIC_BEST) {
-        data = settings->bests;
-    } else if (metricDetail.type == METRIC_ESTIMATE) {
-        createEstimateData(context, settings, metricDetail, x,y,n);
-        return;
-    }
-
     n=-1;
     int lastDay=0;
     unsigned long secondsPerGroupBy=0;
-    bool wantZero = metricDetail.curveStyle == QwtPlotCurve::Steps;
+    bool wantZero = forceZero ? 1 : (metricDetail.curveStyle == QwtPlotCurve::Steps);
 
-    foreach (SummaryMetrics rideMetrics, *data) { 
+    foreach (RideItem *ride, context->athlete->rideCache->rides()) { 
 
-        // filter out unwanted rides but not for PMC type metrics
-        // because that needs to be done in the stress calculator
-        if (metricDetail.type != METRIC_PM && context->isfiltered && 
-            !context->filters.contains(rideMetrics.getFileName())) continue;
+        // filter out unwanted stuff
+        if (!settings->specification.pass(ride)) continue;
 
         // day we are on
-        int currentDay = groupForDate(rideMetrics.getRideDate().date(), settings->groupBy);
+        int currentDay = groupForDate(ride->dateTime.date(), settings->groupBy);
 
-        // value for day -- measures are stored differently
+        // value for day
         double value;
-        if (metricDetail.type == METRIC_BEST)
-            value = rideMetrics.getForSymbol(metricDetail.bestSymbol);
+        if (metricDetail.type == METRIC_META)
+            value = ride->getText(metricDetail.symbol, "0.0").toDouble();
         else
-            value = rideMetrics.getForSymbol(metricDetail.symbol);
+            value = ride->getForSymbol(metricDetail.symbol);
 
         // check values are bounded to stop QWT going berserk
-        if (isnan(value) || isinf(value)) value = 0;
+        if (std::isnan(value) || std::isinf(value)) value = 0;
 
         // set aggZero to false and value to zero if is temperature and -255
         if (metricDetail.metric && metricDetail.metric->symbol() == "average_temp" && value == RideFile::NoTemp) {
@@ -2352,8 +2343,7 @@ LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail m
             aggZero = false;
         }
 
-        // Special computed metrics (LTS/STS) have a null metric pointer
-        if (metricDetail.type != METRIC_BEST && metricDetail.metric) {
+        if (metricDetail.metric) {
             // convert from stored metric value to imperial
             if (context->athlete->useMetricUnits == false) {
                 value *= metricDetail.metric->conversion();
@@ -2366,8 +2356,106 @@ LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail m
         }
 
         if (value || wantZero) {
-            unsigned long seconds = rideMetrics.getForSymbol("workout_time");
-            if (metricDetail.type == METRIC_BEST) seconds = 1;
+            unsigned long seconds = ride->getForSymbol("workout_time");
+            if (currentDay > lastDay) {
+                if (lastDay && wantZero) {
+                    while (lastDay<currentDay) {
+                        lastDay++;
+                        n++;
+                        x[n]=lastDay - groupForDate(settings->start.date(), settings->groupBy);
+                        y[n]=0;
+                    }
+                } else {
+                    n++;
+                }
+
+                // first time thru
+                if (n<0) n=0;
+
+                y[n] = value;
+                x[n] = currentDay - groupForDate(settings->start.date(), settings->groupBy);
+
+                // only increment counter if nonzero or we aggregate zeroes
+                if (value || aggZero) secondsPerGroupBy = seconds; 
+
+            } else {
+                // sum totals, average averages and choose best for Peaks
+                int type = metricDetail.metric ? metricDetail.metric->type() : RideMetric::Average;
+
+                if (metricDetail.uunits == "Ramp" ||
+                    metricDetail.uunits == tr("Ramp")) type = RideMetric::Total;
+
+                if (metricDetail.type == METRIC_BEST) type = RideMetric::Peak;
+
+                // first time thru
+                if (n<0) n=0;
+
+                switch (type) {
+                case RideMetric::Total:
+                    y[n] += value;
+                    break;
+                case RideMetric::Average:
+                    {
+                    // average should be calculated taking into account
+                    // the duration of the ride, otherwise high value but
+                    // short rides will skew the overall average
+                    if (value || aggZero) y[n] = ((y[n]*secondsPerGroupBy)+(seconds*value)) / (secondsPerGroupBy+seconds);
+                    break;
+                    }
+                case RideMetric::Low:
+                    if (value < y[n]) y[n] = value;
+                    break;
+                case RideMetric::Peak:
+                    if (value > y[n]) y[n] = value;
+                    break;
+                }
+                secondsPerGroupBy += seconds; // increment for same group
+            }
+            lastDay = currentDay;
+        }
+    }
+}
+
+void
+LTMPlot::createBestsData(Context *, LTMSettings *settings, MetricDetail metricDetail, QVector<double>&x,QVector<double>&y,int&n, bool forceZero)
+{
+    // resize the curve array to maximum possible size
+    int maxdays = groupForDate(settings->end.date(), settings->groupBy)
+                    - groupForDate(settings->start.date(), settings->groupBy);
+
+    x.resize(maxdays+3); // one for start from zero plus two for 0 value added at head and tail
+    y.resize(maxdays+3); // one for start from zero plus two for 0 value added at head and tail
+
+    // do we aggregate ?
+    bool aggZero = metricDetail.metric ? metricDetail.metric->aggregateZero() : false;
+
+    n=-1;
+    int lastDay=0;
+    unsigned long secondsPerGroupBy=0;
+    bool wantZero = forceZero ? 1 : (metricDetail.curveStyle == QwtPlotCurve::Steps);
+
+    foreach (RideBest best, *(settings->bests)) { 
+
+        // filter has already been applied
+
+        // day we are on
+        int currentDay = groupForDate(best.getRideDate().date(), settings->groupBy);
+
+        // value for day
+        double value;
+        value = best.getForSymbol(metricDetail.bestSymbol);
+
+        // check values are bounded to stop QWT going berserk
+        if (std::isnan(value) || std::isinf(value)) value = 0;
+
+        // set aggZero to false and value to zero if is temperature and -255
+        if (metricDetail.metric && metricDetail.metric->symbol() == "average_temp" && value == RideFile::NoTemp) {
+            value = 0;
+            aggZero = false;
+        }
+
+        if (value || wantZero) {
+            unsigned long seconds = 1;
             if (currentDay > lastDay) {
                 if (lastDay && wantZero) {
                     while (lastDay<currentDay) {
@@ -2426,10 +2514,10 @@ LTMPlot::createCurveData(Context *context, LTMSettings *settings, MetricDetail m
 
 void
 LTMPlot::createEstimateData(Context *context, LTMSettings *settings, MetricDetail metricDetail,
-                                              QVector<double>&x,QVector<double>&y,int&n)
+                                              QVector<double>&x,QVector<double>&y,int&n, bool)
 {
     // lets refresh the model data if we don't have any
-    if (context->athlete->PDEstimates.count() == 0) context->athlete->metricDB->refreshCPModelMetrics(); 
+    if (context->athlete->PDEstimates.count() == 0) context->athlete->rideCache->refreshCPModelMetrics(); 
 
     // resize the curve array to maximum possible size (even if we don't need it)
     int maxdays = groupForDate(settings->end.date(), settings->groupBy)
@@ -2523,143 +2611,169 @@ LTMPlot::createEstimateData(Context *context, LTMSettings *settings, MetricDetai
 }
 
 void
-LTMPlot::createPMCCurveData(Context *context, LTMSettings *settings, MetricDetail metricDetail,
-                            QList<SummaryMetrics> &customData)
+LTMPlot::createPMCData(Context *context, LTMSettings *settings, MetricDetail metricDetail,
+                                              QVector<double>&x,QVector<double>&y,int&n, bool)
 {
-
-    QDate earliest, latest; // rides
     QString scoreType;
+    int stressType = STRESS_LTS;
 
     // create a custom set of summary metric data!
-    if (metricDetail.symbol.startsWith("skiba")) {
-        scoreType = "skiba_bike_score";
-    } else if (metricDetail.symbol.startsWith("antiss")) {
-        scoreType = "antiss_score";
-    } else if (metricDetail.symbol.startsWith("atiss")) {
-        scoreType = "atiss_score";
-    } else if (metricDetail.symbol.startsWith("coggan")) {
-        scoreType = "coggan_tss";
-    } else if (metricDetail.symbol.startsWith("daniels")) {
-        scoreType = "daniels_points";
-    } else if (metricDetail.symbol.startsWith("trimp")) {
-        scoreType = "trimp_points";
-    } else if (metricDetail.symbol.startsWith("work")) {
-        scoreType = "total_work";
-    } else if (metricDetail.symbol.startsWith("cp_")) {
-        scoreType = "skiba_cp_exp";
-    } else if (metricDetail.symbol.startsWith("wprime")) {
-        scoreType = "skiba_wprime_exp";
-    } else if (metricDetail.symbol.startsWith("distance")) {
-        scoreType = "total_distance";
-    } else if (metricDetail.symbol.startsWith("govss")) {
-        scoreType = "govss";
-    }
+    if (metricDetail.type == METRIC_PM) {
 
-    // create the Stress Calculation List
-    // FOR ALL RIDE FILES
-	StressCalculator *sc ;
-
-    if (scoreType == "coggan_tss" && cogganPMC) {
-        sc = cogganPMC;
-    } else if (scoreType == "skiba_bike_score" && skibaPMC) {
-        sc = skibaPMC;
-    } else {
-        sc = new StressCalculator(
-                context->athlete->cyclist,
-		        settings->start,
-		        settings->end,
-		        (appsettings->value(this, GC_STS_DAYS,7)).toInt(),
-                (appsettings->value(this, GC_LTS_DAYS,42)).toInt());
-
-        sc->calculateStress(context, context->athlete->home->activities().absolutePath(), scoreType, settings->ltmTool->isFiltered(), settings->ltmTool->filters());
-
-    }
-
-    // pick out any data that is in the date range selected
-    // convert to SummaryMetric Format used on the plot
-    for (int i=0; i< sc->n(); i++) {
-
-        SummaryMetrics add = SummaryMetrics();
-        add.setRideDate(settings->start.addDays(i));
-        if (scoreType == "skiba_bike_score") {
-            add.setForSymbol("skiba_lts", sc->getLTSvalues()[i]);
-            add.setForSymbol("skiba_sts", sc->getSTSvalues()[i]);
-            add.setForSymbol("skiba_sb",  sc->getSBvalues()[i]);
-            add.setForSymbol("skiba_sr", sc->getSRvalues()[i]);
-            add.setForSymbol("skiba_lr", sc->getLRvalues()[i]);
-        } else if (scoreType == "antiss_score") {
-            add.setForSymbol("antiss_lts", sc->getLTSvalues()[i]);
-            add.setForSymbol("antiss_sts", sc->getSTSvalues()[i]);
-            add.setForSymbol("antiss_sb",  sc->getSBvalues()[i]);
-            add.setForSymbol("antiss_sr", sc->getSRvalues()[i]);
-            add.setForSymbol("antiss_lr", sc->getLRvalues()[i]);
-        } else if (scoreType == "atiss_score") {
-            add.setForSymbol("atiss_lts", sc->getLTSvalues()[i]);
-            add.setForSymbol("atiss_sts", sc->getSTSvalues()[i]);
-            add.setForSymbol("atiss_sb",  sc->getSBvalues()[i]);
-            add.setForSymbol("atiss_sr", sc->getSRvalues()[i]);
-            add.setForSymbol("atiss_lr", sc->getLRvalues()[i]);
-        } else if (scoreType == "coggan_tss") {
-            add.setForSymbol("coggan_ctl", sc->getLTSvalues()[i]);
-            add.setForSymbol("coggan_atl", sc->getSTSvalues()[i]);
-            add.setForSymbol("coggan_tsb",  sc->getSBvalues()[i]);
-            add.setForSymbol("coggan_sr", sc->getSRvalues()[i]);
-            add.setForSymbol("coggan_lr", sc->getLRvalues()[i]);
-        } else if (scoreType == "daniels_points") {
-            add.setForSymbol("daniels_lts", sc->getLTSvalues()[i]);
-            add.setForSymbol("daniels_sts", sc->getSTSvalues()[i]);
-            add.setForSymbol("daniels_sb",  sc->getSBvalues()[i]);
-            add.setForSymbol("daniels_sr", sc->getSRvalues()[i]);
-            add.setForSymbol("daniels_lr", sc->getLRvalues()[i]);
-        } else if (scoreType == "trimp_points") {
-            add.setForSymbol("trimp_lts", sc->getLTSvalues()[i]);
-            add.setForSymbol("trimp_sts", sc->getSTSvalues()[i]);
-            add.setForSymbol("trimp_sb",  sc->getSBvalues()[i]);
-            add.setForSymbol("trimp_sr", sc->getSRvalues()[i]);
-            add.setForSymbol("trimp_lr", sc->getLRvalues()[i]);
-        } else if (scoreType == "skiba_cp_exp") {
-            add.setForSymbol("cp_lts", sc->getLTSvalues()[i]);
-            add.setForSymbol("cp_sts", sc->getSTSvalues()[i]);
-            add.setForSymbol("cp_sb",  sc->getSBvalues()[i]);
-            add.setForSymbol("cp_sr", sc->getSRvalues()[i]);
-            add.setForSymbol("cp_lr", sc->getLRvalues()[i]);
-        } else if (scoreType == "skiba_wprime_exp") {
-            add.setForSymbol("wprime_lts", sc->getLTSvalues()[i]);
-            add.setForSymbol("wprime_sts", sc->getSTSvalues()[i]);
-            add.setForSymbol("wprime_sb",  sc->getSBvalues()[i]);
-            add.setForSymbol("wprime_sr", sc->getSRvalues()[i]);
-            add.setForSymbol("wprime_lr", sc->getLRvalues()[i]);
-        } else if (scoreType == "total_work") {
-            add.setForSymbol("work_lts", sc->getLTSvalues()[i]);
-            add.setForSymbol("work_sts", sc->getSTSvalues()[i]);
-            add.setForSymbol("work_sb",  sc->getSBvalues()[i]);
-            add.setForSymbol("work_sr", sc->getSRvalues()[i]);
-            add.setForSymbol("work_lr", sc->getLRvalues()[i]);
-        } else if (scoreType == "total_distance") {
-            add.setForSymbol("distance_lts", sc->getLTSvalues()[i]);
-            add.setForSymbol("distance_sts", sc->getSTSvalues()[i]);
-            add.setForSymbol("distance_sb",  sc->getSBvalues()[i]);
-            add.setForSymbol("distance_sr", sc->getSRvalues()[i]);
-            add.setForSymbol("distance_lr", sc->getLRvalues()[i]);
-        } else if (scoreType == "govss") {
-            add.setForSymbol("govss_lts", sc->getLTSvalues()[i]);
-            add.setForSymbol("govss_sts", sc->getSTSvalues()[i]);
-            add.setForSymbol("govss_sb",  sc->getSBvalues()[i]);
-            add.setForSymbol("govss_sr", sc->getSRvalues()[i]);
-            add.setForSymbol("govss_lr", sc->getLRvalues()[i]);
+        if (metricDetail.symbol.startsWith("skiba")) {
+            scoreType = "skiba_bike_score";
+        } else if (metricDetail.symbol.startsWith("antiss")) {
+            scoreType = "antiss_score";
+        } else if (metricDetail.symbol.startsWith("atiss")) {
+            scoreType = "atiss_score";
+        } else if (metricDetail.symbol.startsWith("coggan")) {
+            scoreType = "coggan_tss";
+        } else if (metricDetail.symbol.startsWith("daniels")) {
+            scoreType = "daniels_points";
+        } else if (metricDetail.symbol.startsWith("trimp")) {
+            scoreType = "trimp_points";
+        } else if (metricDetail.symbol.startsWith("work")) {
+            scoreType = "total_work";
+        } else if (metricDetail.symbol.startsWith("cp_")) {
+            scoreType = "skiba_cp_exp";
+        } else if (metricDetail.symbol.startsWith("wprime")) {
+            scoreType = "skiba_wprime_exp";
+        } else if (metricDetail.symbol.startsWith("distance")) {
+            scoreType = "total_distance";
+        } else if (metricDetail.symbol.startsWith("govss")) {
+            scoreType = "govss";
         }
-        add.setForSymbol("workout_time", 1.0); // averaging is per day
-        customData << add;
 
-    }
+        stressType = STRESS_LTS; // if in doubt
+        if (metricDetail.symbol.endsWith("lts") || metricDetail.symbol.endsWith("ctl")) 
+            stressType = STRESS_LTS;
+        else if (metricDetail.symbol.endsWith("sts") || metricDetail.symbol.endsWith("atl")) 
+            stressType = STRESS_STS;
+        else if (metricDetail.symbol.endsWith("sb")) 
+            stressType = STRESS_SB;
+        else if (metricDetail.symbol.endsWith("lr")) 
+            stressType = STRESS_RR;
 
-    if (scoreType == "coggan_tss") {
-        cogganPMC = sc;
-    } else if (scoreType == "skiba_bike_score") {
-        skibaPMC = sc;
     } else {
-        delete sc;
+
+        scoreType = metricDetail.symbol; // just use the selected metric
+        stressType = metricDetail.stressType;
     }
+
+
+    PMCData *athletePMC = NULL;
+    PMCData *localPMC = NULL;
+
+    // create local PMC if filtered
+    if (settings->specification.isFiltered()) {
+
+        // don't filter for date range!!
+        Specification allDates = settings->specification;
+        allDates.setDateRange(DateRange(QDate(),QDate()));
+        localPMC = new PMCData(context, allDates, scoreType);
+    }
+
+    // use global one if not filtered
+    if (!localPMC) athletePMC = context->athlete->getPMCFor(scoreType);
+
+    // point to the right one
+    PMCData *pmcData = localPMC ? localPMC : athletePMC;
+
+    int maxdays = groupForDate(settings->end.date(), settings->groupBy)
+                    - groupForDate(settings->start.date(), settings->groupBy);
+
+    x.resize(maxdays+3); // one for start from zero plus two for 0 value added at head and tail
+    y.resize(maxdays+3); // one for start from zero plus two for 0 value added at head and tail
+
+    // iterate over it and create curve...
+    n=-1;
+    int lastDay=0;
+    unsigned long secondsPerGroupBy=0;
+    bool wantZero = true;
+
+    for (QDate date=settings->start.date(); date <= settings->end.date(); date = date.addDays(1)) {
+
+        // day we are on
+        int currentDay = groupForDate(date, settings->groupBy);
+
+        // value for day
+        double value = 0.0f;
+
+        switch (stressType) {
+        case STRESS_LTS:
+            value = pmcData->lts(date);
+            break;
+        case STRESS_STS:
+            value = pmcData->sts(date);
+            break;
+        case STRESS_SB:
+            value = pmcData->sb(date);
+            break;
+        case STRESS_RR:
+            value = pmcData->rr(date);
+            break;
+        default:
+            value = 0;
+            break;
+        }
+        
+        if (value || wantZero) {
+            unsigned long seconds = 1;
+            if (currentDay > lastDay) {
+                if (lastDay && wantZero) {
+                    while (lastDay<currentDay) {
+                        lastDay++;
+                        n++;
+                        x[n]=lastDay - groupForDate(settings->start.date(), settings->groupBy);
+                        y[n]=0;
+                    }
+                } else {
+                    n++;
+                }
+
+                y[n] = value;
+                x[n] = currentDay - groupForDate(settings->start.date(), settings->groupBy);
+
+                // only increment counter if nonzero or we aggregate zeroes
+                secondsPerGroupBy = seconds; 
+
+            } else {
+                // sum totals, average averages and choose best for Peaks
+                int type = RideMetric::Average;
+
+                if (metricDetail.uunits == "Ramp" ||
+                    metricDetail.uunits == tr("Ramp")) type = RideMetric::Total;
+
+                // first time thru
+                if (n<0) n++;
+
+                switch (type) {
+                case RideMetric::Total:
+                    y[n] += value;
+                    break;
+                case RideMetric::Average:
+                    {
+                    // average should be calculated taking into account
+                    // the duration of the ride, otherwise high value but
+                    // short rides will skew the overall average
+                    y[n] = ((y[n]*secondsPerGroupBy)+(seconds*value)) / (secondsPerGroupBy+seconds);
+                    break;
+                    }
+                case RideMetric::Low:
+                    if (value < y[n]) y[n] = value;
+                    break;
+                case RideMetric::Peak:
+                    if (value > y[n]) y[n] = value;
+                    break;
+                }
+                secondsPerGroupBy += seconds; // increment for same group
+            }
+            lastDay = currentDay;
+        }
+    }
+
+    // wipe away local
+    if (localPMC) delete localPMC;
 }
 
 QwtAxisId

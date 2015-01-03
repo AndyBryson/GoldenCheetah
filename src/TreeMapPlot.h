@@ -22,7 +22,6 @@
 
 #include <QtGui>
 
-#include "MetricAggregator.h"
 #include "TreeMapWindow.h"
 #include "Context.h"
 
@@ -245,7 +244,7 @@ class TreeMapPlot : public QWidget
         void setData(TMSettings *);
 
     public slots:
-        void configUpdate();
+        void configChanged(qint32);
         bool eventFilter(QObject *object, QEvent *e);
 
     signals:

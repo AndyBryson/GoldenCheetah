@@ -22,7 +22,6 @@
 #include "CriticalPowerWindow.h"
 #include "Settings.h"
 #include "SearchFilterBox.h"
-#include "MetricAggregator.h"
 #include "CPPlot.h"
 #include "Context.h"
 #include "Context.h"
@@ -32,6 +31,7 @@
 #include "IntervalItem.h"
 #include "GcOverlayWidget.h"
 #include "MUWidget.h"
+#include "HelpWhatsThis.h"
 #include <qwt_picker.h>
 #include <qwt_picker_machine.h>
 #include <qwt_plot_picker.h>
@@ -91,6 +91,9 @@ CriticalPowerWindow::CriticalPowerWindow(Context *context, bool rangemode) :
 
     cpPlot = new CPPlot(this, context, rangemode);
     mainLayout->addWidget(cpPlot);
+    HelpWhatsThis *help = new HelpWhatsThis(cpPlot);
+    if (rangemode) cpPlot->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartTrends_Critical_MM));
+    else cpPlot->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_Critical_MM));
 
     //
     // Chart settings
@@ -98,17 +101,27 @@ CriticalPowerWindow::CriticalPowerWindow(Context *context, bool rangemode) :
 
     // controls widget and layout
     QTabWidget *settingsTabs = new QTabWidget(this);
+    HelpWhatsThis *helpTabs = new HelpWhatsThis(settingsTabs);
+    if (rangemode) settingsTabs->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartTrends_Critical_MM));
+    else settingsTabs->setWhatsThis(helpTabs->getWhatsThisText(HelpWhatsThis::ChartRides_Critical_MM));
+
 
     QWidget *settingsWidget = new QWidget(this);
     settingsWidget->setContentsMargins(0,0,0,0);
     settingsTabs->addTab(settingsWidget, tr("Basic"));
+    HelpWhatsThis *helpSettings = new HelpWhatsThis(settingsWidget);
+    if (rangemode) settingsWidget->setWhatsThis(helpSettings->getWhatsThisText(HelpWhatsThis::ChartTrends_Critical_MM_Config_Settings));
+    else settingsWidget->setWhatsThis(helpSettings->getWhatsThisText(HelpWhatsThis::ChartRides_Critical_MM_Config_Settings));
 
     QFormLayout *cl = new QFormLayout(settingsWidget);;
     cl->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
 
     QWidget *modelWidget = new QWidget(this);
     modelWidget->setContentsMargins(0,0,0,0);
-    settingsTabs->addTab(modelWidget, tr("CP/CV Model"));
+    settingsTabs->addTab(modelWidget, tr("Model"));
+    HelpWhatsThis *helpModel = new HelpWhatsThis(modelWidget);
+    if (rangemode) modelWidget->setWhatsThis(helpModel->getWhatsThisText(HelpWhatsThis::ChartTrends_Critical_MM_Config_Model));
+    else modelWidget->setWhatsThis(helpModel->getWhatsThisText(HelpWhatsThis::ChartRides_Critical_MM_Config_Model));
 
     QFormLayout *mcl = new QFormLayout(modelWidget);;
     mcl->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
@@ -129,6 +142,8 @@ CriticalPowerWindow::CriticalPowerWindow(Context *context, bool rangemode) :
     connect(searchBox, SIGNAL(searchResults(QStringList)), this, SLOT(filterChanged()));
     cl->addRow(new QLabel(tr("Filter")), searchBox);
     cl->addWidget(new QLabel("")); //spacing
+    HelpWhatsThis *searchHelp = new HelpWhatsThis(searchBox);
+    searchBox->setWhatsThis(searchHelp->getWhatsThisText(HelpWhatsThis::SearchFilterBox));
 #endif
 
     // series
@@ -147,6 +162,8 @@ CriticalPowerWindow::CriticalPowerWindow(Context *context, bool rangemode) :
     }
     cl->addRow(label2, cComboSeason);
     dateSetting = new DateSettingsEdit(this);
+    HelpWhatsThis *dateSettingHelp = new HelpWhatsThis(dateSetting);
+    dateSetting->setWhatsThis(dateSettingHelp->getWhatsThisText(HelpWhatsThis::ChartTrends_DateRange));
     cl->addRow(label, dateSetting);
     if (rangemode == false) {
         dateSetting->hide();
@@ -210,7 +227,7 @@ CriticalPowerWindow::CriticalPowerWindow(Context *context, bool rangemode) :
     modelCombo->addItem(tr("Multicomponent"));
     modelCombo->setCurrentIndex(1);
 
-    mcl->addRow(new QLabel(tr("CP/CV Model")), modelCombo);
+    mcl->addRow(new QLabel(tr("Model")), modelCombo);
 
     mcl->addRow(new QLabel(tr(" ")));
     intervalLabel = new QLabel(tr("Search Interval"));
@@ -414,7 +431,7 @@ CriticalPowerWindow::CriticalPowerWindow(Context *context, bool rangemode) :
 #ifdef GC_HAVE_MUMODEL
     addHelper(QString(tr("Motor Unit Model")), new MUWidget(this, context));
 #endif
-    addHelper(QString(tr("CP/CV Model")), helper);
+    addHelper(QString(tr("Model")), helper);
 
     if (rangemode) {
         connect(this, SIGNAL(dateRangeChanged(DateRange)), SLOT(dateRangeChanged(DateRange)));
@@ -437,7 +454,7 @@ CriticalPowerWindow::CriticalPowerWindow(Context *context, bool rangemode) :
     connect(seriesCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(setSeries(int)));
     connect(ridePlotStyleCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(setPlotType(int)));
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
-    connect(context, SIGNAL(configChanged()), cpPlot, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), cpPlot, SLOT(configChanged(qint32)));
     connect(exportData, SIGNAL(triggered()), this, SLOT(exportData()));
 
     // model updated?
@@ -457,8 +474,8 @@ CriticalPowerWindow::CriticalPowerWindow(Context *context, bool rangemode) :
     // redraw on config change -- this seems the simplest approach
     connect(context, SIGNAL(filterChanged()), this, SLOT(forceReplot()));
     connect(context, SIGNAL(homeFilterChanged()), this, SLOT(forceReplot()));
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
-    connect(context->athlete->metricDB, SIGNAL(dataChanged()), this, SLOT(refreshRideSaved()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
+    connect(context, SIGNAL(rideSaved(RideItem*)), this, SLOT(refreshRideSaved(RideItem*)));
     connect(context, SIGNAL(rideAdded(RideItem*)), this, SLOT(newRideAdded(RideItem*)));
     connect(context, SIGNAL(rideDeleted(RideItem*)), this, SLOT(newRideAdded(RideItem*)));
     connect(seasons, SIGNAL(seasonsChanged()), this, SLOT(resetSeasons()));
@@ -477,17 +494,21 @@ CriticalPowerWindow::CriticalPowerWindow(Context *context, bool rangemode) :
     connect(dateSetting, SIGNAL(useThruToday()), this, SLOT(useThruToday()));
     connect(dateSetting, SIGNAL(useStandardRange()), this, SLOT(useStandardRange()));
 
+    // if refresh is in progress give CPPlot a chance to redraw when CPX updating
+    connect(context, SIGNAL(refreshUpdate(QDate)), cpPlot, SLOT(refreshUpdate(QDate)));
+    connect(context, SIGNAL(refreshEnd()), cpPlot, SLOT(refreshEnd()));
+
     // set date range for bests and model
     if (!rangemode) seasonSelected(cComboSeason->currentIndex());
 
     // set widgets and model parameters
     modelChanged();
 
-    configChanged(); // get colors set
+    configChanged(CONFIG_APPEARANCE); // get colors set
 }
 
 void
-CriticalPowerWindow::configChanged()
+CriticalPowerWindow::configChanged(qint32)
 {
     setProperty("color", GColor(CPLOTBACKGROUND));
 
@@ -736,18 +757,24 @@ CriticalPowerWindow::modelParametersChanged()
 }
 
 void
-CriticalPowerWindow::refreshRideSaved()
+CriticalPowerWindow::refreshRideSaved(RideItem *item)
 {
-    const RideItem *current = context->rideItem();
-    if (!current) return;
+    if (!item) return;
 
     // if the saved ride is in the aggregated time period
-    QDate date = current->dateTime.date();
-    if (date >= cpPlot->startDate &&
+    QDate date = item->dateTime.date();
+
+    // in rangemode ?
+    if (rangemode && date >= cpPlot->startDate &&
         date <= cpPlot->endDate) {
 
         // force a redraw next time visible
         cpPlot->setDateRange(cpPlot->startDate, cpPlot->endDate);
+    }
+
+    if (!rangemode) {
+        // reset date range for bests and model
+        if (!rangemode) seasonSelected(cComboSeason->currentIndex());
     }
 }
 

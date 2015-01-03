@@ -29,7 +29,7 @@
 #include "RideItem.h"
 #include "RideFile.h"
 #include "Units.h"
-#include "math.h"
+#include "cmath"
 
 #include <qwt_plot.h>
 #include <qwt_plot_grid.h>
@@ -86,7 +86,7 @@ class ScatterPlot : public QwtPlot
     public slots:
         void intervalHover(RideFileInterval);
         void mouseMoved();
-        void configChanged();
+        void configChanged(qint32);
 
     protected:
 
@@ -109,7 +109,10 @@ class ScatterPlot : public QwtPlot
 
         void addTrendLine(QVector<double> xval, QVector<double> yval, int nbPoints, QColor intervalColor);
 
-        void smooth(QVector<double> *xval, QVector<double> *yval, int *count, double recInterval, int applySmooth);
+        void smooth(QVector<double> &xval, QVector<double> &yval, int count, int applySmooth);
+        void resample(QVector<double> &xval, QVector<double> &yval, int &count, double recInterval, int applySmooth);
+
+        bool skipValues(double xv, double yv, ScatterSettings *settings);
 
         // save the settings
         RideItem *ride; // what we plotting?

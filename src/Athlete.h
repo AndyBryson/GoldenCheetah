@@ -29,7 +29,6 @@
 // for WithingsReading
 #include "WithingsParser.h"
 
-class MetricAggregator;
 class Zones;
 class HrZones;
 class PaceZones;
@@ -48,14 +47,15 @@ class RideFileCache;
 class RideItem;
 class IntervalItem;
 class IntervalTreeView;
-class QSqlTableModel;
 class PDEstimate;
+class PMCData;
 class LTMSettings;
 class Routes;
 class AthleteDirectoryStructure;
 class RideAutoImportConfig;
 class RideCache;
 class Context;
+class ColorEngine;
 
 class Athlete : public QObject
 {
@@ -74,6 +74,7 @@ class Athlete : public QObject
 
         // metadata definitions
         RideMetadata *rideMetadata_;
+        ColorEngine *colorEngine;
 
         // zones
         const Zones *zones() const { return zones_; }
@@ -84,12 +85,10 @@ class Athlete : public QObject
         PaceZones *pacezones_;
         void setCriticalPower(int cp);
 
-        // SQL tables are going soon
-        bool isclean;
-        MetricAggregator *metricDB;
-        QSqlTableModel *sqlModel;
+#ifdef GC_HAVE_INTERVALS
         QSqlTableModel *sqlRouteIntervalsModel;
         QSqlTableModel *sqlBestIntervalsModel;
+#endif
 
         // Data
         Seasons *seasons;
@@ -98,6 +97,10 @@ class Athlete : public QObject
         QList<RideFileCache*> cpxCache;
         RideCache *rideCache;
         QList<WithingsReading> withings_;
+
+        // PMC Data
+        PMCData *getPMCFor(QString metricName, int stsDays = -1, int ltsDays = -1); // no Specification used!
+        QMap<QString, PMCData*> pmcData; // all the different PMC series
 
         // athlete measures
         // note ride can override if passed
@@ -126,6 +129,7 @@ class Athlete : public QObject
 #ifdef GC_HAVE_LUCENE
         Lucene *lucene;
         NamedSearches *namedSearches;
+        bool emptyindex; // when startup and index is missing
 #endif
         Context *context;
 
@@ -163,7 +167,7 @@ class Athlete : public QObject
         void intervalTreeWidgetSelectionChanged();
         void checkCPX(RideItem*ride);
         void updateRideFileIntervals();
-        void configChanged();
+        void configChanged(qint32);
 
 
 };

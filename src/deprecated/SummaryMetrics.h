@@ -26,20 +26,6 @@
 #include <QApplication>
 
 class Context;
-class SummaryBest
-{
-    public:
-    double nvalue;
-    QString value; // formatted value
-    QDate date;
-#ifdef GC_HAVE_INTERVALS
-    QString fileName;
-#endif
-
-    // for qsort
-    bool operator< (SummaryBest right) const { return (nvalue < right.nvalue); }
-};
-
 class SummaryMetrics
 {
     Q_DECLARE_TR_FUNCTIONS(SummaryMetrics)
@@ -82,17 +68,19 @@ class SummaryMetrics
         // get unit string to use for this symbol
         QString getUnitsForSymbol(QString symbol, bool UseMetric) const;
 
+        // NOW RETIRED XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
         // when passed a list of summary metrics and a name return aggregated value as a string
-        static QString getAggregated(Context *context, QString name, 
-                                     const QList<SummaryMetrics> &results,
-                                     const QStringList &filters, bool filtered,
-                                     bool useMetricUnits, bool nofmt = false);
+        //static QString getAggregated(Context *context, QString name, 
+        //                             const QList<SummaryMetrics> &results,
+        //                             const QStringList &filters, bool filtered,
+        //                             bool useMetricUnits, bool nofmt = false);
 
         // get an ordered list pf bests for that symbol
-        static QList<SummaryBest> getBests(Context *context, QString symbol, int n, 
-                                            const QList<SummaryMetrics> &results, 
-                                            const QStringList &filters, bool filtered, 
-                                            bool useMetricUnits);
+        //static QList<AthleteBest> getBests(Context *context, QString symbol, int n, 
+        //                                    const QList<SummaryMetrics> &results, 
+        //                                    const QStringList &filters, bool filtered, 
+        //                                    bool useMetricUnits);
+        // XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
         QMap<QString, double> &values() { return value; }
         QMap<QString, QString> &texts() { return text; }

@@ -18,17 +18,18 @@
 
 #include "ComparePane.h"
 #include "Settings.h"
+#include "Colors.h"
+#include "RideCache.h"
 #include "RideFile.h"
 #include "RideFileCache.h"
 #include "RideMetric.h"
-#include "SummaryMetrics.h"
-#include "MetricAggregator.h"
 #include "ColorButton.h"
 #include "TimeUtils.h"
 #include "Units.h"
 #include "Zones.h"
 
 #include <QCheckBox>
+#include <QTextEdit>
 
 //
 // A selection of distinct colours, user can adjust also
@@ -159,14 +160,14 @@ ComparePane::ComparePane(Context *context, QWidget *parent, CompareMode mode) : 
     table->setFrameStyle(QFrame::NoFrame);
     scrollArea->setWidget(table);
 
-    configChanged(); // set up ready to go...
+    configChanged(CONFIG_APPEARANCE | CONFIG_METRICS); // set up ready to go...
 
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
     connect(table->horizontalHeader(), SIGNAL(sectionClicked(int)), this, SLOT(itemsWereSorted()));
 }
 
 void
-ComparePane::configChanged()
+ComparePane::configChanged(qint32)
 {
     // via standard style sheet
     table->setStyleSheet(GCColor::stylesheet());
@@ -243,17 +244,11 @@ ComparePane::refreshTable()
         foreach(CompareInterval x, context->compareIntervals) {
 
             // compute the metrics for this ride
-            SummaryMetrics metrics;
+            RideItem metrics;
             QHash<QString, RideMetricPtr> computed = RideMetric::computeMetrics(context, x.data,
                                                      context->athlete->zones(), context->athlete->hrZones(), worklist);
 
-            for(int i = 0; i < worklist.count(); i++) {
-                if (worklist[i] != "") {
-                    RideMetricPtr m = computed.value(worklist[i]);
-                    if (m) metrics.setForSymbol(worklist[i], m->value(true));
-                    else metrics.setForSymbol(worklist[i], 0.00);
-                }
-            }
+            metrics.setFrom(computed);
 
             // First few cols always the same
             // check - color - athlete - date - time
@@ -454,8 +449,7 @@ ComparePane::refreshTable()
             // metrics
             for(int i = 0; i < worklist.count(); i++) {
 
-                QString value = SummaryMetrics::getAggregated(x.sourceContext, worklist[i], 
-                                                              x.metrics, QStringList(), false, context->athlete->useMetricUnits);
+                QString value = x.sourceContext->athlete->rideCache->getAggregate(worklist[i], x.specification, context->athlete->useMetricUnits);
 
                 // add to the table
                 t = new CTableWidgetItem;
@@ -776,11 +770,8 @@ ComparePane::dropEvent(QDropEvent *event)
             stream >> add.end;
             stream >> add.days;
 
-            // get summary metrics for the season
-            // FROM THE SOURCE CONTEXT
-            // WE DON'T FETCH BESTS -- THEY NEED TO BE DONE AS NEEDED
-            add.metrics = sourceContext->athlete->metricDB->getAllMetricsFor(QDateTime(add.start, QTime()),QDateTime(add.end, QTime()));
-            /* XXX measures deprecated add.measures = sourceContext->athlete->metricDB->getAllMeasuresFor(QDateTime(add.start, QTime()),QDateTime(add.end, QTime())); XXX */
+            // for now the specification is just a date range
+            add.specification.setDateRange(DateRange(add.start,add.end));
 
             // just use standard colors and cycle round
             // we will of course repeat, but the user can

@@ -90,6 +90,7 @@ class MainWindow : public QMainWindow
         void toggleFullScreen();
 #endif
         void aboutDialog();
+        void helpWindow();
         void helpView();
         void logBug();
         void support();
@@ -171,7 +172,7 @@ class MainWindow : public QMainWindow
         void exportBatch();
         void generateHeatMap();
         void exportMetrics();
-#ifdef GC_HAVE_LIBOAUTH
+#ifdef GC_HAVE_KQOAUTH
         void tweetRide();
 #endif
         void share();
@@ -195,7 +196,7 @@ class MainWindow : public QMainWindow
         void saveGCState(Context *);
         void restoreGCState(Context *);
 
-        void configChanged();
+        void configChanged(qint32);
 
     private:
 

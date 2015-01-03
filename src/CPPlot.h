@@ -97,7 +97,7 @@ class CPPlot : public QwtPlot
     public slots:
 
         // colors/appearance changed
-        void configChanged();
+        void configChanged(qint32);
 
         // the picker hovered over a point on the curve
         void pointHover(QwtPlotCurve *curve, int index);
@@ -105,6 +105,10 @@ class CPPlot : public QwtPlot
         // filter being applied
         void clearFilter();
         void setFilter(QStringList);
+
+        // during a refresh we get a chance to replot
+        void refreshUpdate(QDate);
+        void refreshEnd();
 
     private:
 
@@ -136,9 +140,10 @@ class CPPlot : public QwtPlot
 
         // Data and State
         Context *context;
-        RideFileCache *rideCache, *bestsCache;
+        RideFileCache *bestsCache;
         int dateCP;
         double dateCV;
+        QTime lastupdate;
 
         // settings
         RideFile::SeriesType rideSeries;

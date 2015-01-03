@@ -17,22 +17,33 @@
  */
 
 #include "RideSummaryWindow.h"
+
 #include "Context.h"
 #include "Athlete.h"
 #include "RideFile.h"
+#include "RideCache.h"
 #include "RideItem.h"
 #include "RideMetric.h"
+#include "PMCData.h"
+#include "Season.h"
+
 #include "Settings.h"
+#include "Colors.h"
 #include "TimeUtils.h"
 #include "Units.h"
+
 #include "Zones.h"
+#include "HrZones.h"
 #include "PaceZones.h"
+
 #include "PDModel.h"
-#include "MetricAggregator.h"
-#include "DBAccess.h"
+#include "HelpWhatsThis.h"
+
 #include <QtGui>
+#include <QLabel>
+
 #include <QtXml/QtXml>
-#include <math.h>
+#include <cmath>
 
 RideSummaryWindow::RideSummaryWindow(Context *context, bool ridesummary) :
      GcChartWindow(context), context(context), ridesummary(ridesummary), useCustom(false), useToToday(false), filtered(false), bestsCache(NULL), force(false)
@@ -50,6 +61,8 @@ RideSummaryWindow::RideSummaryWindow(Context *context, bool ridesummary) :
 
         QWidget *c = new QWidget;
         c->setContentsMargins(0,0,0,0);
+        HelpWhatsThis *helpConfig = new HelpWhatsThis(c);
+        c->setWhatsThis(helpConfig->getWhatsThisText(HelpWhatsThis::Chart_Summary_Config));
         QFormLayout *cl = new QFormLayout(c);
         cl->setContentsMargins(0,0,0,0);
         cl->setSpacing(0);
@@ -58,6 +71,8 @@ RideSummaryWindow::RideSummaryWindow(Context *context, bool ridesummary) :
 #ifdef GC_HAVE_LUCENE
         // filter / searchbox
         searchBox = new SearchFilterBox(this, context);
+        HelpWhatsThis *searchHelp = new HelpWhatsThis(searchBox);
+        searchBox->setWhatsThis(searchHelp->getWhatsThisText(HelpWhatsThis::SearchFilterBox));
         connect(searchBox, SIGNAL(searchClear()), this, SLOT(clearFilter()));
         connect(searchBox, SIGNAL(searchResults(QStringList)), this, SLOT(setFilter(QStringList)));
         cl->addRow(new QLabel(tr("Filter")), searchBox);
@@ -79,11 +94,16 @@ RideSummaryWindow::RideSummaryWindow(Context *context, bool ridesummary) :
     rideSummary->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     rideSummary->setAcceptDrops(false);
 
+    HelpWhatsThis *help = new HelpWhatsThis(rideSummary);
+    if (ridesummary) rideSummary->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_Summary));
+    else rideSummary->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::Chart_Summary));
+
     vlayout->addWidget(rideSummary);
 
     if (ridesummary) {
 
         connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideItemChanged()));
+        connect(context, SIGNAL(rideChanged(RideItem*)), this, SLOT(refresh()));
         connect(context->athlete, SIGNAL(zonesChanged()), this, SLOT(refresh()));
         connect(context, SIGNAL(intervalsChanged()), this, SLOT(refresh()));
         connect(context, SIGNAL(compareIntervalsStateChanged(bool)), this, SLOT(compareChanged()));
@@ -93,6 +113,7 @@ RideSummaryWindow::RideSummaryWindow(Context *context, bool ridesummary) :
 
         connect(this, SIGNAL(dateRangeChanged(DateRange)), this, SLOT(dateRangeChanged(DateRange)));
         connect(context, SIGNAL(rideAdded(RideItem*)), this, SLOT(refresh()));
+        connect(context, SIGNAL(refreshUpdate(QDate)), this, SLOT(refresh(QDate)));
         connect(context, SIGNAL(rideDeleted(RideItem*)), this, SLOT(refresh()));
         connect(context, SIGNAL(filterChanged()), this, SLOT(refresh()));
         connect(context, SIGNAL(homeFilterChanged()), this, SLOT(refresh()));
@@ -105,12 +126,12 @@ RideSummaryWindow::RideSummaryWindow(Context *context, bool ridesummary) :
         connect(dateSetting, SIGNAL(useStandardRange()), this, SLOT(useStandardRange()));
 
     }
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
     connect(this, SIGNAL(doRefresh()), this, SLOT(refresh()));
-    connect(context->athlete->metricDB, SIGNAL(modelProgress(int,int)), this, SLOT(modelProgress(int,int)));
+    connect(context->athlete->rideCache, SIGNAL(modelProgress(int,int)), this, SLOT(modelProgress(int,int)));
 
     setChartLayout(vlayout);
-    configChanged(); // set colors
+    configChanged(CONFIG_APPEARANCE | CONFIG_METRICS); // set colors
 }
 
 RideSummaryWindow::~RideSummaryWindow()
@@ -121,7 +142,7 @@ RideSummaryWindow::~RideSummaryWindow()
 }
 
 void
-RideSummaryWindow::configChanged()
+RideSummaryWindow::configChanged(qint32)
 {
     setProperty("color", GColor(CPLOTBACKGROUND)); // called on config change
 
@@ -230,9 +251,22 @@ RideSummaryWindow::metadataChanged()
 }
 
 void
+RideSummaryWindow::refresh(QDate past)
+{
+    // as the background refresh occurs we get an update
+    // to tell us to replot during the update.
+    // if we're showing data new than past we can ignore
+    // this because our data is up to date
+    if (!ridesummary && myDateRange.from < past && (lastupdate == QTime() || lastupdate.secsTo(QTime::currentTime()) > 5)) {
+        lastupdate = QTime::currentTime();
+        refresh();
+    }
+}
+
+void
 RideSummaryWindow::refresh()
 {
-    if (!force && !amVisible()) return; // only if you can see me!
+    if (!amVisible()) return; // only if you can see me!
 
     if (isCompare()) { // COMPARE MODE
 
@@ -318,11 +352,47 @@ RideSummaryWindow::refresh()
                         " - " +
                         myDateRange.to.toString(tr("dddd MMMM d yyyy")));
             }
+
+            FilterSet fs;
+#ifdef GC_HAVE_LUCENE
+            fs.addFilter(filtered, filters);
+            fs.addFilter(context->isfiltered, context->filters);
+            fs.addFilter(context->ishomefiltered, context->homeFilters);
+#endif
+            specification.setFilterSet(fs);
         }
         rideSummary->page()->mainFrame()->setHtml(htmlSummary());
 
         setUpdatesEnabled(true); // ready to update now
     }
+}
+
+static QString rankingString(int number)
+{
+    QString ext=""; 
+
+    switch(number%10) {
+
+        case 1:
+        {
+            if (number == 11 || number == 111) ext = "th";
+            else ext = "st";
+        }
+        break;
+
+        case 2:
+            if (number == 12 || number == 112) ext = "th";
+            else ext = "nd";
+            break;
+        case 3:
+            if (number == 13 || number == 113) ext = "th";
+            else ext = "rd";
+            break;
+        default:
+            ext = "th"; // default for 4th,5th,6th,7th,8th,9th 0th
+            break;
+    }
+    return QString("%1%2").arg(number).arg(ext);
 }
 
 QString
@@ -395,14 +465,14 @@ RideSummaryWindow::htmlSummary()
 
     // show average and max temp if it is available (in ride summary mode)
     if ((ridesummary && (ride->areDataPresent()->temp || ride->getTag("Temperature", "-") != "-")) ||
-       (!ridesummary && SummaryMetrics::getAggregated(context, "average_temp", data, QStringList(), false, true) != "-")) {
+       (!ridesummary && context->athlete->rideCache->getAggregate("average_temp", specification, true) != "-")) {
         averageColumn << "average_temp";
         maximumColumn << "max_temp";
     }
 
     // if o2 data is available show the average and max
     if ((ridesummary && ride->areDataPresent()->smo2) || 
-       (!ridesummary && SummaryMetrics::getAggregated(context, "average_smo2", data, QStringList(), false, true) != "-")) {
+       (!ridesummary && context->athlete->rideCache->getAggregate("average_smo2", specification, true) != "-")) {
         averageColumn << "average_smo2";
         maximumColumn << "max_smo2";
     }
@@ -454,41 +524,7 @@ RideSummaryWindow::htmlSummary()
     // been edited. Otherwise we need to re-compute every time.
     // this is only for ride summary, when showing for a date range
     // we already have a summary metrics array
-    SummaryMetrics metrics;
     RideMetricFactory &factory = RideMetricFactory::instance();
-
-    if (ridesummary) {
-        if (rideItem->isDirty()) {
-            // make a list if the metrics we want computed
-            // instead of calculating them all, just do the
-            // ones we display
-            QStringList worklist;
-            worklist += totalColumn;
-            worklist += averageColumn;
-            worklist += maximumColumn;
-            worklist += metricColumn;
-            worklist += timeInZones;
-            worklist += paceTimeInZones;
-            worklist += timeInZonesHR;
-            // computeMetrics expects unique keys, no duplicates
-            worklist.removeDuplicates();
-
-            // go calculate them then...
-            QHash<QString, RideMetricPtr> computed = RideMetric::computeMetrics(context, ride, context->athlete->zones(), context->athlete->hrZones(), worklist);
-            for(int i = 0; i < worklist.count(); ++i) {
-                if (worklist[i] != "") {
-                    RideMetricPtr m = computed.value(worklist[i]);
-                    if (m) metrics.setForSymbol(worklist[i], m->value(true));
-                    else metrics.setForSymbol(worklist[i], 0.00);
-                }
-            }
-        } else {
-
-            // just use the metricDB versions, nice 'n fast
-            metrics = context->athlete->metricDB->getRideMetrics(rideItem->fileName);
-        }
-    }
-
 
     //
     // 3 top columns - total, average, maximums and metrics for entire ride
@@ -500,14 +536,95 @@ RideSummaryWindow::htmlSummary()
         summary = summary.arg(90 / (columnNames.count() + (ridesummary ? 0 : 1)));
         summary = summary.arg(columnNames[i]);
 
+        bool addPMC = false; // lets add some PMC metrics
+
         QStringList metricsList;
         switch (i) {
             case 0: metricsList = totalColumn; break;
             case 1: metricsList = averageColumn; break;
             case 2: metricsList = maximumColumn; break;
             default: 
-            case 3: metricsList = metricColumn; break;
+            case 3: metricsList = metricColumn; addPMC=true; break;
         }
+
+        if (addPMC) {
+
+            // get the PMC data
+            PMCData *pmc = context->athlete->getPMCFor("coggan_tss");
+
+            if (ridesummary) {
+
+                // get the Coggan PMC and add values for date of ride
+                summary += QString(tr("<tr><td>CTL:</td><td align=\"right\">%1</td></tr>")
+                                   .arg((int)pmc->lts(rideItem->dateTime.date())));
+                summary += QString(tr("<tr><td>ATL:</td><td align=\"right\">%1</td></tr>")
+                                   .arg((int)pmc->sts(rideItem->dateTime.date())));
+                summary += QString(tr("<tr><td>TSB:</td><td align=\"right\">%1</td></tr>")
+                                   .arg((int)pmc->sb(rideItem->dateTime.date())));
+
+            } else {
+
+                // show min and max values for the date range
+                int start=pmc->indexOf(myDateRange.from);
+                int end=pmc->indexOf(myDateRange.to);
+                if (start == -1) start = 0;
+                if (end==-1) end = pmc->lts().count()-1;
+
+                int lowCTL=0, highCTL=0, lowATL=0, highATL=0, lowTSB=0, highTSB=0;
+                double avgCTL=0, avgATL=0, avgTSB=0;
+                int count=0;
+
+                bool first=true;
+
+                for (int i=start; i<end; i++) {
+
+                    double ctl = pmc->lts()[i];
+                    double atl = pmc->sts()[i];
+                    double tsb = pmc->sb()[i];
+
+                    count++;
+                    avgCTL += ctl;
+                    avgATL += atl;
+                    avgTSB += tsb;
+
+                    if (first) {
+
+                        // initialise
+                        lowCTL = highCTL = ctl;
+                        lowATL = highATL = atl;
+                        lowTSB = highTSB = tsb;
+                        first = false;
+
+                    } else {
+
+                        // lower/higher than we already got ?
+                        if (ctl < lowCTL) lowCTL=ctl;
+                        if (ctl > highCTL) highCTL=ctl;
+                        if (atl < lowATL) lowATL=atl;
+                        if (atl > highATL) highATL=atl;
+                        if (tsb < lowTSB) lowTSB=tsb;
+                        if (tsb > highTSB) highTSB=tsb;
+                    }
+                }
+
+                if (count) {
+                    avgCTL /= double(count);
+                    avgATL /= double(count);
+                    avgTSB /= double(count);
+                }
+
+                // show range for date period
+                summary += QString(tr("<tr><td>CTL:</td><td align=\"right\">%3 (%1 - %2)</td></tr>")
+                                   .arg((int)lowCTL).arg((int)highCTL).arg((int)avgCTL));
+                summary += QString(tr("<tr><td>ATL:</td><td align=\"right\">%3 (%1 - %2)</td></tr>")
+                                   .arg((int)lowATL).arg((int)highATL).arg((int)avgATL));
+                summary += QString(tr("<tr><td>TSB:</td><td align=\"right\">%3 (%1 - %2)</td></tr>")
+                                   .arg((int)lowTSB).arg((int)highTSB).arg((int)avgTSB));
+            }
+            // spacer
+            summary += "<tr style=\"height: 3px;\"></tr>";
+        } 
+
         for (int j = 0; j< metricsList.count(); ++j) {
             QString symbol = metricsList[j];
 
@@ -530,20 +647,8 @@ RideSummaryWindow::htmlSummary()
                  s = s.arg(""); // no units
 
                  // get the value - from metrics or from data array
-                 if (ridesummary) s = s.arg(time_to_string(metrics.getForSymbol(symbol)));
-                 else {
-                      QStringList filterList = filters;
-                      if (context->ishomefiltered) {
-                          if (filtered) {
-                              foreach (QString file, filters) {
-                                  if (context->homeFilters.contains(file)) 
-                                      filterList << file;
-                              }
-                          } else {
-                              filterList = context->homeFilters;
-                          }
-                      }
-                      s = s.arg(SummaryMetrics::getAggregated(context, symbol, data, filterList, context->ishomefiltered || filtered, useMetricUnits));            }
+                 if (ridesummary) s = s.arg(time_to_string(rideItem->getForSymbol(symbol)));
+                 else s = s.arg(context->athlete->rideCache->getAggregate(symbol, specification, useMetricUnits));
 
              } else {
                  if (m->units(useMetricUnits) != "") s = s.arg(" (" + m->units(useMetricUnits) + ")");
@@ -554,7 +659,7 @@ RideSummaryWindow::htmlSummary()
 
                  // when summarising a ride temperature is -255 when not present, when aggregating its 0.0
                  if ((symbol == "average_temp" || symbol == "max_temp") && ridesummary 
-                     && metrics.getForSymbol(symbol) == RideFile::NoTemp) {
+                     && rideItem->getForSymbol(symbol) == RideFile::NoTemp) {
 
                     s = s.arg(ride->getTag("Temperature", "-"));
 
@@ -563,51 +668,24 @@ RideSummaryWindow::htmlSummary()
                     double pace;
                     bool metricPace = appsettings->value(this, GC_PACE, true).toBool();
 
-                    if (ridesummary) pace  = metrics.getForSymbol(symbol) * (metricPace ? 1 : m->conversion()) + (metricPace ? 0 : m->conversionSum());
-                    else {
-                      QStringList filterList = filters;
-                      if (context->ishomefiltered) {
-                          if (filtered) {
-                              foreach (QString file, filters) {
-                                  if (context->homeFilters.contains(file)) 
-                                      filterList << file;
-                              }
-                          } else {
-                              filterList = context->homeFilters;
-                          }
-                      }
-                      pace = SummaryMetrics::getAggregated(context, symbol, data, filterList, context->ishomefiltered || filtered, metricPace).toDouble();
-                    }
-
+                    if (ridesummary) pace  = rideItem->getForSymbol(symbol) * (metricPace ? 1 : m->conversion()) + (metricPace ? 0 : m->conversionSum());
+                    else  pace = context->athlete->rideCache->getAggregate(symbol, specification, metricPace).toDouble();
                     s = s.arg(QTime(0,0,0,0).addSecs(pace*60).toString("mm:ss"));
 
                  } else {
 
                     // get the value - from metrics or from data array
                     if (ridesummary) {
-                            QString v = QString("%1").arg(metrics.getForSymbol(symbol) * (useMetricUnits ? 1 : m->conversion())
+                            QString v = QString("%1").arg(rideItem->getForSymbol(symbol) * (useMetricUnits ? 1 : m->conversion())
                                 + (useMetricUnits ? 0 : m->conversionSum()), 0, 'f', m->precision());
 
                             // W' over 100% is not a good thing!
-                            if (symbol == "skiba_wprime_max" && metrics.getForSymbol(symbol) > 100) {
+                            if (symbol == "skiba_wprime_max" && rideItem->getForSymbol(symbol) > 100) {
                                 v = QString("<font color=\"red\">%1<font color=\"black\">").arg(v);
                             }
                             s = s.arg(v);
         
-                    } else {
-                      QStringList filterList = filters;
-                      if (context->ishomefiltered) {
-                          if (filtered) {
-                              foreach (QString file, filters) {
-                                  if (context->homeFilters.contains(file)) 
-                                      filterList << file;
-                              }
-                          } else {
-                              filterList = context->homeFilters;
-                          }
-                      }
-                      s = s.arg(SummaryMetrics::getAggregated(context, symbol, data, filterList, context->ishomefiltered || filtered, useMetricUnits));
-                   }
+                    } else s = s.arg(context->athlete->rideCache->getAggregate(symbol, specification, useMetricUnits));
                  }
             }
 
@@ -689,31 +767,22 @@ RideSummaryWindow::htmlSummary()
         summary += tr("<h3>Athlete Bests</h3>\n");
 
         // best headings
-        summary += "<table border=0 cellspacing=10 width=\"90%%\"><tr>";
+        summary += "<table border=0 cellspacing=10 width=\"95%%\"><tr>";
         for (int i = 0; i < bestsColumn.count(); ++i) {
-        summary += "<td align=\"center\" valign=\"top\"><table width=\"100%%\">"
+        summary += "<td align=\"center\" valign=\"top\"><table width=\"95%%\">"
             "<tr><td align=\"center\" colspan=3><h4>%1<h4></td></tr>";
 
             //summary = summary.arg(90 / bestsColumn.count());
             const RideMetric *m = factory.rideMetric(bestsColumn[i]);
             summary = summary.arg(m->name());
 
-            // get top n
-            QStringList filterList = filters;
-            if (context->ishomefiltered) {
-                if (filtered) {
-                    foreach (QString file, filters) {
-                        if (context->homeFilters.contains(file)) 
-                            filterList << file;
-                    }
-                } else {
-                    filterList = context->homeFilters;
-                }
-            }
-            QList<SummaryBest> bests = SummaryMetrics::getBests(context, bestsColumn[i], 10, data, filterList, context->ishomefiltered || filtered, useMetricUnits);
+            QList<AthleteBest> bests = context->athlete->rideCache->getBests(bestsColumn[i], 10, specification, useMetricUnits);
+
+            // show tsb when recorded
+            PMCData *pmcData = context->athlete->getPMCFor("coggan_tss");
 
             int pos=1;
-            foreach(SummaryBest best, bests) {
+            foreach(AthleteBest best, bests) {
 
                 // alternating shading
                 if (pos%2) summary += "<tr bgcolor='" + altColor.name() + "'";
@@ -725,10 +794,11 @@ RideSummaryWindow::htmlSummary()
                 }
                 summary += " >";
 
-                summary += QString("<td align=\"center\">%1.</td><td align=\"center\">%2</td><td align=\"center\">%3</td></tr>")
+                summary += QString("<td align=\"center\">%1.</td><td align=\"center\">%2</td><td align=\"center\">%3</td><td align=\"center\">(%4)</td></tr>")
                            .arg(pos++)
                            .arg(best.value)
-                           .arg(best.date.toString(tr("d MMM yyyy")));
+                           .arg(best.date.toString(tr("d MMM yyyy")))
+                           .arg((int)pmcData->sb(best.date));
             }
 
             // close that column
@@ -763,19 +833,9 @@ RideSummaryWindow::htmlSummary()
                     for (int i = 0; i < numzones; ++i) {
 
                         // if using metrics or data
-                        if (ridesummary) time_in_zone[i] = metrics.getForSymbol(paceTimeInZones[i]);
+                        if (ridesummary) time_in_zone[i] = rideItem->getForSymbol(paceTimeInZones[i]);
                         else { // *** THIS IS NOT RELEVANT YET -- NO SUMMARISING FOR SEASONS ***
-                            QStringList filterList = filters;
-                            if (context->ishomefiltered) {
-                                if (filtered) {
-                                    foreach (QString file, filters) {
-                                        if (context->homeFilters.contains(file)) filterList << file;
-                                    }
-                                } else {
-                                    filterList = context->homeFilters;
-                                }
-                            }
-                            time_in_zone[i] = SummaryMetrics::getAggregated(context, paceTimeInZones[i], data, filterList, context->ishomefiltered || filtered, useMetricUnits, true).toDouble();
+                            time_in_zone[i] = context->athlete->rideCache->getAggregate(paceTimeInZones[i], specification, useMetricUnits, true).toDouble();
                         }
                     }
         
@@ -807,21 +867,8 @@ RideSummaryWindow::htmlSummary()
             for (int i = 0; i < numzones; ++i) {
 
                 // if using metrics or data
-                if (ridesummary) time_in_zone[i] = metrics.getForSymbol(timeInZones[i]);
-                else {
-                    QStringList filterList = filters;
-                    if (context->ishomefiltered) {
-                        if (filtered) {
-                            foreach (QString file, filters) {
-                                if (context->homeFilters.contains(file)) 
-                                    filterList << file;
-                            }
-                        } else {
-                            filterList = context->homeFilters;
-                        }
-                    }
-                    time_in_zone[i] = SummaryMetrics::getAggregated(context, timeInZones[i], data, filterList, context->ishomefiltered || filtered, useMetricUnits, true).toDouble();
-                }
+                if (ridesummary) time_in_zone[i] = rideItem->getForSymbol(timeInZones[i]);
+                else time_in_zone[i] = context->athlete->rideCache->getAggregate(timeInZones[i], specification, useMetricUnits, true).toDouble();
             }
             summary += tr("<h3>Power Zones</h3>");
             summary += context->athlete->zones()->summarize(range, time_in_zone, altColor); //aggregating
@@ -856,21 +903,8 @@ RideSummaryWindow::htmlSummary()
         for (int i = 0; i < numhrzones; ++i) {
 
             // if using metrics or data
-            if (ridesummary) time_in_zone[i] = metrics.getForSymbol(timeInZonesHR[i]);
-            else {
-                QStringList filterList = filters;
-                if (context->ishomefiltered) {
-                    if (filtered) {
-                        foreach (QString file, filters) {
-                            if (context->homeFilters.contains(file)) 
-                                filterList << file;
-                        }
-                    } else {
-                        filterList = context->homeFilters;
-                    }
-                }
-                time_in_zone[i] = SummaryMetrics::getAggregated(context, timeInZonesHR[i], data, filterList, context->ishomefiltered || filtered, useMetricUnits, true).toDouble();
-            }
+            if (ridesummary) time_in_zone[i] = rideItem->getForSymbol(timeInZonesHR[i]);
+            else time_in_zone[i] = context->athlete->rideCache->getAggregate(timeInZonesHR[i], specification, useMetricUnits, true).toDouble();
         }
 
         summary += tr("<h3>Heart Rate Zones</h3>");
@@ -884,6 +918,15 @@ RideSummaryWindow::htmlSummary()
         // Interval Summary (recalculated on every refresh since they are not cached at present)
         //
         if (ride->intervals().size() > 0) {
+
+            Season rideSeason;
+            bool wantRank=false;
+#ifdef GC_HAVE_RANKING
+            if (!ride->isRun() && ride->areDataPresent()->watts == true) {
+                rideSeason = context->athlete->seasons->seasonFor(ride->startTime().date());
+                wantRank = true;
+            }
+#endif
             bool firstRow = true;
             QString s;
             if (appsettings->contains(GC_SETTINGS_INTERVAL_METRICS))
@@ -892,7 +935,7 @@ RideSummaryWindow::htmlSummary()
                 s = GC_SETTINGS_INTERVAL_METRICS_DEFAULT;
             QStringList intervalMetrics = s.split(",");
             summary += "<p><h3>"+tr("Intervals")+"</h3>\n<p>\n";
-            summary += "<table align=\"center\" width=\"90%\" ";
+            summary += "<table align=\"center\" width=\"95%\" ";
             summary += "cellspacing=0 border=0>";
             bool even = false;
             foreach (RideFileInterval interval, ride->intervals()) {
@@ -924,6 +967,9 @@ RideSummaryWindow::htmlSummary()
                 if (firstRow) {
                     summary += "<tr>";
                     summary += "<td align=\"center\" valign=\"bottom\">"+tr("Interval Name")+"</td>";
+                    if (wantRank) {
+                        summary += "<td align=\"center\" valign=\"bottom\">" + tr("Rank ") + rideSeason.name + "</td>";
+                    }
                     foreach (QString symbol, intervalMetrics) {
                         RideMetricPtr m = metrics.value(symbol);
                         if (!m) continue;
@@ -946,13 +992,47 @@ RideSummaryWindow::htmlSummary()
                     summary += "</tr>";
                     firstRow = false;
                 }
-                if (even)
-                    summary += "<tr>";
-                else {
-                    summary += "<tr bgcolor='" + altColor.name() + "'>";
-                }
+
+                // odd even coloring
+                if (even) summary += "<tr";
+                else summary += "<tr bgcolor='" + altColor.name() + "'";
                 even = !even;
+
+                // get the interval rank
+                int rank=0;
+                QString rankString="-";
+                if (wantRank) {
+
+                    if (f.dataPoints().count()) {
+
+                        int of;
+
+                        double duration=0;
+                        double total=0;
+                        foreach(RideFilePoint *p, f.dataPoints()) {
+                            total += f.recIntSecs() * p->watts;
+                            duration += f.recIntSecs();
+                        }
+                        double value = duration ? (total / duration) : 0;
+
+                        Specification spec;
+                        spec.setDateRange(DateRange(rideSeason.start, rideSeason.end));
+
+                        rank = RideFileCache::rank(context, RideFile::watts, duration, value, spec, of);
+
+                        rankString = rankingString(rank);
+
+                    } 
+                }
+
+                // top 3 efforts this season get color
+                if (wantRank && rank <= 3) summary += " id=\"sharp\" ";
+                summary += ">";
                 summary += "<td align=\"center\">" + interval.name + "</td>";
+
+                if (wantRank) summary += "<td align=\"center\">" + rankString + "</td>";
+
+
                 foreach (QString symbol, intervalMetrics) {
                     RideMetricPtr m = metrics.value(symbol);
                     if (!m) continue;
@@ -968,6 +1048,8 @@ RideSummaryWindow::htmlSummary()
                         summary += s.arg(m->value(useMetricUnits), 0, 'f', m->precision());
                     }
                 }
+
+
                 summary += "</tr>";
             }
             summary += "</table>";
@@ -989,35 +1071,25 @@ RideSummaryWindow::htmlSummary()
         int rides = 0;
         int totalruns = 0;
         int totalrides = 0;
-        if (context->ishomefiltered || context->isfiltered || filtered) {
 
-            foreach (SummaryMetrics activity, data) {
-                if (activity.isRun()) {
-                    totalruns++;
-                } else {
-                    totalrides++;
-                }
-                if (filtered && !filters.contains(activity.getFileName())) continue;
-                if (context->isfiltered && !context->filters.contains(activity.getFileName())) continue;
-                if (context->ishomefiltered && !context->homeFilters.contains(activity.getFileName())) continue;
-                if (activity.isRun()) {
-                    runs++;
-                } else {
-                    rides++;
-                }
-                activities++;
+        foreach (RideItem *item, context->athlete->rideCache->rides()) {
+
+            // get totals regardless of filter
+            if (item->isRun) {
+                totalruns++;
+            } else {
+                totalrides++;
             }
 
-        } else {
-            activities = data.count();
-            foreach (SummaryMetrics activity, data) {
-               if (activity.isRun()) {
-                    runs++;
-                } else {
-                    rides++;
-                }
-            }
+            if (!specification.pass(item)) continue;
 
+            // how many of each after filter
+            if (item->isRun) {
+                runs++;
+            } else {
+                rides++;
+            }
+            activities++;
         }
 
         // some people have a LOT of metrics, so we only show so many since
@@ -1086,16 +1158,20 @@ RideSummaryWindow::htmlSummary()
         }
         summary += "</tr>";
 
-        // activities 1 per row
+        // activities 1 per row - in reverse order
         bool even = false;
-        foreach (SummaryMetrics rideMetrics, data) {
+        
+        QVectorIterator<RideItem*> ridelist(context->athlete->rideCache->rides());
+        ridelist.toBack();
+
+        while (ridelist.hasPrevious()) {
+
+            RideItem *ride = ridelist.previous();
 
             // apply the filter if there is one active
-            if (filtered && !filters.contains(rideMetrics.getFileName())) continue;
-            if (context->isfiltered && !context->filters.contains(rideMetrics.getFileName())) continue;
-            if (context->ishomefiltered && !context->homeFilters.contains(rideMetrics.getFileName())) continue;
+            if (!specification.pass(ride)) continue;
 
-            if (rideMetrics.isRun()) continue;
+            if (ride->isRun) continue;
 
             if (even) summary += "<tr>";
             else {
@@ -1105,20 +1181,20 @@ RideSummaryWindow::htmlSummary()
 
             // date of ride
             summary += QString("<td align=\"center\">%1</td>")
-                       .arg(rideMetrics.getRideDate().date().toString(tr("dd MMM yyyy")));
+                       .arg(ride->dateTime.date().toString(tr("dd MMM yyyy")));
 
             for (j = 0; j< totalCols; ++j) {
                 QString symbol = rtotalColumn[j];
 
                 // get this value
-                QString value = rideMetrics.getStringForSymbol(symbol,useMetricUnits);
+                QString value = ride->getStringForSymbol(symbol,useMetricUnits);
                 summary += QString("<td align=\"center\">%1</td>").arg(value);
             }
             for (j = 0; j< metricCols; ++j) {
                 QString symbol = metricColumn[j];
 
                 // get this value
-                QString value = rideMetrics.getStringForSymbol(symbol,useMetricUnits);
+                QString value = ride->getStringForSymbol(symbol,useMetricUnits);
                 summary += QString("<td align=\"center\">%1</td>").arg(value);
             }
             summary += "</tr>";
@@ -1184,14 +1260,17 @@ RideSummaryWindow::htmlSummary()
 
         // activities 1 per row
         even = false;
-        foreach (SummaryMetrics rideMetrics, data) {
+
+        // iterate once again
+        ridelist.toBack();
+        while (ridelist.hasPrevious()) {
+
+            RideItem *ride = ridelist.previous();
 
             // apply the filter if there is one active
-            if (filtered && !filters.contains(rideMetrics.getFileName())) continue;
-            if (context->isfiltered && !context->filters.contains(rideMetrics.getFileName())) continue;
-            if (context->ishomefiltered && !context->homeFilters.contains(rideMetrics.getFileName())) continue;
+            if (!specification.pass(ride)) continue;
 
-            if (!rideMetrics.isRun()) continue;
+            if (!ride->isRun) continue;
 
             if (even) summary += "<tr>";
             else {
@@ -1201,20 +1280,20 @@ RideSummaryWindow::htmlSummary()
 
             // date of ride
             summary += QString("<td align=\"center\">%1</td>")
-                       .arg(rideMetrics.getRideDate().date().toString(tr("dd MMM yyyy")));
+                       .arg(ride->dateTime.date().toString(tr("dd MMM yyyy")));
 
             for (j = 0; j< totalCols; ++j) {
                 QString symbol = rtotalColumn[j];
 
                 // get this value
-                QString value = rideMetrics.getStringForSymbol(symbol,useMetricUnits);
+                QString value = ride->getStringForSymbol(symbol,useMetricUnits);
                 summary += QString("<td align=\"center\">%1</td>").arg(value);
             }
             for (j = 0; j< metricCols; ++j) {
                 QString symbol = metricColumn[j];
 
                 // get this value
-                QString value = rideMetrics.getStringForSymbol(symbol,useMetricUnits);
+                QString value = ride->getStringForSymbol(symbol,useMetricUnits);
                 summary += QString("<td align=\"center\">%1</td>").arg(value);
             }
             summary += "</tr>";
@@ -1249,7 +1328,7 @@ RideSummaryWindow::getPDEstimates()
     // refresh if needed
     if (context->athlete->PDEstimates.count() == 0) {
         ping = true;
-        context->athlete->metricDB->refreshCPModelMetrics(true); //true = bg ...
+        context->athlete->rideCache->refreshCPModelMetrics(); //true = bg ...
     }
 
     for (int i=0; i<2; i++) {
@@ -1303,21 +1382,21 @@ RideSummaryWindow::getPDEstimates()
         double divisor = wpk ? 1.0f : 1000.00f;
 
         if (!lowWPrime && !highWPrime) WPrimeString = tr("N/A");
-        else if (lowWPrime != highWPrime) WPrimeString = QString ("%1 - %2").arg(lowWPrime/divisor, 0, 'f',  wpk ? 0 : 1).arg(highWPrime/divisor, 0, 'f', wpk ? 0 : 1);
+        else if (!ridesummary && lowWPrime != highWPrime) WPrimeString = QString ("%1 - %2").arg(lowWPrime/divisor, 0, 'f',  wpk ? 0 : 1).arg(highWPrime/divisor, 0, 'f', wpk ? 0 : 1);
         else WPrimeString = QString("%1").arg(highWPrime/divisor, 0, 'f', wpk ? 0 : 1);
 
         if (!lowCP && !highCP) CPString = tr("N/A");
-        else if (lowCP != highCP) CPString = QString ("%1 - %2").arg(lowCP, 0, 'f', wpk ? 2 : 0)
+        else if (!ridesummary && lowCP != highCP) CPString = QString ("%1 - %2").arg(lowCP, 0, 'f', wpk ? 2 : 0)
                                                                 .arg(highCP, 0, 'f', wpk ? 2 : 0);
         else CPString = QString("%1").arg(highCP, 0, 'f', wpk ? 2 : 0);
 
         if (!lowFTP && !highFTP) FTPString = tr("N/A");
-        else if (lowFTP != highFTP) FTPString = QString ("%1 - %2").arg(lowFTP, 0, 'f', wpk ? 2 : 0)
+        else if (!ridesummary && lowFTP != highFTP) FTPString = QString ("%1 - %2").arg(lowFTP, 0, 'f', wpk ? 2 : 0)
                                                                    .arg(highFTP, 0, 'f', wpk ? 2 : 0);
         else FTPString = QString("%1").arg(highFTP, 0, 'f', wpk ? 2 : 0);
 
         if (!lowPMax && !highPMax) PMaxString = tr("N/A");
-        else if (lowPMax != highPMax) PMaxString = QString ("%1 - %2").arg(lowPMax, 0, 'f', wpk ? 2 : 0)
+        else if (!ridesummary && lowPMax != highPMax) PMaxString = QString ("%1 - %2").arg(lowPMax, 0, 'f', wpk ? 2 : 0)
                                                                       .arg(highPMax, 0, 'f', wpk ? 2 : 0);
         else PMaxString = QString("%1").arg(highPMax, 0, 'f', wpk ? 2 : 0);
 
@@ -1420,7 +1499,7 @@ RideSummaryWindow::htmlCompareSummary() const
         //
         // SUMMARISING INTERVALS SO ALWAYS COMPUTE METRICS ON DEMAND
         //
-        QList<SummaryMetrics> intervalMetrics;
+        QList<RideItem*> intervalMetrics;
 
         QStringList worklist;
         worklist += totalColumn;
@@ -1436,7 +1515,7 @@ RideSummaryWindow::htmlCompareSummary() const
         RideMetricFactory &factory = RideMetricFactory::instance();
         for (int j=0; j<context->compareIntervals.count(); j++) {
 
-            SummaryMetrics metrics;
+            RideItem *metrics = new RideItem;
 
             // calculate using the source context of course!
             QHash<QString, RideMetricPtr> computed = RideMetric::computeMetrics(
@@ -1446,13 +1525,7 @@ RideSummaryWindow::htmlCompareSummary() const
                                                      context->compareIntervals.at(j).sourceContext->athlete->hrZones(), 
                                                      worklist);
 
-            for(int i = 0; i < worklist.count(); ++i) {
-                if (worklist[i] != "") {
-                    RideMetricPtr m = computed.value(worklist[i]);
-                    if (m) metrics.setForSymbol(worklist[i], m->value(true));
-                    else metrics.setForSymbol(worklist[i], 0.00);
-                }
-            }
+            metrics->setFrom(computed);
             intervalMetrics << metrics;
         }
 
@@ -1511,7 +1584,7 @@ RideSummaryWindow::htmlCompareSummary() const
             // then one row for each interval
             int counter = 0;
             int rows = 0;
-            foreach (SummaryMetrics metrics, intervalMetrics) {
+            foreach (RideItem *metrics, intervalMetrics) {
 
                 // skip if isn't checked
                 if (!context->compareIntervals[counter].isChecked()) {
@@ -1532,7 +1605,7 @@ RideSummaryWindow::htmlCompareSummary() const
                     const RideMetric *m = factory.rideMetric(symbol);
 
                     // get value and convert if needed (use local context for units)
-                    double value = metrics.getForSymbol(symbol) 
+                    double value = metrics->getForSymbol(symbol) 
                                 * (context->athlete->useMetricUnits ? 1 : m->conversion()) 
                                 + (context->athlete->useMetricUnits ? 0 : m->conversionSum());
 
@@ -1549,7 +1622,7 @@ RideSummaryWindow::htmlCompareSummary() const
                     if (counter) {
 
                         // calculate me vs the original
-                        double value0 = intervalMetrics[0].getForSymbol(symbol) 
+                        double value0 = intervalMetrics[0]->getForSymbol(symbol) 
                                 * (context->athlete->useMetricUnits ? 1 : m->conversion()) 
                                 + (context->athlete->useMetricUnits ? 0 : m->conversionSum());
 
@@ -1607,7 +1680,7 @@ RideSummaryWindow::htmlCompareSummary() const
                 // now the summary
                 int counter = 0;
                 int rows = 0;
-                foreach (SummaryMetrics metrics, intervalMetrics) {
+                foreach (RideItem *metrics, intervalMetrics) {
 
                     // only ones that are checked
                     if (!context->compareIntervals[counter].isChecked()) {
@@ -1624,8 +1697,8 @@ RideSummaryWindow::htmlCompareSummary() const
                     int idx=0;
                     foreach (ZoneInfo zone, zones) {
 
-                        int timeZone = metrics.getForSymbol(timeInZones[idx]);
-                        int dt = timeZone - intervalMetrics[0].getForSymbol(timeInZones[idx]);
+                        int timeZone = metrics->getForSymbol(timeInZones[idx]);
+                        int dt = timeZone - intervalMetrics[0]->getForSymbol(timeInZones[idx]);
                         idx++;
 
                         // time and then +time
@@ -1679,7 +1752,7 @@ RideSummaryWindow::htmlCompareSummary() const
                 // now the summary
                 int counter = 0;
                 int rows = 0;
-                foreach (SummaryMetrics metrics, intervalMetrics) {
+                foreach (RideItem *metrics, intervalMetrics) {
 
                     // skip if not checked
                     if (!context->compareIntervals[counter].isChecked()) {
@@ -1696,8 +1769,8 @@ RideSummaryWindow::htmlCompareSummary() const
                     int idx=0;
                     foreach (HrZoneInfo zone, zones) {
 
-                        int timeZone = metrics.getForSymbol(timeInZonesHR[idx]);
-                        int dt = timeZone - intervalMetrics[0].getForSymbol(timeInZonesHR[idx]);
+                        int timeZone = metrics->getForSymbol(timeInZonesHR[idx]);
+                        int dt = timeZone - intervalMetrics[0]->getForSymbol(timeInZonesHR[idx]);
                         idx++;
 
                         // time and then +time
@@ -1801,8 +1874,8 @@ RideSummaryWindow::htmlCompareSummary() const
                     const RideMetric *m = factory.rideMetric(symbol);
 
                     // get value and convert if needed (use local context for units)
-                    double value = SummaryMetrics::getAggregated(context, symbol, dr.metrics, QStringList(), false,
-                                                  context->athlete->useMetricUnits, true).toDouble();
+                    double value = dr.context->athlete->rideCache->getAggregate(symbol, dr.specification,
+                                                                                 context->athlete->useMetricUnits, true).toDouble();
 
                     // use right precision
                     QString strValue = QString("%1").arg(value, 0, 'f', m->precision());
@@ -1817,9 +1890,9 @@ RideSummaryWindow::htmlCompareSummary() const
                     if (counter) {
 
                         // calculate me vs the original
-                        double value0 = SummaryMetrics::getAggregated(context, symbol, 
-                                                  context->compareDateRanges[0].metrics, QStringList(), false,
-                                                  context->athlete->useMetricUnits, true).toDouble();
+                        double value0 = context->compareDateRanges[0].context->athlete->rideCache->getAggregate(symbol,
+                                                                                 context->compareDateRanges[0].specification,
+                                                                                 context->athlete->useMetricUnits, true).toDouble();
 
                         value -= value0; // delta
 
@@ -1888,12 +1961,13 @@ RideSummaryWindow::htmlCompareSummary() const
                     int idx=0;
                     foreach (ZoneInfo zone, zones) {
 
-                        int timeZone = SummaryMetrics::getAggregated(context, timeInZones[idx], dr.metrics, QStringList(), false,
-                                                                     context->athlete->useMetricUnits, true).toInt();
+                        int timeZone = dr.context->athlete->rideCache->getAggregate(timeInZones[idx], dr.specification,
+                                                                                 context->athlete->useMetricUnits, true).toDouble();
 
-                        int dt = timeZone - SummaryMetrics::getAggregated(context, timeInZones[idx], 
-                                                                          context->compareDateRanges[0].metrics, QStringList(), false,
-                                                                          context->athlete->useMetricUnits, true).toInt();
+                        int dt = timeZone - context->compareDateRanges[0].context->athlete->rideCache->getAggregate(timeInZones[idx],
+                                                                        context->compareDateRanges[0].specification,
+                                                                        context->athlete->useMetricUnits, true).toDouble();
+
                         idx++;
 
                         // time and then +time
@@ -1960,12 +2034,12 @@ RideSummaryWindow::htmlCompareSummary() const
                     int idx=0;
                     foreach (HrZoneInfo zone, zones) {
 
-                        int timeZone = SummaryMetrics::getAggregated(context, timeInZonesHR[idx], dr.metrics, QStringList(), false,
-                                                                     context->athlete->useMetricUnits, true).toInt();
+                        int timeZone = dr.context->athlete->rideCache->getAggregate(timeInZonesHR[idx], dr.specification,
+                                                                                 context->athlete->useMetricUnits, true).toDouble();
 
-                        int dt = timeZone - SummaryMetrics::getAggregated(context, timeInZonesHR[idx], 
-                                                                          context->compareDateRanges[0].metrics, QStringList(), false,
-                                                                          context->athlete->useMetricUnits, true).toInt();
+                        int dt = timeZone - context->compareDateRanges[0].context->athlete->rideCache->getAggregate(timeInZonesHR[idx],
+                                                                        context->compareDateRanges[0].specification,
+                                                                        context->athlete->useMetricUnits, true).toDouble();
                         idx++;
 
                         // time and then +time
@@ -2044,15 +2118,16 @@ void RideSummaryWindow::dateRangeChanged(DateRange dr)
     }
 
     if (useCustom) {
-        data = context->athlete->metricDB->getAllMetricsFor(custom);
+        current = custom;
     } else if (useToToday) {
 
-        DateRange use = myDateRange;
+        current = myDateRange;
         QDate today = QDate::currentDate();
-        if (use.to > today) use.to = today;
-        data = context->athlete->metricDB->getAllMetricsFor(use);
+        if (current.to > today) current.to = today;
 
-    } else data = context->athlete->metricDB->getAllMetricsFor(myDateRange);
+    } else current = myDateRange;
+
+    specification.setDateRange(current);
 
     refresh();
 }

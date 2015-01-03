@@ -93,6 +93,7 @@ class PfPvWindow : public GcChartWindow
     public slots:
 
         void rideSelected();
+        void forceReplot();
         void intervalSelected();
         void intervalHover(RideFileInterval);
         void zonesChanged();
@@ -110,7 +111,7 @@ class PfPvWindow : public GcChartWindow
         void setrFrameIntervalsPfPvFromCheckBox();
         void setGearRatioDisplayPfPvFromCheckBox();
         void doubleClicked(int, int);
-        void configChanged();
+        void configChanged(qint32);
         void compareChanged();
 
     protected:
@@ -132,6 +133,7 @@ class PfPvWindow : public GcChartWindow
         // reveal controls
         QCheckBox *rShade, *rMergeInterval, *rFrameInterval;
         bool compareStale;
+        bool stale;
 };
 
 #endif // _GC_PfPvWindow_h

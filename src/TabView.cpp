@@ -25,7 +25,6 @@
 #include "HomeWindow.h"
 #include "GcWindowRegistry.h"
 #include "TrainDB.h"
-#include "MetricAggregator.h"
 #include "RideNavigator.h"
 #include "IntervalNavigator.h"
 #include "MainWindow.h"
@@ -74,7 +73,7 @@ TabView::TabView(Context *context, int type) :
     anim = new QPropertyAnimation(mainSplitter, "hpos");
 
     connect(splitter,SIGNAL(splitterMoved(int,int)), this, SLOT(splitterMoved(int,int)));
-    connect(context,SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context,SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 }
 
 TabView::~TabView()
@@ -147,7 +146,7 @@ TabView::setSidebar(QWidget *sidebar)
     sidebar_ = sidebar;
     splitter->insertWidget(0, sidebar);
 
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 QString
@@ -227,7 +226,7 @@ TabView::ourStyleSheet()
 }
 
 void
-TabView::configChanged()
+TabView::configChanged(qint32)
 {
 #if (defined Q_OS_LINUX) || (defined Q_OS_WIN)
     // style that sucker
@@ -340,8 +339,9 @@ TabView::setBlank(BlankStatePage *blank)
 
     // and when stuff happens lets check
     connect(blank, SIGNAL(closeClicked()), this, SLOT(checkBlank()));
-    connect(context->athlete->metricDB, SIGNAL(dataChanged()), this, SLOT(checkBlank()));
-    connect(context, SIGNAL(configChanged()), this, SLOT(checkBlank()));
+    connect(context, SIGNAL(rideAdded(RideItem*)), this, SLOT(checkBlank()));
+    connect(context, SIGNAL(rideDeleted(RideItem*)), this, SLOT(checkBlank()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(checkBlank()));
     connect(trainDB, SIGNAL(dataChanged()), this, SLOT(checkBlank()));
 
 }

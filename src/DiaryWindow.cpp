@@ -19,9 +19,12 @@
 
 #include "DiaryWindow.h"
 #include "RideMetadata.h"
+#include "RideCache.h"
+#include "RideCacheModel.h"
 #include "Athlete.h"
 #include "Context.h"
 #include "TabView.h"
+#include "HelpWhatsThis.h"
 
 DiaryWindow::DiaryWindow(Context *context) :
     GcWindow(context), context(context), active(false)
@@ -61,7 +64,7 @@ DiaryWindow::DiaryWindow(Context *context) :
 
     // monthly view via QCalendarWidget
     calendarModel = new GcCalendarModel(this, &fieldDefinitions, context);
-    calendarModel->setSourceModel(context->athlete->sqlModel);
+    calendarModel->setSourceModel(context->athlete->rideCache->model());
 
     monthlyView = new QTableView(this);
     monthlyView->setItemDelegate(new GcCalendarDelegate);
@@ -78,6 +81,9 @@ DiaryWindow::DiaryWindow(Context *context) :
     monthlyView->setGridStyle(Qt::DotLine);
     monthlyView->setFrameStyle(QFrame::NoFrame);
 
+    HelpWhatsThis *helpView = new HelpWhatsThis(monthlyView);
+    monthlyView->setWhatsThis(helpView->getWhatsThisText(HelpWhatsThis::ChartDiary_Calendar));
+
     allViews = new QStackedWidget(this);
     allViews->addWidget(monthlyView);
     allViews->setCurrentIndex(0);
@@ -87,16 +93,16 @@ DiaryWindow::DiaryWindow(Context *context) :
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
     connect(context, SIGNAL(filterChanged()), this, SLOT(rideSelected()));
     connect(context, SIGNAL(homeFilterChanged()), this, SLOT(rideSelected()));
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
     connect(next, SIGNAL(clicked()), this, SLOT(nextClicked()));
     connect(prev, SIGNAL(clicked()), this, SLOT(prevClicked()));
 
     // get colors sorted
-    configChanged();
+    configChanged(CONFIG_FIELDS | CONFIG_APPEARANCE);
 }
 
 void
-DiaryWindow::configChanged()
+DiaryWindow::configChanged(qint32)
 {
     // get config
     fieldDefinitions = context->athlete->rideMetadata()->getFields();

@@ -19,6 +19,7 @@
 #include "Lucene.h"
 #include "Context.h"
 #include "Athlete.h"
+#include "RideItem.h"
 
 // stdc strings
 using namespace std;
@@ -47,6 +48,9 @@ Lucene::Lucene(QObject *parent, Context *context) : QObject(parent), context(con
             IndexReader::unlock(dir.canonicalPath().toLocal8Bit().data());
 
         if (!indexExists) {
+
+            // ridecache will need to build the index !
+            context->athlete->emptyindex = true;
 
             IndexWriter *create = new IndexWriter(dir.canonicalPath().toLocal8Bit().data(), &analyzer, true);
 
@@ -101,11 +105,15 @@ bool Lucene::importRide(RideFile *ride)
     // now add to index
     try { 
 
+        mutex.lock();
+
         // now lets open using a mnodifier since the API is much simpler
         IndexWriter *writer = new IndexWriter(dir.canonicalPath().toLocal8Bit().data(), &analyzer, false); // for updates
         writer->addDocument(&doc); 
         writer->close();
         delete writer;
+
+        mutex.unlock();
 
     } catch (CLuceneError &e) {
         qDebug()<<"add document clucene error!"<<e.what();
@@ -122,16 +130,45 @@ bool Lucene::deleteRide(QString name)
 
     try {
 
+        mutex.lock();
+
         IndexReader *reader = IndexReader::open(dir.canonicalPath().toLocal8Bit().data());
         Term del = Term(_T("Filename"), cname.c_str());
         reader->deleteDocuments(&del);
         reader->close();
         delete reader;
 
+        mutex.unlock();
+
     } catch (CLuceneError &e) {
         qDebug()<<"deleteDocuments clucene error!"<<e.what();
     }
     return true;
+}
+
+bool Lucene::exists(QString name)
+{
+    bool returning = false;
+    std::wstring cname = name.toStdWString();
+
+    try {
+
+        IndexReader *reader = IndexReader::open(dir.canonicalPath().toLocal8Bit().data());
+
+        Term check = Term(_T("Filename"), cname.c_str());
+        TermDocs *td = reader->termDocs(&check);
+        if (td->next()) returning = true;
+
+        td->close();
+        delete td;
+        reader->close();
+        delete reader;
+
+    } catch (CLuceneError &e) {
+        qDebug()<<"termDocs clucene error!"<<e.what();
+    }
+
+    return returning;
 }
 
 void Lucene::optimise()

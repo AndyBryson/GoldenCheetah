@@ -30,7 +30,6 @@
 #include <QtConcurrent>
 #endif
 
-#include "SummaryMetrics.h"
 #include "RideFileCache.h"
 #include "ExtendedCriticalPower.h"
 
@@ -38,6 +37,7 @@
 #include "SearchFilterBox.h"
 #endif
 
+#include "Specification.h"
 
 class RideSummaryWindow : public GcChartWindow
 {
@@ -92,6 +92,7 @@ class RideSummaryWindow : public GcChartWindow
     protected slots:
 
         void refresh();
+        void refresh(QDate);
         void rideSelected();
         void dateRangeChanged(DateRange);
         void rideItemChanged();
@@ -111,7 +112,7 @@ class RideSummaryWindow : public GcChartWindow
         void compareChanged();
 
         // config changed
-        void configChanged();
+        void configChanged(qint32);
 
         // model estimate progress updates
         void modelProgress(int year, int month);
@@ -131,7 +132,7 @@ class RideSummaryWindow : public GcChartWindow
         RideItem *_connected;
         bool ridesummary; // do we summarise ride or daterange?
 
-        QList<SummaryMetrics> data; // when in date range mode
+        Specification specification;
         DateRange current;
 
         DateSettingsEdit *dateSetting;
@@ -152,6 +153,7 @@ class RideSummaryWindow : public GcChartWindow
         QString WPrimeStringWPK, CPStringWPK, FTPStringWPK, PMaxStringWPK;
 
         bool force; // to force a replot
+        QTime lastupdate;
 
         QFuture<void> future; // used by QtConcurrent
 };

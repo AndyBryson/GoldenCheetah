@@ -23,14 +23,14 @@
 #include <QtGui>
 #include <QTimer>
 #include "Context.h"
-#include "MetricAggregator.h"
 #include "RideMetadata.h"
 #include "Season.h"
 #include "LTMPopup.h"
 #include "GcPane.h"
 #include "SpecialFields.h"
+#include "Specification.h"
 
-#include <math.h>
+#include <cmath>
 
 #include <qwt_plot_picker.h>
 #include <qwt_text_engine.h>
@@ -40,8 +40,7 @@ class TMSettings
     public:
         QString symbol;
         QString field1, field2;
-        QDate from, to;
-        QList<SummaryMetrics> *data;
+        Specification specification;
 };
 
 class TreeMapPlot;
@@ -176,7 +175,7 @@ class TreeMapWindow : public GcWindow
         DateRange custom; // custom date range supplied
         QList<KeywordDefinition> keywordDefinitions;
         QList<FieldDefinition>   fieldDefinitions;
-        QList<SummaryMetrics> results;
+        QList<DefaultDefinition>   defaultDefinitions;
 
         // Widgets
         QVBoxLayout *mainLayout;

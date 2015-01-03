@@ -20,11 +20,13 @@
 #include "Context.h"
 #include "Colors.h"
 #include "RideCache.h"
+#include "RideCacheModel.h"
 #include "RideItem.h"
 #include "RideNavigator.h"
 #include "RideNavigatorProxy.h"
 #include "SearchFilterBox.h"
 #include "TabView.h"
+#include "HelpWhatsThis.h"
 
 #include <QtGui>
 #include <QString>
@@ -56,11 +58,8 @@ RideNavigator::RideNavigator(Context *context, bool mainwindow) : context(contex
     if (mainwindow) mainLayout->setContentsMargins(0,0,0,0);
     else mainLayout->setContentsMargins(2,2,2,2); // so we can resize!
 
-    context->athlete->sqlModel->select();
-    while (context->athlete->sqlModel->canFetchMore(QModelIndex())) context->athlete->sqlModel->fetchMore(QModelIndex());
-
     searchFilter = new SearchFilter(this);
-    searchFilter->setSourceModel(context->athlete->sqlModel); // filter out/in search results
+    searchFilter->setSourceModel(context->athlete->rideCache->model()); // filter out/in search results
 
     groupByModel = new GroupByModel(this);
     groupByModel->setSourceModel(searchFilter);
@@ -73,6 +72,8 @@ RideNavigator::RideNavigator(Context *context, bool mainwindow) : context(contex
     if (!mainwindow) {
         searchFilterBox = new SearchFilterBox(this, context, false);
         mainLayout->addWidget(searchFilterBox);
+        HelpWhatsThis *searchHelp = new HelpWhatsThis(searchFilterBox);
+        searchFilterBox->setWhatsThis(searchHelp->getWhatsThisText(HelpWhatsThis::SearchFilterBox));
     }
 #endif
 
@@ -107,19 +108,22 @@ RideNavigator::RideNavigator(Context *context, bool mainwindow) : context(contex
     tableView->setAcceptDrops(true);
     tableView->setColumnWidth(1, 100);
 
+    HelpWhatsThis *helpTableView = new HelpWhatsThis(tableView);
+    if (mainwindow)
+        tableView->setWhatsThis(helpTableView->getWhatsThisText(HelpWhatsThis::SideBarRidesView_Rides));
+    else
+        tableView->setWhatsThis(helpTableView->getWhatsThisText(HelpWhatsThis::ChartDiary_Navigator));
+
     // good to go
     tableView->show();
     resetView();
 
-    // refresh when database is updated
-    connect(context->athlete->metricDB, SIGNAL(dataChanged()), this, SLOT(refresh()));
-
     // refresh when config changes (metric/imperial?)
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 
     // refresh when rides added/removed
     connect(context, SIGNAL(rideAdded(RideItem*)), this, SLOT(refresh()));
-    connect(context, SIGNAL(rideDeleted(RideItem*)), this, SLOT(refresh()));
+    connect(context, SIGNAL(rideDeleted(RideItem*)), this, SLOT(rideDeleted(RideItem*)));
 
     // user selected a ride on the ride list, we should reflect that too..
     connect(tableView, SIGNAL(rowSelected(QItemSelection)), this, SLOT(selectionChanged(QItemSelection)));
@@ -136,6 +140,11 @@ RideNavigator::RideNavigator(Context *context, bool mainwindow) : context(contex
     connect(tableView,SIGNAL(customContextMenuRequested(const QPoint &)), this, SLOT(showTreeContextMenuPopup(const QPoint &)));
     connect(tableView->header(), SIGNAL(sortIndicatorChanged(int,Qt::SortOrder)), this, SLOT(setSortBy(int,Qt::SortOrder)));
 
+    // repaint etc when background refresh is working
+    connect(context, SIGNAL(refreshStart()), this, SLOT(backgroundRefresh()));
+    connect(context, SIGNAL(refreshEnd()), this, SLOT(backgroundRefresh()));
+    connect(context, SIGNAL(refreshUpdate(QDate)), this, SLOT(backgroundRefresh())); // we might miss 1st one
+
 #ifdef GC_HAVE_LUCENE
     if (!mainwindow) {
         connect(searchFilterBox, SIGNAL(searchResults(QStringList)), this, SLOT(searchStrings(QStringList)));
@@ -147,7 +156,7 @@ RideNavigator::RideNavigator(Context *context, bool mainwindow) : context(contex
     setAcceptDrops(true);
 
     // lets go
-    configChanged();
+    configChanged(CONFIG_APPEARANCE | CONFIG_NOTECOLOR);
 }
 
 RideNavigator::~RideNavigator()
@@ -157,7 +166,7 @@ RideNavigator::~RideNavigator()
 }
 
 void
-RideNavigator::configChanged()
+RideNavigator::configChanged(qint32)
 {
     ColorEngine ce(context);
     fontHeight = QFontMetrics(QFont()).height();
@@ -171,9 +180,9 @@ RideNavigator::configChanged()
             tableView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         else 
             tableView->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-        if (appsettings->value(this, GC_RIDEHEAD, true).toBool() == false)
-            tableView->header()->hide();
-        else 
+        //if (appsettings->value(this, GC_RIDEHEAD, true).toBool() == false)
+            //tableView->header()->hide();
+        //else 
             tableView->header()->show();
 
         tableView->header()->setStyleSheet(
@@ -190,16 +199,25 @@ RideNavigator::configChanged()
 }
 
 void
+RideNavigator::rideDeleted(RideItem*item)
+{
+    if (currentItem == item) currentItem = NULL;
+    refresh();
+}
+
+void
 RideNavigator::refresh()
 {
-    context->athlete->sqlModel->select();
-    while (context->athlete->sqlModel->canFetchMore(QModelIndex()))
-        context->athlete->sqlModel->fetchMore(QModelIndex());
-
     active=false;
 
     setWidth(geometry().width());
     cursorRide();
+}
+
+void
+RideNavigator::backgroundRefresh()
+{
+    tableView->doItemsLayout();
 }
 
 void
@@ -280,6 +298,7 @@ RideNavigator::resetView()
     // setup the logical heading list
     for (int i=0; i<tableView->header()->count(); i++) {
         QString friendly, techname = sortModel->headerData(i, Qt::Horizontal).toString();
+
         if ((friendly = nameMap.value(techname, "unknown")) != "unknown") {
             sortModel->setHeaderData(i, Qt::Horizontal, friendly);
             logicalHeadings << friendly;
@@ -741,7 +760,7 @@ RideNavigator::setColumnWidth(int x, bool resized, int logicalIndex, int oldWidt
 
 
 //
-// This function is called for every row in the metricDB
+// This function is called for every row in the ridecache
 // and wants to know what group string or 'name' you want
 // to put this row into. It is passed the heading value
 // as a string, and the row value for this column.
@@ -933,7 +952,7 @@ RideNavigator::setRide(RideItem*rideItem)
         QModelIndex group = tableView->model()->index(i,0,QModelIndex());
         for (int j=0; j<tableView->model()->rowCount(group); j++) {
 
-            QString fileName = tableView->model()->data(tableView->model()->index(j,2, group), Qt::DisplayRole).toString();
+            QString fileName = tableView->model()->data(tableView->model()->index(j,3, group), Qt::DisplayRole).toString();
             if (fileName == rideItem->fileName) {
                 // we set current index to column 2 (date/time) since we can be guaranteed it is always show (all others are removable)
                 QItemSelection row(tableView->model()->index(j,0,group),
@@ -955,7 +974,7 @@ void
 RideNavigator::selectionChanged(QItemSelection selected)
 {
     QModelIndex ref = selected.indexes().first();
-    QModelIndex fileIndex = tableView->model()->index(ref.row(), 2, ref.parent());
+    QModelIndex fileIndex = tableView->model()->index(ref.row(), 3, ref.parent());
     QString filename = tableView->model()->data(fileIndex, Qt::DisplayRole).toString();
 
     // lets make sure we know what we've selected, so we don't
@@ -977,7 +996,7 @@ RideNavigator::selectRide(const QModelIndex &index)
 {
     // we don't use this at present, but hitting return
     // or double clicking a ride will cause this to get called....
-    QModelIndex fileIndex = tableView->model()->index(index.row(), 2, index.parent()); // column 2 for filename ?
+    QModelIndex fileIndex = tableView->model()->index(index.row(), 3, index.parent()); // column 2 for filename ?
     QString filename = tableView->model()->data(fileIndex, Qt::DisplayRole).toString();
 
     // do nothing .. but maybe later do something ?
@@ -1080,28 +1099,12 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
     //}
 
     if ((m=rideNavigator->columnMetrics.value(columnName, NULL)) != NULL) {
-        // format as a metric
 
         // get double from sqlmodel
-        double metricValue = index.model()->data(index, Qt::DisplayRole).toDouble();
+        value = index.model()->data(index, Qt::DisplayRole).toString();
 
-        if (metricValue) {
-            // metric / imperial conversion
-            metricValue *= (rideNavigator->context->athlete->useMetricUnits) ? 1 : m->conversion();
-            metricValue += (rideNavigator->context->athlete->useMetricUnits) ? 0 : m->conversionSum();
-
-            // format with the right precision
-            if (m->units(true) == "seconds" || m->units(true) == tr("seconds")) {
-                value = QTime(0,0,0,0).addSecs(metricValue).toString("hh:mm:ss");
-            } else {
-                value = QString("%1").arg(metricValue, 0, 'f', m->precision());
-            }
-
-        } else {
-
-            // blank out zero values, they look ugly and are distracting
-            value = "";
-        }
+        // get rid of 0 its ugly
+        if (value =="nan" || value == "0" || value == "0.0" || value == "0.00") value="";
 
     } else {
         // is this the ride date/time ?
@@ -1129,10 +1132,12 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
     }
 
     // normal render
+    bool isnormal=false;
     QString calendarText = rideNavigator->tableView->model()->data(index, Qt::UserRole).toString();
     QColor userColor = rideNavigator->tableView->model()->data(index, Qt::BackgroundRole).value<QBrush>().color();
     if (userColor == QColor(1,1,1)) {
         rideBG = false; // default so don't swap round...
+        isnormal = true; // just default so no bg or box
         userColor = GColor(CPLOTMARKER);
     }
 
@@ -1222,9 +1227,9 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
             painter->setPen(isColor);
 
 #if (defined (Q_OS_MAC) && (QT_VERSION >= 0x050000)) // on QT5 the scrollbars have no width
-            if (!selected && !rideBG && high.x()+12 > rideNavigator->geometry().width() && userColor != GColor(CPLOTMARKER)) {
+            if (!selected && !rideBG && high.x()+12 > rideNavigator->geometry().width() && !isnormal) {
 #else
-            if (!selected && !rideBG && high.x()+32 > rideNavigator->geometry().width() && userColor != GColor(CPLOTMARKER)) {
+            if (!selected && !rideBG && high.x()+32 > rideNavigator->geometry().width() && !isnormal) {
 #endif
                 painter->fillRect(high, userColor);
             } else {

@@ -27,6 +27,7 @@
 #include "Zones.h"
 #include "HrZones.h"
 #include "PaceZones.h"
+#include "Specification.h"
 
 #include <qwt_plot.h>
 #include <qwt_plot_canvas.h>
@@ -54,7 +55,6 @@ class PaceHistBackground;
 class PaceHistZoneLabel;
 class LTMCanvasPicker;
 class ZoneScaleDraw;
-class SummaryMetrics;
 
 class penTooltip: public QwtPlotZoomer
 {
@@ -154,15 +154,14 @@ class PowerHist : public QwtPlot
         void setData(RideFileCache *source);
 
         // set data from metrics
-        void setData(QList<SummaryMetrics>&results, QString totalMetric, QString distMetric,
-                     bool isFiltered, QStringList files, HistData *data);
+        void setData(Specification spec, QString totalMetric, QString distMetric, HistData *data);
 
         void setlnY(bool value);
         void setWithZeros(bool value);
         void setZoned(bool value);
         void setCPZoned(bool value);
         void setSumY(bool value);
-        void configChanged();
+        void configChanged(qint32);
         void setAxisTitle(int axis, QString label);
         void setYMax();
         void setBinWidth(double value);
@@ -597,7 +596,7 @@ public:
 	RideItem *rideItem = parent->rideItem;
 
     // only for running activities
-	if (! rideItem || ! rideItem->isRun())
+	if (! rideItem || ! rideItem->isRun)
 	    return;
 
 	const PaceZones *zones = parent->context->athlete->paceZones();
@@ -650,7 +649,7 @@ public:
 	RideItem *rideItem = parent->rideItem;
 
     // only for running activities
-	if (! rideItem || ! rideItem->isRun())
+	if (! rideItem || ! rideItem->isRun)
 	    return;
 
 	const PaceZones *zones = parent->context->athlete->paceZones();

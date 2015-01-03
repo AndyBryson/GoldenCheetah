@@ -19,12 +19,17 @@
 #include "ErgDBDownloadDialog.h"
 #include "MainWindow.h"
 #include "TrainDB.h"
+#include "HelpWhatsThis.h"
 
 ErgDBDownloadDialog::ErgDBDownloadDialog(Context *context) : QDialog(context->mainWindow), context(context)
 {
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint);
     setWindowTitle(tr("Download workouts from ErgDB"));
+
+    // help
+    HelpWhatsThis *help = new HelpWhatsThis(this);
+    this->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::MenuBar_Tools_Download_ERGDB));
 
     // make the dialog a resonable size
     setMinimumWidth(650);
@@ -132,7 +137,7 @@ ErgDBDownloadDialog::okClicked()
         status->setText(QString("%1 workouts downloaded, %2 failed or skipped.").arg(downloads).arg(fails));
         ok->setText("Finish");
 
-        context->notifyConfigChanged();
+        context->notifyWorkoutsChanged();
 
     } else if (ok->text() == "Abort") {
         aborted = true;

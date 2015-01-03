@@ -22,8 +22,10 @@
 #include "Athlete.h"
 #include "Settings.h"
 #include "Units.h"
+#include "HelpWhatsThis.h"
 #include <QApplication>
 #include <QtGui>
+
 
 // charts.xml support
 #include "LTMChartParser.h"
@@ -54,11 +56,16 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
 
     QWidget *basicsettings = new QWidget(this);
     mainLayout->addWidget(basicsettings);
+    HelpWhatsThis *basicHelp = new HelpWhatsThis(basicsettings);
+    basicsettings->setWhatsThis(basicHelp->getWhatsThisText(HelpWhatsThis::ChartTrends_MetricTrends_Config_Basic));
+
     QFormLayout *basicsettingsLayout = new QFormLayout(basicsettings);
     basicsettingsLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
 #ifdef GC_HAVE_LUCENE
     searchBox = new SearchFilterBox(this, context);
+    HelpWhatsThis *searchHelp = new HelpWhatsThis(searchBox);
+    searchBox->setWhatsThis(searchHelp->getWhatsThisText(HelpWhatsThis::SearchFilterBox));
     connect(searchBox, SIGNAL(searchClear()), this, SLOT(clearFilter()));
     connect(searchBox, SIGNAL(searchResults(QStringList)), this, SLOT(setFilter(QStringList)));
 
@@ -69,6 +76,8 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
     // Basic Controls
     QWidget *basic = new QWidget(this);
     basic->setContentsMargins(0,0,0,0);
+    HelpWhatsThis *presetHelp = new HelpWhatsThis(basic);
+    basic->setWhatsThis(presetHelp->getWhatsThisText(HelpWhatsThis::ChartTrends_MetricTrends_Config_Preset));
     QVBoxLayout *basicLayout = new QVBoxLayout(basic);
     basicLayout->setContentsMargins(0,0,0,0);
     basicLayout->setSpacing(5);
@@ -80,6 +89,8 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
 #endif
 
     dateSetting = new DateSettingsEdit(this);
+    HelpWhatsThis *dateSettingHelp = new HelpWhatsThis(dateSetting);
+    dateSetting->setWhatsThis(dateSettingHelp->getWhatsThisText(HelpWhatsThis::ChartTrends_DateRange));
     basicsettingsLayout->addRow(new QLabel(tr("Date range")), dateSetting);
     basicsettingsLayout->addRow(new QLabel(tr(""))); // spacing
 
@@ -241,42 +252,14 @@ LTMTool::LTMTool(Context *context, LTMSettings *settings) : QWidget(context->mai
         }
     }
 
-#if 0
-    // measures
-    QList<FieldDefinition> measureDefinitions;
-    QList<KeywordDefinition> keywordDefinitions; //NOTE: not used in measures.xml
-    QString filename = context->athlete->home->config().absolutePath()+"/measures.xml";
-    QString colorfield;
-    if (!QFile(filename).exists()) filename = ":/xml/measures.xml";
-    RideMetadata::readXML(filename, keywordDefinitions, measureDefinitions, colorfield);
-
-    foreach (FieldDefinition field, measureDefinitions) {
-        if (!sp.isMetric(field.name) && (field.type == 3 || field.type == 4)) {
-            MetricDetail measure;
-            measure.type = METRIC_MEASURE;
-            QString underscored = field.name;
-            measure.symbol = QString("%1_m").arg(field.name); // we don't bother with '_' for measures
-            measure.metric = NULL; // not a factory metric
-            measure.penColor = QColor(Qt::blue);
-            measure.curveStyle = QwtPlotCurve::Lines;
-            measure.symbolStyle = QwtSymbol::NoSymbol;
-            measure.smooth = false;
-            measure.trendtype = 0;
-            measure.topN = 1;
-            measure.uname = "";
-            measure.name = QString("%1 (m)").arg(sp.displayName(field.name));
-            measure.units = "";
-            measure.uunits = "";
-            metrics.append(measure);
-        }
-    }
-#endif
     // sort the list
     qSort(metrics);
 
     // custom widget
     QWidget *custom = new QWidget(this);
     custom->setContentsMargins(20,20,20,20);
+    HelpWhatsThis *curvesHelp = new HelpWhatsThis(custom);
+    custom->setWhatsThis(curvesHelp->getWhatsThisText(HelpWhatsThis::ChartTrends_MetricTrends_Config_Curves));
     QVBoxLayout *customLayout = new QVBoxLayout(custom);
     customLayout->setContentsMargins(0,0,0,0);
     customLayout->setSpacing(5);
@@ -1236,13 +1219,15 @@ LTMTool::refreshCustomTable()
     foreach (MetricDetail metricDetail, settings->metrics) {
 
         QTableWidgetItem *t = new QTableWidgetItem();
-        if (metricDetail.type != 5 && metricDetail.type != 6)
+        if (metricDetail.type < 5)
             t->setText(tr("Metric")); // only metrics .. for now ..
         else if (metricDetail.type == 5)
             t->setText(tr("Peak"));
-        else
+        else if (metricDetail.type == 6)
             t->setText(tr("Estimate"));
-        
+        else if (metricDetail.type == 7)
+            t->setText(tr("Stress"));
+
         t->setFlags(t->flags() & (~Qt::ItemIsEditable));
         customTable->setItem(i,0,t);
 
@@ -1486,6 +1471,7 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     chooseMetric = new QRadioButton(tr("Metric"), this);
     chooseBest = new QRadioButton(tr("Best"), this);
     chooseEstimate = new QRadioButton(tr("Estimate"), this);
+    chooseStress = new QRadioButton(tr("Stress"), this);
 
     // put them into a button group because we
     // also have radio buttons for watts per kilo / absolute
@@ -1493,11 +1479,13 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     group->addButton(chooseMetric);
     group->addButton(chooseBest);
     group->addButton(chooseEstimate);
+    group->addButton(chooseStress);
 
     // uncheck them all
     chooseMetric->setChecked(false);
     chooseBest->setChecked(false);
     chooseEstimate->setChecked(false);
+    chooseStress->setChecked(false);
 
     // which one ?
     switch (metricDetail->type) {
@@ -1510,6 +1498,9 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     case 6:
         chooseEstimate->setChecked(true);
         break;
+    case 7:
+        chooseStress->setChecked(true);
+        break;
     }
 
     QVBoxLayout *radioButtons = new QVBoxLayout;
@@ -1517,6 +1508,7 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     radioButtons->addWidget(chooseMetric);
     radioButtons->addWidget(chooseBest);
     radioButtons->addWidget(chooseEstimate);
+    radioButtons->addWidget(chooseStress);
     radioButtons->addStretch();
 
     // bests selection
@@ -1641,8 +1633,33 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     estimateLayout->addLayout(estwpk);
     estimateLayout->addStretch();
 
+    // stress selection
+    stressTypeSelect = new QComboBox(this);
+    stressTypeSelect->addItem(tr("Short Term Stress (STS/ATL)"), STRESS_STS);
+    stressTypeSelect->addItem(tr("Long Term Stress  (LTS/CTL)"), STRESS_LTS);
+    stressTypeSelect->addItem(tr("Stress Balance    (SB/TSB)"),  STRESS_SB);
+    stressTypeSelect->addItem(tr("Stress Ramp Rate  (RR)"),      STRESS_RR);
+    stressTypeSelect->setCurrentIndex(metricDetail->stressType);
+
+    stressWidget = new QWidget(this);
+    stressWidget->setContentsMargins(0,0,0,0);
+    QHBoxLayout *stressLayout = new QHBoxLayout(stressWidget);
+    stressLayout->setContentsMargins(0,0,0,0);
+    stressLayout->setSpacing(5);
+    stressLayout->addWidget(new QLabel(tr("Stress Type"), this));
+    stressLayout->addWidget(stressTypeSelect);
+
+    metricWidget = new QWidget(this);
+    metricWidget->setContentsMargins(0,0,0,0);
+    QVBoxLayout *metricLayout = new QVBoxLayout(metricWidget);
+
     // metric selection tree
     metricTree = new QTreeWidget;
+    metricLayout->addWidget(metricTree);
+
+    // and add the stress selector to this widget
+    // too as we reuse it for stress selection
+    metricLayout->addWidget(stressWidget);
 
 #ifdef Q_OS_MAC
     metricTree->setAttribute(Qt::WA_MacShowFocusRect, 0);
@@ -1675,7 +1692,7 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     // metric and bests, but will add formula and
     // measure at some point
     typeStack = new QStackedWidget(this);
-    typeStack->addWidget(metricTree);
+    typeStack->addWidget(metricWidget);
     typeStack->addWidget(bestWidget);
     typeStack->addWidget(estimateWidget);
     typeStack->setCurrentIndex(chooseMetric->isChecked() ? 0 : (chooseBest->isChecked() ? 1 : 2));
@@ -1816,7 +1833,8 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     buttonLayout->addWidget(applyButton);
     mainLayout->addLayout(buttonLayout);
 
-    // clean up the estimate widgets
+    // clean up the widgets
+    typeChanged();
     modelChanged();
 
     // connect up slots
@@ -1827,6 +1845,7 @@ EditMetricDetailDialog::EditMetricDetailDialog(Context *context, LTMTool *ltmToo
     connect(chooseMetric, SIGNAL(toggled(bool)), this, SLOT(typeChanged()));
     connect(chooseBest, SIGNAL(toggled(bool)), this, SLOT(typeChanged()));
     connect(chooseEstimate, SIGNAL(toggled(bool)), this, SLOT(typeChanged()));
+    connect(chooseStress, SIGNAL(toggled(bool)), this, SLOT(typeChanged()));
     connect(modelSelect, SIGNAL(currentIndexChanged(int)), this, SLOT(modelChanged()));
     connect(estimateSelect, SIGNAL(currentIndexChanged(int)), this, SLOT(estimateChanged()));
     connect(estimateDuration, SIGNAL(valueChanged(double)), this, SLOT(estimateName()));
@@ -1856,23 +1875,34 @@ EditMetricDetailDialog::typeChanged()
     // switch stack and hide other
     if (chooseMetric->isChecked()) {
         bestWidget->hide();
-        metricTree->show();
+        metricWidget->show();
         estimateWidget->hide();
+        stressWidget->hide();
         typeStack->setCurrentIndex(0);
     }
 
     if (chooseBest->isChecked()) {
         bestWidget->show();
-        metricTree->hide();
+        metricWidget->hide();
         estimateWidget->hide();
+        stressWidget->hide();
         typeStack->setCurrentIndex(1);
     }
 
     if (chooseEstimate->isChecked()) {
         bestWidget->hide();
-        metricTree->hide();
+        metricWidget->hide();
         estimateWidget->show();
+        stressWidget->hide();
         typeStack->setCurrentIndex(2);
+    }
+
+    if (chooseStress->isChecked()) {
+        bestWidget->hide();
+        metricWidget->show();
+        estimateWidget->hide();
+        stressWidget->show();
+        typeStack->setCurrentIndex(0);
     }
     adjustSize();
 }
@@ -1903,7 +1933,7 @@ void
 EditMetricDetailDialog::metricSelected()
 {
     // only in metric mode
-    if (!chooseMetric->isChecked()) return;
+    if (!chooseMetric->isChecked() && !chooseStress->isChecked()) return;
 
     // user selected a different metric
     // so update accordingly
@@ -1998,6 +2028,7 @@ EditMetricDetailDialog::applyClicked()
 
     if (chooseBest->isChecked()) metricDetail->type = 5; // is a best
     else if (chooseEstimate->isChecked()) metricDetail->type = 6; // estimate
+    else if (chooseStress->isChecked()) metricDetail->type = 7; // stress
 
     metricDetail->estimateDuration = estimateDuration->value();
     switch (estimateDurationUnits->currentIndex()) {
@@ -2032,6 +2063,7 @@ EditMetricDetailDialog::applyClicked()
     metricDetail->uunits = userUnits->text();
     metricDetail->stack = stack->isChecked();
     metricDetail->trendtype = trendType->currentIndex();
+    metricDetail->stressType = stressTypeSelect->currentIndex();
     accept();
 }
 

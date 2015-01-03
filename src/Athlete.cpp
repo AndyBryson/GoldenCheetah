@@ -20,6 +20,8 @@
 
 #include "MainWindow.h"
 #include "Context.h"
+#include "Season.h"
+#include "Colors.h"
 #include "RideMetadata.h"
 #include "RideCache.h"
 #include "RideFileCache.h"
@@ -28,10 +30,11 @@
 #include "TimeUtils.h"
 #include "Units.h"
 #include "Zones.h"
+#include "HrZones.h"
 #include "PaceZones.h"
-#include "MetricAggregator.h"
 #include "WithingsDownload.h"
 #include "CalendarDownload.h"
+#include "PMCData.h"
 #include "ErgDB.h"
 #ifdef GC_HAVE_ICAL
 #include "ICalendar.h"
@@ -59,7 +62,9 @@ Athlete::Athlete(Context *context, const QDir &homeDir)
     this->context = context;
     context->athlete = this;
     cyclist = this->home->root().dirName();
-    isclean = false;
+#ifdef GC_HAVE_LUCENE
+    emptyindex = false;
+#endif
 
     // Recovering from a crash?
     if(!appsettings->cvalue(cyclist, GC_SAFEEXIT, true).toBool()) {
@@ -122,10 +127,17 @@ Athlete::Athlete(Context *context, const QDir &homeDir)
     reader.readChartXML(context->athlete->home->config(), context->athlete->useMetricUnits, presets);
     translateDefaultCharts(presets);
 
+    // Search / filter
+#ifdef GC_HAVE_LUCENE
+    namedSearches = new NamedSearches(this); // must be before navigator
+    lucene = new Lucene(context, context);
+#endif
+
     // Metadata
-    metricDB = NULL; // warn metadata we haven't got there yet !
+    rideCache = NULL; // let metadata know we don't have a ridecache yet
     rideMetadata_ = new RideMetadata(context,true);
     rideMetadata_->hide();
+    colorEngine = new ColorEngine(context);
 
     // Date Ranges
     seasons = new Seasons(home->config());
@@ -133,17 +145,12 @@ Athlete::Athlete(Context *context, const QDir &homeDir)
     // seconds step of the upgrade - now everything of configuration needed should be in place in Context
     v3.upgradeLate(context);
 
-
+#ifdef GC_HAVE_INTERVALS
     // Routes
     routes = new Routes(context, home->config());
-
-    // Search / filter
-#ifdef GC_HAVE_LUCENE
-    namedSearches = new NamedSearches(this); // must be before navigator
-    lucene = new Lucene(context, context); // before metricDB attempts to refresh
 #endif
 
-    // get withings in if there is a cache, before metricDB (but it goes soon)
+    // get withings in if there is a cache
     QFile withingsJSON(QString("%1/withings.json").arg(context->athlete->home->cache().canonicalPath()));
     if (withingsJSON.exists() && withingsJSON.open(QFile::ReadOnly)) {
 
@@ -158,15 +165,10 @@ Athlete::Athlete(Context *context, const QDir &homeDir)
         if (errors.count() == 0) setWithings(parser.readings());
     }
 
-    // metrics DB
-    metricDB = new MetricAggregator(context); // just to catch config updates!
-    metricDB->refreshMetrics();
+    // now most dependencies are in get cache
+    rideCache = new RideCache(context);
 
-    // the model atop the metric DB
-    sqlModel = new QSqlTableModel(this, metricDB->db()->connection());
-    sqlModel->setTable("metrics");
-    sqlModel->setEditStrategy(QSqlTableModel::OnManualSubmit);
-
+#ifdef GC_HAVE_INTERVALS
     sqlRouteIntervalsModel = new QSqlTableModel(this, metricDB->db()->connection());
     sqlRouteIntervalsModel->setTable("interval_metrics");
     sqlRouteIntervalsModel->setFilter("type='Route'");
@@ -176,6 +178,7 @@ Athlete::Athlete(Context *context, const QDir &homeDir)
     sqlBestIntervalsModel->setTable("interval_metrics");
     sqlBestIntervalsModel->setFilter("type='Best'");
     sqlBestIntervalsModel->setEditStrategy(QSqlTableModel::OnManualSubmit);
+#endif
 
     // Downloaders
     withingsDownload = new WithingsDownload(context);
@@ -204,10 +207,8 @@ Athlete::Athlete(Context *context, const QDir &homeDir)
     allIntervals->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsDropEnabled);
     allIntervals->setText(0, tr("Intervals"));
 
-    rideCache = new RideCache(context);
-
     // trap signals
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
     connect(context,SIGNAL(rideAdded(RideItem*)),this,SLOT(checkCPX(RideItem*)));
     connect(context,SIGNAL(rideDeleted(RideItem*)),this,SLOT(checkCPX(RideItem*)));
     connect(intervalWidget,SIGNAL(itemSelectionChanged()), this, SLOT(intervalTreeWidgetSelectionChanged()));
@@ -241,11 +242,11 @@ Athlete::~Athlete()
     delete davCalendar;
 #endif
 
+#ifdef GC_HAVE_INTERVALS
     // close the db connection (but clear models first!)
-    delete sqlModel;
     delete sqlRouteIntervalsModel;
     delete sqlBestIntervalsModel;
-    delete metricDB;
+#endif
 
 #ifdef GC_HAVE_LUCENE
     delete namedSearches;
@@ -254,6 +255,7 @@ Athlete::~Athlete()
     delete seasons;
 
     delete rideMetadata_;
+    delete colorEngine;
     delete zones_;
     delete hrzones_;
 }
@@ -376,51 +378,23 @@ Athlete::translateDefaultCharts(QList<LTMSettings>&charts)
 }
 
 void
-Athlete::configChanged()
+Athlete::configChanged(qint32 state)
 {
-    // re-read Zones in case it changed
-    QFile zonesFile(home->config().canonicalPath() + "/power.zones");
-    if (zonesFile.exists()) {
-        if (!zones_->read(zonesFile)) {
-            QMessageBox::critical(context->mainWindow, tr("Zones File Error"),
-                                 zones_->errorString());
-        }
-       else if (! zones_->warningString().isEmpty())
-            QMessageBox::warning(context->mainWindow, tr("Reading Zones File"), zones_->warningString());
+    // change units
+    if (state & CONFIG_UNITS) {
+        QVariant unit = appsettings->cvalue(cyclist, GC_UNIT);
+        useMetricUnits = (unit.toString() == GC_UNIT_METRIC);
     }
 
-    // reread HR zones
-    QFile hrzonesFile(home->config().canonicalPath() + "/hr.zones");
-    if (hrzonesFile.exists()) {
-        if (!hrzones_->read(hrzonesFile)) {
-            QMessageBox::critical(context->mainWindow, tr("HR Zones File Error"),
-                                 hrzones_->errorString());
-        }
-       else if (! hrzones_->warningString().isEmpty())
-            QMessageBox::warning(context->mainWindow, tr("Reading HR Zones File"), hrzones_->warningString());
-    }
-
-    // reread Pace zones
-    QFile pacezonesFile(home->config().canonicalPath() + "/pace.zones");
-    if (pacezonesFile.exists()) {
-        if (!pacezones_->read(pacezonesFile)) {
-            QMessageBox::critical(context->mainWindow, tr("Pace Zones File Error"),
-                                 pacezones_->errorString());
+    // invalidate PMC data
+    if (state & (CONFIG_PMC | CONFIG_SEASONS)) {
+        QMapIterator<QString, PMCData *> pmcs(pmcData);
+        pmcs.toFront();
+        while(pmcs.hasNext()) {
+            pmcs.next();
+            pmcs.value()->invalidate();
         }
     }
-
-    QVariant unit = appsettings->cvalue(cyclist, GC_UNIT);
-    useMetricUnits = (unit.toString() == GC_UNIT_METRIC);
-
-/*XXX not sure about this
-    // forget all the cached weight values in case weight changed
-    foreach (RideItem *rideItem, rideCache->rides()) {
-        if (rideItem->ride(false)) {
-            rideItem->ride(false)->setWeight(0);
-            rideItem->ride(false)->getWeight();
-        }
-    }
-XXX */
 }
 
 void
@@ -516,7 +490,7 @@ Athlete::getWithingsWeight(QDate date)
 
     double lastWeight=0.0f;
     foreach(WithingsReading x, withings_) {
-        if (x.when.date() < date) lastWeight = x.weightkg;
+        if (x.when.date() <= date) lastWeight = x.weightkg;
         if (x.when.date() > date) break;
     }
     return lastWeight;
@@ -562,4 +536,24 @@ Athlete::getHeight(RideFile *ride)
     if (!height) height = 1.7526f; // 5'9" is average male height
 
     return height;
+}
+
+// working with PMC data series
+PMCData *
+Athlete::getPMCFor(QString metricName, int stsdays, int ltsdays)
+{
+    PMCData *returning = NULL;
+
+    // if we don't already have one, create it
+    returning = pmcData.value(metricName, NULL);
+    if (!returning) {
+
+        // specification is blank and passes for all
+        returning = new PMCData(context, Specification(), metricName, stsdays, ltsdays);
+
+        // add to our collection
+        pmcData.insert(metricName, returning);
+    }
+
+    return returning;
 }

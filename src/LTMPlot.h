@@ -32,7 +32,6 @@
 #include "AllPlot.h" // for curve colors widget
 #include "LTMSettings.h"
 #include "LTMCanvasPicker.h"
-#include "MetricAggregator.h"
 
 #include "Context.h"
 
@@ -60,7 +59,7 @@ class LTMPlot : public QwtPlot
     public slots:
         void pointHover(QwtPlotCurve*, int);
         void pointClicked(QwtPlotCurve*, int); // point clicked
-        void configUpdate();
+        void configChanged(qint32);
         bool eventFilter(QObject *, QEvent *);
 
     protected:
@@ -74,8 +73,6 @@ class LTMPlot : public QwtPlot
 
         LTMWindow *parent;
         double minY[10], maxY[10], maxX;      // for all possible 10 curves
-        void resetPMC();
-        void createPMCCurveData(Context *,LTMSettings *, MetricDetail, QList<SummaryMetrics> &);
 
         // just to make sure all plots have a common x axis in a stack
         int getMaxX();
@@ -114,17 +111,29 @@ class LTMPlot : public QwtPlot
         QVector< QVector<double>* > stackY;
 
         int groupForDate(QDate , int);
-        void createCurveData(Context *,LTMSettings *, MetricDetail, QVector<double>&, QVector<double>&, int&);
-        void createEstimateData(Context *,LTMSettings *, MetricDetail, QVector<double>&, QVector<double>&, int&);
-        void createTODCurveData(Context *,LTMSettings *, MetricDetail, QVector<double>&, QVector<double>&, int&);
+        void createCurveData(Context *,LTMSettings *, MetricDetail, QVector<double>&, QVector<double>&, int&, bool=false);
+
+        // create curve data from PMCData
+        void createPMCData(Context *,LTMSettings *, MetricDetail, QVector<double>&, QVector<double>&, int&, bool=false);
+
+        // create curve data from estimate
+        void createEstimateData(Context *,LTMSettings *, MetricDetail, QVector<double>&, QVector<double>&, int&, bool=false);
+
+        // create curve data from metadata or metric (from ridecache)
+        void createMetricData(Context *,LTMSettings *, MetricDetail, QVector<double>&, QVector<double>&, int&, bool=false);
+
+        // create curve data from bests (from ridefile cache)
+        void createBestsData(Context *,LTMSettings *, MetricDetail, QVector<double>&, QVector<double>&, int&, bool=false);
+
+        // create a curve based upon TOD
+        void createTODCurveData(Context *,LTMSettings *, MetricDetail, QVector<double>&, QVector<double>&, int&, bool=false);
+
+        // create an aggregate
         void aggregateCurves(QVector<double> &a, QVector<double>&w); // aggregate a with w, updates a
+
         QwtAxisId chooseYAxis(QString);
         void refreshZoneLabels(QwtAxisId);
         void refreshMarkers(LTMSettings *, QDate from, QDate to, int groupby, QColor color);
-
-        // remember the coggan or skiba stress calculators
-        // so it isn't recalculated for each data series!
-        StressCalculator *cogganPMC, *skibaPMC;
 
         QList<QwtAxisId> supportedAxes;
         bool first, isolation;

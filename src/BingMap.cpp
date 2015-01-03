@@ -28,12 +28,14 @@
 #include "Colors.h"
 #include "Units.h"
 #include "TimeUtils.h"
+#include "HelpWhatsThis.h"
 
 #include <QDebug>
 
 BingMap::BingMap(Context *context) : GcChartWindow(context), context(context), range(-1), current(NULL)
 {
     setControls(NULL);
+
     setContentsMargins(0,0,0,0);
     layout = new QVBoxLayout();
     layout->setSpacing(0);
@@ -47,6 +49,9 @@ BingMap::BingMap(Context *context) : GcChartWindow(context), context(context), r
     view->setAcceptDrops(false);
     layout->addWidget(view);
 
+    HelpWhatsThis *help = new HelpWhatsThis(view);
+    view->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_Map));
+
     webBridge = new BWebBridge(context, this);
 
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
@@ -54,16 +59,16 @@ BingMap::BingMap(Context *context) : GcChartWindow(context), context(context), r
     connect(context, SIGNAL(intervalsChanged()), webBridge, SLOT(intervalsChanged()));
     connect(context, SIGNAL(intervalSelected()), webBridge, SLOT(intervalsChanged()));
     connect(context, SIGNAL(intervalZoom(IntervalItem*)), this, SLOT(zoomInterval(IntervalItem*)));
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 
     first = true;
 
     // get the colors setup for first run
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 void
-BingMap::configChanged()
+BingMap::configChanged(qint32)
 {
     setProperty("color", GColor(CPLOTBACKGROUND));
     rideSelected();

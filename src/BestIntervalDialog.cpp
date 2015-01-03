@@ -22,14 +22,18 @@
 #include "IntervalItem.h"
 #include "RideFile.h"
 #include "RideItem.h"
+#include "HelpWhatsThis.h"
 #include <QMap>
-#include <math.h>
+#include <cmath>
 
 BestIntervalDialog::BestIntervalDialog(Context *context) :
     context(context)
 {
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowTitle("Find Intervals");
+    HelpWhatsThis *help = new HelpWhatsThis(this);
+    this->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::FindIntervals));
+
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
     QHBoxLayout *intervalLengthLayout = new QHBoxLayout;

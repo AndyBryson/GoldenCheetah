@@ -28,7 +28,9 @@
 #include <QVector>
 
 class RideFile;
+class RideFileCache;
 class RideCache;
+class RideCacheModel;
 class Context;
 
 Q_DECLARE_METATYPE(RideItem*)
@@ -43,9 +45,11 @@ class RideItem : public QObject
     protected:
 
         friend class ::RideCache;
+        friend class ::RideCacheModel;
 
         // ridefile
         RideFile *ride_;
+        RideFileCache *fileCache_;
 
         // precomputed metrics
         QVector<double> metrics_;
@@ -53,8 +57,10 @@ class RideItem : public QObject
         // metadata (used by navigator)
         QMap<QString,QString> metadata_;
 
+
         QStringList errors_;
-        Context *context; // to notify widgets when date/time changes
+
+        unsigned long metaCRC();
 
     public slots:
         void modified();
@@ -69,26 +75,44 @@ class RideItem : public QObject
 
     public:
 
+        Context *context; // to notify widgets when date/time changes
         bool isdirty;     // ride data has changed and needs saving
         bool isstale;     // metric data is out of date and needs recomputing
         bool isedit;      // is being edited at the moment
+        bool skipsave;    // on exit we don't save the state to force rebuild at startup
 
         // set from another, e.g. during load of rideDB.json
         void setFrom(RideItem&);
 
-        // get at the data
+        // set metric values e.g. when working with intervals
+        void setFrom(QHash<QString, RideMetricPtr>);
+
+        // access the metric value
+        double getForSymbol(QString name, bool useMetricUnits=true);
+
+        // as a well formatted string
+        QString getStringForSymbol(QString name, bool useMetricUnits=true);
+
+        // access the metadata
+        QString getText(QString name, QString fallback) { return metadata_.value(name, fallback); }
+
+        // get at the first class data
         QString path;
         QString fileName;
         QDateTime dateTime;
+        QString present;
+        QColor color;
+        bool isRun;
 
         // context the item was updated to
         unsigned long fingerprint; // zones
-        unsigned long crc, timestamp; // file content
+        unsigned long metacrc, crc, timestamp; // file content
         int dbversion; // metric version
         double weight; // what weight was used ?
 
         // access to the cached data !
         RideFile *ride(bool open=true);
+        RideFileCache *fileCache();
         QVector<double> &metrics() { return metrics_; }
         QMap<QString, QString> &metadata() { return metadata_; }
         const QStringList errors() { return errors_; }
@@ -106,12 +130,13 @@ class RideItem : public QObject
         RideItem(QString path, QString fileName, QDateTime &dateTime, Context *context);
         RideItem(RideFile *ride, QDateTime &dateTime, Context *context);
 
+        ~RideItem();
+
         // state
         void setDirty(bool);
         bool isDirty() { return isdirty; }
         bool checkStale(); // check if we need to refresh
         bool isStale() { return isstale; }
-        bool isRun() { return ride_ ? ride_->isRun() : false; }
 
         // refresh when stale
         void refresh();
@@ -120,6 +145,10 @@ class RideItem : public QObject
         void setRide(RideFile *);
         void setFileName(QString, QString);
         void setStartTime(QDateTime);
+
+        // sorting
+        bool operator<(RideItem right) const { return dateTime < right.dateTime; }
+        bool operator>(RideItem right) const { return dateTime < right.dateTime; }
 };
 
 #endif // _GC_RideItem_h

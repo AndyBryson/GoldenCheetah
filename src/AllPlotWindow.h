@@ -27,6 +27,7 @@
 #include <QStyleFactory>
 
 class AllPlot;
+class AllPlotInterval;
 class AllPlotObject;
 class Context;
 class QwtPlotPanner;
@@ -59,6 +60,7 @@ class AllPlotWindow : public GcChartWindow
     Q_PROPERTY(int stackWidth READ _stackWidth WRITE setStackWidth USER true)
     Q_PROPERTY(int showGrid READ isShowGrid WRITE setShowGrid USER true)
     Q_PROPERTY(int showFull READ isShowFull WRITE setShowFull USER true)
+    Q_PROPERTY(int showInterval READ isShowInterval WRITE setShowInterval USER true)
     Q_PROPERTY(int showHelp READ isShowHelp WRITE setShowHelp USER true)
     Q_PROPERTY(int showATISS READ isShowATISS WRITE setShowATISS USER true)
     Q_PROPERTY(int showANTISS READ isShowANTISS WRITE setShowANTISS USER true)
@@ -117,6 +119,7 @@ class AllPlotWindow : public GcChartWindow
         int _stackWidth() const { return stackWidth; }
         int isShowGrid() const { return showGrid->checkState(); }
         int isShowFull() const { return showFull->checkState(); }
+        int isShowInterval() const { return showInterval->checkState(); }
         int isShowHelp() const { return showHelp->checkState(); }
         int isShowATISS() const { return showATISS->checkState(); }
         int isShowANTISS() const { return showANTISS->checkState(); }
@@ -157,11 +160,12 @@ class AllPlotWindow : public GcChartWindow
 
         // trap GC signals
         void rideSelected();
+        void forceReplot();
         void rideDeleted(RideItem *ride);
         void intervalSelected();
         void zonesChanged();
         void intervalsChanged();
-        void configChanged();
+        void configChanged(qint32);
 
         // set properties
         void setSmoothingFromSlider();
@@ -204,6 +208,7 @@ class AllPlotWindow : public GcChartWindow
         void setShowGrid(int state);
         void setPaintBrush(int state);
         void setShowFull(int state);
+        void setShowInterval(int state);
         void setShowHelp(int state);
         void setSmoothing(int value);
         void setByDistance(int value);
@@ -244,6 +249,7 @@ class AllPlotWindow : public GcChartWindow
         QVBoxLayout *allPlotLayout;
         AllPlot *allPlot;
         AllPlot *fullPlot;
+        AllPlotInterval *intervalPlot;
         QList <AllPlot *> allPlots;
         QList <AllPlot *> seriesPlots;
         QwtPlotPanner *allPanner;
@@ -281,6 +287,7 @@ class AllPlotWindow : public GcChartWindow
         QCheckBox *showBySeries;
         QCheckBox *showGrid;
         QCheckBox *showFull;
+        QCheckBox *showInterval;
         QCheckBox *showHelp;
         QCheckBox *paintBrush;
         QCheckBox *showAlt;
@@ -339,6 +346,7 @@ class AllPlotWindow : public GcChartWindow
         void redrawAllPlot();
         void redrawFullPlot();
         void redrawStackPlot();
+        void redrawIntervalPlot();
 
         void showInfo(QString);
         void resetStackedDatas();

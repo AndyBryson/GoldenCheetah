@@ -24,6 +24,7 @@
 #include "RideFile.h"
 #include "Settings.h"
 #include "Colors.h"
+#include "HelpWhatsThis.h"
 #include <QtGui>
 
 #define PI M_PI
@@ -72,9 +73,11 @@ PfPvDoubleClickPicker::trackerTextF( const QPointF &pos ) const
 }
 
 PfPvWindow::PfPvWindow(Context *context) :
-    GcChartWindow(context), context(context), current(NULL), compareStale(true)
+    GcChartWindow(context), context(context), current(NULL), compareStale(true), stale(false)
 {
     QWidget *c = new QWidget;
+    HelpWhatsThis *helpConfig = new HelpWhatsThis(c);
+    c->setWhatsThis(helpConfig->getWhatsThisText(HelpWhatsThis::ChartRides_PFvV));
     QVBoxLayout *cl = new QVBoxLayout(c);
     setControls(c);
 
@@ -116,6 +119,8 @@ PfPvWindow::PfPvWindow(Context *context) :
     QVBoxLayout *vlayout = new QVBoxLayout;
     pfPvPlot = new PfPvPlot(context);
     vlayout->addWidget(pfPvPlot);
+    HelpWhatsThis *help = new HelpWhatsThis(pfPvPlot);
+    pfPvPlot->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_PFvV));
 
     setChartLayout(vlayout);
     setAutoFillBackground(true);
@@ -192,24 +197,25 @@ PfPvWindow::PfPvWindow(Context *context) :
 
     // GC signals
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
+    connect(context, SIGNAL(rideChanged(RideItem*)), this, SLOT(forceReplot()));
     connect(context, SIGNAL(intervalSelected()), this, SLOT(intervalSelected()));
     connect(context, SIGNAL(intervalsChanged()), this, SLOT(intervalSelected()));
     connect(context, SIGNAL(intervalHover(RideFileInterval)), this, SLOT(intervalHover(RideFileInterval)));
     connect(context->athlete, SIGNAL(zonesChanged()), this, SLOT(zonesChanged()));
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
-    connect(context, SIGNAL(configChanged()), pfPvPlot, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
+    connect(context, SIGNAL(configChanged(qint32)), pfPvPlot, SLOT(configChanged(qint32)));
 
     // comparing things
     connect(context, SIGNAL(compareIntervalsStateChanged(bool)), this, SLOT(compareChanged()));
     connect(context, SIGNAL(compareIntervalsChanged()), this, SLOT(compareChanged()));
 
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
     // share current setting with Plot
     setGearRatioDisplayPfPvFromCheckBox();
 }
 
 void
-PfPvWindow::configChanged()
+PfPvWindow::configChanged(qint32)
 {
     setProperty("color", GColor(CPLOTBACKGROUND)); // called on config change
 }
@@ -218,6 +224,13 @@ bool
 PfPvWindow::isCompare() const
 {
     return context->isCompareIntervals;
+}
+
+void
+PfPvWindow::forceReplot()
+{
+    stale= true;
+    rideSelected();
 }
 
 void
@@ -245,11 +258,12 @@ PfPvWindow::rideSelected()
         setIsBlank(false);
     }
 
-    if (ride == current) return;
+    if (!stale && ride == current) return;
 
     pfPvPlot->setData(ride);
 
     current = ride;
+    stale = false;
 
     // update the QLabel widget with the CP value set in PfPvPlot::setData()
     qaCPValue->setText(QString("%1").arg(pfPvPlot->getCP()));

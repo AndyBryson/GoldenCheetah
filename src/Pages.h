@@ -33,12 +33,6 @@
 #include "SeasonParser.h"
 #include "RideAutoImportConfig.h"
 
-#ifdef GC_HAVE_LIBOAUTH
-extern "C" {
-#include <oauth.h>
-}
-#endif
-
 class QGroupBox;
 class QHBoxLayout;
 class QVBoxLayout;
@@ -51,7 +45,6 @@ class SummaryMetricsPage;
 class MetadataPage;
 class KeywordsPage;
 class FieldsPage;
-class MeasuresPage;
 class Colors;
 class RiderPage;
 class SeasonsPage;
@@ -63,7 +56,7 @@ class GeneralPage : public QWidget
 
     public:
         GeneralPage(Context *context);
-        void saveClicked();
+        qint32 saveClicked();
 
         QString athleteWAS; // remember what we started with !
 
@@ -75,7 +68,6 @@ class GeneralPage : public QWidget
         Context *context;
 
         QComboBox *langCombo;
-        QComboBox *unitCombo;
         QComboBox *crankLengthCombo;
         QComboBox *rimSizeCombo;
         QComboBox *tireSizeCombo;
@@ -90,7 +82,6 @@ class GeneralPage : public QWidget
         QPushButton *athleteBrowseButton;
 
         QLabel *langLabel;
-        QLabel *unitLabel;
         QLabel *warningLabel;
         QLabel *workoutLabel;
         QLabel *athleteLabel;
@@ -102,6 +93,14 @@ class GeneralPage : public QWidget
         QCheckBox *showSBToday;
         QIntValidator *perfManSTSavgValidator;
         QIntValidator *perfManLTSavgValidator;
+
+        struct {
+            int wheel;
+            int crank;
+            float hyst;
+            int wbal;
+            int lts,sts;
+        } b4;
 
     private slots:
         void calcWheelSize();
@@ -116,7 +115,7 @@ class RiderPage : public QWidget
 
     public:
         RiderPage(QWidget *parent, Context *context);
-        void saveClicked();
+        qint32 saveClicked();
 
     public slots:
         void chooseAvatar();
@@ -139,6 +138,12 @@ class RiderPage : public QWidget
         QPushButton *avatarButton;
         QPixmap     avatar;
 
+    struct {
+        int unit;
+        double weight;
+        double height;
+    } b4;
+
 };
 
 class CredentialsPage : public QScrollArea
@@ -149,14 +154,14 @@ class CredentialsPage : public QScrollArea
 
     public:
         CredentialsPage(QWidget *parent, Context *context);
-        void saveClicked();
+        qint32 saveClicked();
 
     public slots:
-#ifdef GC_HAVE_LIBOAUTH
+#ifdef GC_HAVE_KQOAUTH
         void authoriseTwitter();
+#endif
         void authoriseStrava();
         void authoriseCyclingAnalytics();
-#endif
 
     private:
         Context *context;
@@ -167,21 +172,13 @@ class CredentialsPage : public QScrollArea
         QComboBox *tpType;
         QPushButton *tpTest;
 
-        QLineEdit *gcURL; // url for gc racing (not available yet)
-        QLineEdit *gcUser;
-        QLineEdit *gcPass;
-
-#ifdef GC_HAVE_LIBOAUTH
+#ifdef GC_HAVE_KQOAUTH
         QLineEdit *twitterURL; // url for twitter.com
         QPushButton *twitterAuthorise;
-        QLineEdit *twitterPIN;
-        char *t_key, *t_secret;
+#endif
 
         QPushButton *stravaAuthorise, *stravaAuthorised, *twitterAuthorised;
-        char *s_id, *s_secret;
-
         QPushButton *cyclingAnalyticsAuthorise, *cyclingAnalyticsAuthorised;
-#endif
 
         QLineEdit *rideWithGPSUser;
         QLineEdit *rideWithGPSPass;
@@ -244,7 +241,7 @@ class DevicePage : public QWidget
 
     public:
         DevicePage(QWidget *, Context *);
-        void saveClicked();
+        qint32 saveClicked();
 
         QTableView *deviceList;
 
@@ -289,7 +286,7 @@ class BestsMetricsPage : public QWidget
         void rightClicked();
         void availChanged();
         void selectedChanged();
-        void saveClicked();
+        qint32 saveClicked();
 
     protected:
 
@@ -327,7 +324,7 @@ class IntervalMetricsPage : public QWidget
         void rightClicked();
         void availChanged();
         void selectedChanged();
-        void saveClicked();
+        qint32 saveClicked();
 
     protected:
 
@@ -363,7 +360,7 @@ class SummaryMetricsPage : public QWidget
         void rightClicked();
         void availChanged();
         void selectedChanged();
-        void saveClicked();
+        qint32 saveClicked();
 
     protected:
 
@@ -429,7 +426,7 @@ class ColorsPage : public QWidget
 
     public:
         ColorsPage(QWidget *parent);
-        void saveClicked();
+        qint32 saveClicked();
 
     public slots:
         void applyThemeClicked();
@@ -469,6 +466,13 @@ class ColorsPage : public QWidget
         QTreeWidget *themes;
         const Colors *colorSet;
         QPushButton *applyTheme;
+
+        struct {
+            bool alias, scroll, head;
+            double line;
+            int chrome;
+            unsigned long fingerprint;
+        } b4;
 };
 
 class FieldsPage : public QWidget
@@ -510,7 +514,7 @@ class ProcessorPage : public QWidget
     public:
 
         ProcessorPage(Context *context);
-        void saveClicked();
+        qint32 saveClicked();
 
     public slots:
 
@@ -527,6 +531,36 @@ class ProcessorPage : public QWidget
 
 };
 
+class DefaultsPage : public QWidget
+{
+    Q_OBJECT
+    G_OBJECT
+
+
+    public:
+
+        DefaultsPage(QWidget *parent, QList<DefaultDefinition>);
+        void getDefinitions(QList<DefaultDefinition>&);
+
+    public slots:
+        void addClicked();
+        void upClicked();
+        void downClicked();
+        void deleteClicked();
+
+    protected:
+
+        QTreeWidget *defaults;
+
+#ifndef Q_OS_MAC
+        QToolButton *upButton, *downButton;
+#else
+        QPushButton *upButton, *downButton;
+#endif
+        QPushButton *addButton, *deleteButton;
+
+};
+
 class MetadataPage : public QWidget
 {
     Q_OBJECT
@@ -537,7 +571,7 @@ class MetadataPage : public QWidget
     public:
 
         MetadataPage(Context *);
-        void saveClicked();
+        qint32 saveClicked();
 
     public slots:
 
@@ -551,11 +585,19 @@ class MetadataPage : public QWidget
         KeywordsPage *keywordsPage;
         FieldsPage *fieldsPage;
         ProcessorPage *processorPage;
+        DefaultsPage *defaultsPage;
 
         // local versions for modification
         QList<KeywordDefinition> keywordDefinitions;
         QList<FieldDefinition>   fieldDefinitions;
+        QList<DefaultDefinition>  defaultDefinitions;
         QString colorfield;
+
+        // initial values
+        struct {
+            unsigned long fieldFingerprint;
+            unsigned long keywordFingerprint;
+        } b4;
 };
 
 //
@@ -570,7 +612,7 @@ class SchemePage : public QWidget
     public:
         SchemePage(ZonePage *parent);
         ZoneScheme getScheme();
-        void saveClicked();
+        qint32 saveClicked();
 
     public slots:
         void addClicked();
@@ -624,10 +666,11 @@ class ZonePage : public QWidget
     public:
 
         ZonePage(Context *);
-        void saveClicked();
+        qint32 saveClicked();
 
         //ZoneScheme scheme;
         Zones zones;
+        quint16 b4Fingerprint; // how did it start ?
 
         // Children talk to each other
         SchemePage *schemePage;
@@ -658,7 +701,7 @@ class HrSchemePage : public QWidget
 public:
     HrSchemePage(HrZonePage *parent);
     HrZoneScheme getScheme();
-    void saveClicked();
+    qint32 saveClicked();
 
     public slots:
     void addClicked();
@@ -714,10 +757,11 @@ class HrZonePage : public QWidget
 public:
 
     HrZonePage(Context *);
-    void saveClicked();
+    qint32 saveClicked();
 
     //ZoneScheme scheme;
     HrZones zones;
+    quint16 b4Fingerprint; // how did it start ?
 
     // Children talk to each other
     HrSchemePage *schemePage;
@@ -748,7 +792,7 @@ class PaceSchemePage : public QWidget
     public:
         PaceSchemePage(PaceZonePage *parent);
         PaceZoneScheme getScheme();
-        void saveClicked();
+        qint32 saveClicked();
 
     public slots:
         void addClicked();
@@ -805,9 +849,10 @@ class PaceZonePage : public QWidget
     public:
 
         PaceZonePage(Context *);
-        void saveClicked();
+        qint32 saveClicked();
 
         PaceZones zones;
+        quint16 b4Fingerprint; // how did it start ?
 
         // Children talk to each other
         PaceSchemePage *schemePage;
@@ -845,7 +890,7 @@ class SeasonsPage : public QWidget
         void renameClicked();
         void deleteClicked();
         void clearEdit();
-        void saveClicked();
+        qint32 saveClicked();
 
     private:
 
@@ -865,36 +910,6 @@ class SeasonsPage : public QWidget
         QList<Season> array;
 };
 
-class MeasuresPage : public QWidget
-{
-    Q_OBJECT
-    G_OBJECT
-
-
-    public:
-        MeasuresPage(Context *context);
-        void getDefinitions(QList<FieldDefinition>&);
-
-    public slots:
-        void addClicked();
-        void upClicked();
-        void downClicked();
-        void renameClicked();
-        void deleteClicked();
-        void saveClicked();
-
-    private:
-
-        Context *context;
-        QTreeWidget *fields;
-#ifndef Q_OS_MAC
-        QToolButton *upButton, *downButton;
-#else
-        QPushButton *upButton, *downButton;
-#endif
-        QPushButton *addButton, *renameButton, *deleteButton;
-};
-
 class AutoImportPage : public QWidget
 {
     Q_OBJECT
@@ -904,7 +919,7 @@ class AutoImportPage : public QWidget
     public:
 
         AutoImportPage(Context *);
-        void saveClicked();
+        qint32 saveClicked();
         void addRuleTypes(QComboBox *p);
 
     public slots:

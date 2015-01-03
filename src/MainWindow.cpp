@@ -34,6 +34,7 @@
 #include "Athlete.h"
 
 #include "Colors.h"
+#include "RideCache.h"
 #include "RideItem.h"
 #include "IntervalItem.h"
 #include "RideFile.h"
@@ -43,6 +44,7 @@
 #include "LibraryParser.h"
 #include "TrainDB.h"
 #include "GcUpgrade.h"
+#include "HelpWhatsThis.h"
 
 // DIALOGS / DOWNLOADS / UPLOADS
 #include "AboutDialog.h"
@@ -57,7 +59,9 @@
 #include "MergeActivityWizard.h"
 #include "GenerateHeatMapDialog.h"
 #include "BatchExportDialog.h"
+#ifdef GC_HAVE_KQOAUTH
 #include "TwitterDialog.h"
+#endif
 #include "ShareDialog.h"
 #include "WithingsDownload.h"
 #include "WorkoutWizard.h"
@@ -115,7 +119,6 @@ MainWindow::MainWindow(const QDir &home)
 
     // bootstrap
     Context *context = new Context(this);
-    GCColor *GCColorSet = new GCColor(context); // get/keep colorset, before athlete...
     context->athlete = new Athlete(context, home);
 
     setWindowIcon(QIcon(":images/gc.png"));
@@ -127,7 +130,6 @@ MainWindow::MainWindow(const QDir &home)
     WFApi *w = WFApi::getInstance(); // ensure created on main thread
     w->apiVersion();//shutup compiler
     #endif
-    GCColorSet->colorSet(); // shut up the compiler
     Library::initialise(context->athlete->home->root());
     QNetworkProxyQuery npq(QUrl("http://www.google.com"));
     QList<QNetworkProxy> listOfProxies = QNetworkProxyFactory::systemProxyForQuery(npq);
@@ -194,6 +196,17 @@ MainWindow::MainWindow(const QDir &home)
     connect(scopebar, SIGNAL(selectTrain()), this, SLOT(selectTrain()));
     connect(scopebar, SIGNAL(selectInterval()), this, SLOT(selectInterval()));
 
+    /*----------------------------------------------------------------------
+     * What's this Context Help
+     *--------------------------------------------------------------------*/
+
+    // Help for the whole window
+    HelpWhatsThis *help = new HelpWhatsThis(this);
+    this->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::Default));
+    // add Help Button
+    QAction *myHelper = QWhatsThis::createAction (this);
+    this->addAction(myHelper);
+
 #if 0
     // Add chart is on the scope bar
     chartMenu = new QMenu(this);
@@ -250,13 +263,18 @@ MainWindow::MainWindow(const QDir &home)
     QPixmap *importImg = new QPixmap(":images/mac/download.png");
     import->setImage(importImg);
     import->setToolTip("Download");
+    HelpWhatsThis *helpImport = new HelpWhatsThis(import);
+    import->setWhatsThis(helpImport->getWhatsThisText(HelpWhatsThis::ToolBar_Download));
     lb->addWidget(import);
     lb->addWidget(new Spacer(this));
+
     compose = new QtMacButton(this, QtMacButton::TexturedRounded);
     QPixmap *composeImg = new QPixmap(":images/mac/compose.png");
     compose->setImage(composeImg);
     compose->setToolTip("Create");
     lb->addWidget(compose);
+    HelpWhatsThis *helpCompose = new HelpWhatsThis(compose);
+    compose->setWhatsThis(helpCompose->getWhatsThisText(HelpWhatsThis::ToolBar_Manual));
 
     // connect to actions
     connect(import, SIGNAL(clicked(bool)), this, SLOT(downloadRide()));
@@ -278,6 +296,8 @@ MainWindow::MainWindow(const QDir &home)
     sidebar->setMaximumSize(25, 25);
     sidebar->setToolTip("Sidebar");
     sidebar->setSelected(true); // assume always start up with sidebar selected
+    HelpWhatsThis *helpSideBar = new HelpWhatsThis(sidebar);
+    sidebar->setWhatsThis(helpSideBar->getWhatsThisText(HelpWhatsThis::ToolBar_ToggleSidebar));
 
     lowbar = new QtMacButton(this, QtMacButton::TexturedRounded);
     QPixmap *lowbarImg = new QPixmap(":images/mac/lowbar.png");
@@ -286,6 +306,8 @@ MainWindow::MainWindow(const QDir &home)
     lowbar->setMaximumSize(25, 25);
     lowbar->setToolTip("Compare");
     lowbar->setSelected(false); // assume always start up with lowbar deselected
+    HelpWhatsThis *helpLowBar = new HelpWhatsThis(lowbar);
+    lowbar->setWhatsThis(helpLowBar->getWhatsThisText(HelpWhatsThis::ToolBar_ToggleComparePane));
 
     actbuttons = new QtMacSegmentedButton(3, acts);
     actbuttons->setWidth(115);
@@ -381,6 +403,8 @@ MainWindow::MainWindow(const QDir &home)
     import->setStyle(toolStyle);
     import->setToolTip(tr("Download from Device"));
     import->setPalette(metal);
+    HelpWhatsThis *helpImport = new HelpWhatsThis(import);
+    import->setWhatsThis(helpImport->getWhatsThisText(HelpWhatsThis::ToolBar_Download));
     connect(import, SIGNAL(clicked(bool)), this, SLOT(downloadRide()));
 
     compose = new QPushButton(this);
@@ -391,6 +415,8 @@ MainWindow::MainWindow(const QDir &home)
     compose->setToolTip(tr("Create Manual Ride"));
     compose->setPalette(metal);
     connect(compose, SIGNAL(clicked(bool)), this, SLOT(manualRide()));
+    HelpWhatsThis *helpCompose = new HelpWhatsThis(compose);
+    compose->setWhatsThis(helpCompose->getWhatsThisText(HelpWhatsThis::ToolBar_Manual));
 
     lowbar = new QPushButton(this);
     lowbar->setIcon(lowbarIcon);
@@ -400,6 +426,8 @@ MainWindow::MainWindow(const QDir &home)
     lowbar->setToolTip(tr("Toggle Compare Pane"));
     lowbar->setPalette(metal);
     connect(lowbar, SIGNAL(clicked(bool)), this, SLOT(toggleLowbar()));
+    HelpWhatsThis *helpLowBar = new HelpWhatsThis(lowbar);
+    lowbar->setWhatsThis(helpLowBar->getWhatsThisText(HelpWhatsThis::ToolBar_ToggleComparePane));
 
     sidebar = new QPushButton(this);
     sidebar->setIcon(sidebarIcon);
@@ -409,6 +437,8 @@ MainWindow::MainWindow(const QDir &home)
     sidebar->setToolTip(tr("Toggle Sidebar"));
     sidebar->setPalette(metal);
     connect(sidebar, SIGNAL(clicked(bool)), this, SLOT(toggleSidebar()));
+    HelpWhatsThis *helpSideBar = new HelpWhatsThis(sidebar);
+    sidebar->setWhatsThis(helpSideBar->getWhatsThisText(HelpWhatsThis::ToolBar_ToggleSidebar));
 
     actbuttons = new QtSegmentControl(this);
     actbuttons->setStyle(toolStyle);
@@ -458,6 +488,8 @@ MainWindow::MainWindow(const QDir &home)
     head->addWidget(searchBox);
     connect(searchBox, SIGNAL(searchResults(QStringList)), this, SLOT(setFilter(QStringList)));
     connect(searchBox, SIGNAL(searchClear()), this, SLOT(clearFilter()));
+    HelpWhatsThis *helpSearchBox = new HelpWhatsThis(searchBox);
+    searchBox->setWhatsThis(helpSearchBox->getWhatsThisText(HelpWhatsThis::SearchFilterBox));
 #endif
     Spacer *spacer = new Spacer(this);
     spacer->setFixedWidth(5);
@@ -547,6 +579,9 @@ MainWindow::MainWindow(const QDir &home)
     fileMenu->addAction(tr("&Close Tab"), this, SLOT(closeTab()));
     fileMenu->addAction(tr("&Quit All Windows"), this, SLOT(closeAll()), tr("Ctrl+Q"));
 
+    HelpWhatsThis *fileMenuHelp = new HelpWhatsThis(fileMenu);
+    fileMenu->setWhatsThis(fileMenuHelp->getWhatsThisText(HelpWhatsThis::MenuBar_Athlete));
+
     // ACTIVITY MENU
     QMenu *rideMenu = menuBar()->addMenu(tr("A&ctivity"));
     rideMenu->addAction(tr("&Download from device..."), this, SLOT(downloadRide()), tr("Ctrl+D"));
@@ -565,7 +600,7 @@ MainWindow::MainWindow(const QDir &home)
     rideMenu->addAction(tr("Synchronise TrainingPeaks..."), this, SLOT(downloadTP()), tr(""));
 #endif
 
-#ifdef GC_HAVE_LIBOAUTH
+#ifdef GC_HAVE_KQOAUTH
     tweetAction = new QAction(tr("Tweet Ride"), this);
     connect(tweetAction, SIGNAL(triggered(bool)), this, SLOT(tweetRide()));
     rideMenu->addAction(tweetAction);
@@ -577,6 +612,9 @@ MainWindow::MainWindow(const QDir &home)
     rideMenu->addAction(tr("Split &ride..."), this, SLOT(splitRide()));
     rideMenu->addAction(tr("Combine rides..."), this, SLOT(mergeRide()));
     rideMenu->addSeparator ();
+
+    HelpWhatsThis *helpRideMenu = new HelpWhatsThis(rideMenu);
+    rideMenu->setWhatsThis(helpRideMenu->getWhatsThisText(HelpWhatsThis::MenuBar_Activity));
 
     // TOOLS MENU
     QMenu *optionsMenu = menuBar()->addMenu(tr("&Tools"));
@@ -605,6 +643,10 @@ MainWindow::MainWindow(const QDir &home)
     optionsMenu->addSeparator();
     optionsMenu->addAction(tr("Find intervals..."), this, SLOT(addIntervals()), tr (""));
 
+    HelpWhatsThis *optionsMenuHelp = new HelpWhatsThis(optionsMenu);
+    optionsMenu->setWhatsThis(optionsMenuHelp->getWhatsThisText(HelpWhatsThis::MenuBar_Tools));
+
+
     QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
     // Add all the data processors to the tools menu
     const DataProcessorFactory &factory = DataProcessorFactory::instance();
@@ -626,6 +668,9 @@ MainWindow::MainWindow(const QDir &home)
             toolMapper->setMapping(action, i.key());
         }
     }
+
+    HelpWhatsThis *editMenuHelp = new HelpWhatsThis(editMenu);
+    editMenu->setWhatsThis(editMenuHelp->getWhatsThisText(HelpWhatsThis::MenuBar_Edit));
 
     // VIEW MENU
     QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
@@ -651,7 +696,9 @@ MainWindow::MainWindow(const QDir &home)
     viewMenu->addSeparator();
     viewMenu->addAction(tr("Rides"), this, SLOT(selectAnalysis()));
     viewMenu->addAction(tr("Trends"), this, SLOT(selectHome()));
+#ifdef GC_HAVE_INTERVALS
     viewMenu->addAction(tr("Intervals"), this, SLOT(selectInterval()));
+#endif
     viewMenu->addAction(tr("Train"), this, SLOT(selectTrain()));
 #ifdef GC_HAVE_ICAL
     viewMenu->addAction(tr("Diary"), this, SLOT(selectDiary()));
@@ -667,13 +714,21 @@ MainWindow::MainWindow(const QDir &home)
     connect(subChartMenu, SIGNAL(aboutToShow()), this, SLOT(setSubChartMenu()));
     connect(subChartMenu, SIGNAL(triggered(QAction*)), this, SLOT(addChart(QAction*)));
 
+    HelpWhatsThis *viewMenuHelp = new HelpWhatsThis(viewMenu);
+    viewMenu->setWhatsThis(viewMenuHelp->getWhatsThisText(HelpWhatsThis::MenuBar_View));
+
     // HELP MENU
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
+    helpMenu->addAction(tr("&Help Overview"), this, SLOT(helpWindow()));
+    helpMenu->addSeparator();
     helpMenu->addAction(tr("&User Guide"), this, SLOT(helpView()));
     helpMenu->addAction(tr("&Log a bug or feature request"), this, SLOT(logBug()));
     helpMenu->addAction(tr("&Discussion and Support Forum"), this, SLOT(support()));
     helpMenu->addSeparator();
     helpMenu->addAction(tr("&About GoldenCheetah"), this, SLOT(aboutDialog()));
+
+    HelpWhatsThis *helpMenuHelp = new HelpWhatsThis(helpMenu);
+    helpMenu->setWhatsThis(helpMenuHelp->getWhatsThisText(HelpWhatsThis::MenuBar_Help));
 
     /*----------------------------------------------------------------------
      * Lets go, choose latest ride and get GUI up and running
@@ -694,11 +749,12 @@ MainWindow::MainWindow(const QDir &home)
     installEventFilter(this);
 
     // catch config changes
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
-    configChanged();
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
+    configChanged(CONFIG_APPEARANCE);
 
     init = true;
 }
+
 
 /*----------------------------------------------------------------------
  * GUI
@@ -1030,6 +1086,15 @@ void MainWindow::manualProcess(QString name)
     }
 }
 
+
+void
+MainWindow::helpWindow()
+{
+    HelpWindow* help = new HelpWindow(currentTab->context);
+    help->show();
+}
+
+
 void
 MainWindow::logBug()
 {
@@ -1039,8 +1104,9 @@ MainWindow::logBug()
 void
 MainWindow::helpView()
 {
-    QDesktopServices::openUrl(QUrl("http://www.goldencheetah.org/wiki.html"));
+    QDesktopServices::openUrl(QUrl("https://github.com/GoldenCheetah/GoldenCheetah/wiki"));
 }
+
 
 void
 MainWindow::support()
@@ -1287,8 +1353,12 @@ MainWindow::revertRide()
     currentTab->context->ride->ride(); // force re-load
 
     // in case reverted ride has different starttime
-    currentTab->context->ride->setStartTime(currentTab->context->ride->ride()->startTime()); // Note: this will also signal rideSelected()
+    currentTab->context->ride->setStartTime(currentTab->context->ride->ride()->startTime()); 
     currentTab->context->ride->ride()->emitReverted();
+
+    // and notify everyone we changed which also has the side
+    // effect of updating the cached values too
+    currentTab->context->notifyRideSelected(currentTab->context->ride);
 }
 
 void
@@ -1686,16 +1756,25 @@ MainWindow::switchTab(int index)
 void
 MainWindow::exportMetrics()
 {
-    QString fileName = QFileDialog::getSaveFileName( this, tr("Export Metrics"), QDir::homePath(), tr("Comma Separated Variables (*.csv)"));
-    if (fileName.length() == 0)
+    // if the refresh process is running, try again when its completed
+    if (currentTab->context->athlete->rideCache->isRunning()) {
+        QMessageBox::warning(this, tr("Refresh in Progress"), 
+        "A metric refresh is currently running, please try again once that has completed.");
         return;
-    currentTab->context->athlete->metricDB->writeAsCSV(fileName);
+    }
+
+    // all good lets choose a file
+    QString fileName = QFileDialog::getSaveFileName( this, tr("Export Metrics"), QDir::homePath(), tr("Comma Separated Variables (*.csv)"));
+    if (fileName.length() == 0) return;
+
+    // export
+    currentTab->context->athlete->rideCache->writeAsCSV(fileName);
 }
 
 /*----------------------------------------------------------------------
  * Twitter
  *--------------------------------------------------------------------*/
-#ifdef GC_HAVE_LIBOAUTH
+#ifdef GC_HAVE_KQOAUTH
 void
 MainWindow::tweetRide()
 {
@@ -1818,7 +1897,7 @@ MainWindow::downloadTP()
  *--------------------------------------------------------------------*/
 
 void
-MainWindow::configChanged()
+MainWindow::configChanged(qint32)
 {
 
 // Windows

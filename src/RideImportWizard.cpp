@@ -16,23 +16,26 @@
  * Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#include <QDebug>
+#include "Context.h"
+#include "Athlete.h"
 #include "MainWindow.h"
+
 #include "RideItem.h"
 #include "RideFile.h"
 #include "RideImportWizard.h"
-#include "Context.h"
-#include "Athlete.h"
-#include "QuarqRideFile.h"
-#include <QWaitCondition>
+
+#include "RideAutoImportConfig.h"
+#include "HelpWhatsThis.h"
 #include "Settings.h"
 #include "Units.h"
+
 #include "GcRideFile.h"
 #include "JsonRideFile.h"
-#include "TcxRideFile.h"
-#include "MetricAggregator.h"
-#include "RideAutoImportConfig.h"
+#include "TcxRideFile.h" // for opening multi-ride file
 
+#include <QDebug>
+#include <QWaitCondition>
+#include <QMessageBox>
 
 // drag and drop passes urls ... convert to a list of files and call main constructor
 RideImportWizard::RideImportWizard(QList<QUrl> *urls, Context *context, QWidget *parent) : QDialog(parent), context(context)
@@ -161,6 +164,10 @@ RideImportWizard::RideImportWizard(RideAutoImportConfig *dirs, Context *context,
 void
 RideImportWizard::init(QList<QString> files, Context * /*mainWindow*/)
 {
+
+    // setup Help
+    HelpWhatsThis *help = new HelpWhatsThis(this);
+    this->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::MenuBar_Activity_Import));
 
     // initialise dialog box
     tableWidget = new QTableWidget(files.count(), 6, this);
@@ -812,8 +819,6 @@ RideImportWizard::abortClicked()
 
     if (label == tr("Abort")) {
         hide();
-        context->athlete->isclean = false;
-        context->athlete->metricDB->refreshMetrics();
         aborted=true; // terminated. I'll be back.
         return;
     }
@@ -821,8 +826,6 @@ RideImportWizard::abortClicked()
     if (label == tr("Finish")) {
        // phew. our work is done. -- lets force an update stats...
        hide();
-       context->athlete->isclean = false;
-       context->athlete->metricDB->refreshMetrics();
        done(0);
        return;
     }

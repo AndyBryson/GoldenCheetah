@@ -19,8 +19,10 @@
 #include "DataFilter.h"
 #include "Context.h"
 #include "Athlete.h"
+#include "RideItem.h"
 #include "RideNavigator.h"
 #include "RideFileCache.h"
+#include "PMCData.h"
 #include <QDebug>
 
 #include "DataFilter_yacc.h"
@@ -57,16 +59,42 @@ static RideFile::SeriesType nameToSeries(QString name)
 
 }
 
+bool
+Leaf::isDynamic(Leaf *leaf)
+{
+    switch(leaf->type) {
+    default:
+    case Leaf::Symbol : 
+                    return leaf->dynamic;
+                    break;
+
+    case Leaf::Logical  : 
+                    if (leaf->op == 0) return leaf->isDynamic(leaf->lvalue.l);
+    case Leaf::Operation :
+    case Leaf::BinaryOperation : 
+                    return leaf->isDynamic(leaf->lvalue.l) || leaf->isDynamic(leaf->rvalue.l);
+                    break;
+    case Leaf::Function : 
+                    if (leaf->lvalue.l) return leaf->isDynamic(leaf->lvalue.l);
+                    else return leaf->dynamic;
+                    break;
+        break;
+
+    }
+    return false;
+}
+
 void Leaf::print(Leaf *leaf, int level)
 {
     qDebug()<<"LEVEL"<<level;
     switch(leaf->type) {
-    case Leaf::Float : qDebug()<<"float"<<leaf->lvalue.f; break;
-    case Leaf::Integer : qDebug()<<"integer"<<leaf->lvalue.i; break;
-    case Leaf::String : qDebug()<<"string"<<*leaf->lvalue.s; break;
-    case Leaf::Symbol : qDebug()<<"symbol"<<*leaf->lvalue.n; break;
+    case Leaf::Float : qDebug()<<"float"<<leaf->lvalue.f<<leaf->dynamic; break;
+    case Leaf::Integer : qDebug()<<"integer"<<leaf->lvalue.i<<leaf->dynamic; break;
+    case Leaf::String : qDebug()<<"string"<<*leaf->lvalue.s<<leaf->dynamic; break;
+    case Leaf::Symbol : qDebug()<<"symbol"<<*leaf->lvalue.n<<leaf->dynamic; break;
     case Leaf::Logical  : qDebug()<<"lop"<<leaf->op;
                     leaf->print(leaf->lvalue.l, level+1);
+                    if (leaf->op) // nonzero ?
                     leaf->print(leaf->rvalue.l, level+1);
                     break;
     case Leaf::Operation : qDebug()<<"cop"<<leaf->op;
@@ -78,7 +106,7 @@ void Leaf::print(Leaf *leaf, int level)
                     leaf->print(leaf->rvalue.l, level+1);
                     break;
     case Leaf::Function : qDebug()<<"function"<<leaf->function<<"series="<<*(leaf->series->lvalue.n);
-                    leaf->print(leaf->lvalue.l, level+1);
+                    if (leaf->lvalue.l) leaf->print(leaf->lvalue.l, level+1);
                     break;
     default:
         break;
@@ -86,16 +114,39 @@ void Leaf::print(Leaf *leaf, int level)
     }
 }
 
+static bool isCoggan(QString symbol)
+{
+    if (!symbol.compare("ctl", Qt::CaseInsensitive)) return true;
+    if (!symbol.compare("tsb", Qt::CaseInsensitive)) return true;
+    if (!symbol.compare("atl", Qt::CaseInsensitive)) return true;
+    return false;
+}
+
 bool Leaf::isNumber(DataFilter *df, Leaf *leaf)
 {
     switch(leaf->type) {
     case Leaf::Float : return true;
     case Leaf::Integer : return true;
-    case Leaf::String : return false;
+    case Leaf::String : 
+        {
+            // strings that evaluate as a date
+            // will be returned as a number of days
+            // since 1900!
+            QString string = *(leaf->lvalue.s);
+            if (QDate::fromString(string, "yyyy/MM/dd").isValid())
+                return true;
+            else {
+                return false;
+            }
+        }
     case Leaf::Symbol : 
         {
             QString symbol = *(leaf->lvalue.n);
             if (symbol == "isRun") return true;
+            else if (!symbol.compare("Date", Qt::CaseInsensitive)) return true;
+            else if (!symbol.compare("Today", Qt::CaseInsensitive)) return true;
+            else if (!symbol.compare("Current", Qt::CaseInsensitive)) return true;
+            else if (isCoggan(symbol)) return true;
             else return df->lookupType.value(symbol, false);
         }
         break;
@@ -147,8 +198,14 @@ void Leaf::validateFilter(DataFilter *df, Leaf *leaf)
             if (lookup == "") {
 
                 // isRun isa special, we may add more later (e.g. date)
-                if (symbol != "isRun") 
+                if (symbol.compare("Date", Qt::CaseInsensitive) && 
+                    symbol.compare("Today", Qt::CaseInsensitive) && 
+                    symbol.compare("Current", Qt::CaseInsensitive) && 
+                    symbol != "isRun" && !isCoggan(symbol))
                     DataFiltererrors << QString(QObject::tr("%1 is unknown")).arg(symbol);
+
+                if (symbol.compare("Current", Qt::CaseInsensitive))
+                    leaf->dynamic = true;
             }
         }
         break;
@@ -160,14 +217,24 @@ void Leaf::validateFilter(DataFilter *df, Leaf *leaf)
             QRegExp tizValidSymbols("^(power|hr)$", Qt::CaseInsensitive);
             QString symbol = *(leaf->series->lvalue.n); 
 
-            if (leaf->function == "best" && !bestValidSymbols.exactMatch(symbol)) 
-                DataFiltererrors << QString(QObject::tr("invalid data series for best(): %1")).arg(symbol);
+            if (leaf->function == "sts" || leaf->function == "lts" || leaf->function == "sb" || leaf->function == "rr") {
 
-            if (leaf->function == "tiz" && !tizValidSymbols.exactMatch(symbol)) 
-                DataFiltererrors << QString(QObject::tr("invalid data series for tiz(): %1")).arg(symbol);
+                // does the symbol exist though ?
+                QString lookup = df->lookupMap.value(symbol, "");
+                if (lookup == "") DataFiltererrors << QString(QObject::tr("%1 is unknown")).arg(symbol);
 
-            // now set the series type
-            leaf->seriesType = nameToSeries(symbol);
+            } else {
+
+                if (leaf->function == "best" && !bestValidSymbols.exactMatch(symbol)) 
+                    DataFiltererrors << QString(QObject::tr("invalid data series for best(): %1")).arg(symbol);
+
+                if (leaf->function == "tiz" && !tizValidSymbols.exactMatch(symbol)) 
+                    DataFiltererrors << QString(QObject::tr("invalid data series for tiz(): %1")).arg(symbol);
+
+                // now set the series type
+                leaf->seriesType = nameToSeries(symbol);
+            }
+
         }
         break;
 
@@ -203,14 +270,19 @@ void Leaf::validateFilter(DataFilter *df, Leaf *leaf)
     }
 }
 
-DataFilter::DataFilter(QObject *parent, Context *context) : QObject(parent), context(context), treeRoot(NULL)
+DataFilter::DataFilter(QObject *parent, Context *context) : QObject(parent), context(context), isdynamic(false), treeRoot(NULL)
 {
-    configUpdate();
-    connect(context, SIGNAL(configChanged()), this, SLOT(configUpdate()));
+    configChanged(CONFIG_FIELDS);
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
+    connect(context, SIGNAL(rideSelected(RideItem*)), this, SLOT(dynamicParse()));
 }
 
 QStringList DataFilter::parseFilter(QString query, QStringList *list)
 {
+    // remember where we apply
+    this->list = list;
+    isdynamic=false;
+
     //DataFilterdebug = 2; // no debug -- needs bison -t in src.pro
     root = NULL;
 
@@ -241,23 +313,21 @@ QStringList DataFilter::parseFilter(QString query, QStringList *list)
 
     } else { // yep! .. we have a winner!
 
+        isdynamic = treeRoot->isDynamic(treeRoot);
+
         // successfuly parsed, lets check semantics
         //treeRoot->print(treeRoot);
         emit parseGood();
 
-        // get all fields...
-        QList<SummaryMetrics> allRides = context->athlete->metricDB->getAllMetricsFor(QDateTime(), QDateTime());
-
+        // clear current filter list
         filenames.clear();
 
-        for (int i=0; i<allRides.count(); i++) {
+        // get all fields...
+        foreach(RideItem *item, context->athlete->rideCache->rides()) {
 
             // evaluate each ride...
-            QString f= allRides.at(i).getFileName();
-            double result = treeRoot->eval(this, treeRoot, allRides.at(i), f);
-            if (result) {
-                filenames << f;
-            }
+            if(treeRoot->eval(context, this, treeRoot, item))
+                filenames << item->fileName;
         }
         emit results(filenames);
         if (list) *list = filenames;
@@ -267,15 +337,37 @@ QStringList DataFilter::parseFilter(QString query, QStringList *list)
     return errors;
 }
 
+void
+DataFilter::dynamicParse()
+{
+    if (isdynamic) {
+        // need to reapply on current state
+
+        // clear current filter list
+        filenames.clear();
+
+        // get all fields...
+        foreach(RideItem *item, context->athlete->rideCache->rides()) {
+
+            // evaluate each ride...
+            if(treeRoot->eval(context, this, treeRoot, item))
+                filenames << item->fileName;
+        }
+        emit results(filenames);
+        if (list) *list = filenames;
+    }
+}
+
 void DataFilter::clearFilter()
 {
     if (treeRoot) {
         treeRoot->clear(treeRoot);
         treeRoot = NULL;
     }
+    isdynamic = false;
 }
 
-void DataFilter::configUpdate()
+void DataFilter::configChanged(qint32)
 {
     lookupMap.clear();
     lookupType.clear();
@@ -307,7 +399,7 @@ void DataFilter::configUpdate()
 
 }
 
-double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
+double Leaf::eval(Context *context, DataFilter *df, Leaf *leaf, RideItem *m)
 {
     switch(leaf->type) {
 
@@ -315,13 +407,13 @@ double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
     {
         switch (leaf->op) {
             case AND :
-                return (eval(df, leaf->lvalue.l, m, f) && eval(df, leaf->rvalue.l, m, f));
+                return (eval(context, df, leaf->lvalue.l, m) && eval(context, df, leaf->rvalue.l, m));
 
             case OR :
-                return (eval(df, leaf->lvalue.l, m, f) || eval(df, leaf->rvalue.l, m, f));
+                return (eval(context, df, leaf->lvalue.l, m) || eval(context, df, leaf->rvalue.l, m));
 
             default : // parenthesis
-                return (eval(df, leaf->lvalue.l, m, f));
+                return (eval(context, df, leaf->lvalue.l, m));
         }
     }
     break;
@@ -330,13 +422,28 @@ double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
     {
         double duration;
 
+        // pmc data ...
+        if (leaf->function == "sts" || leaf->function == "lts" || leaf->function == "sb" || leaf->function == "rr") {
+
+                // get metric technical name
+                QString symbol = *(leaf->series->lvalue.n); 
+                QString lookup = df->lookupMap.value(symbol, "");
+                PMCData *pmcData = context->athlete->getPMCFor(lookup);
+
+                if (leaf->function == "sts") return pmcData->sts(m->dateTime.date());
+                if (leaf->function == "lts") return pmcData->lts(m->dateTime.date());
+                if (leaf->function == "sb") return pmcData->sb(m->dateTime.date());
+                if (leaf->function == "rr") return pmcData->rr(m->dateTime.date());
+        }
+
+
         // GET LHS VALUE
         switch (leaf->lvalue.l->type) {
 
             default:
             case Leaf::Function :
             {
-                duration = eval(df, leaf->lvalue.l, m, f); // duration
+                duration = eval(context, df, leaf->lvalue.l, m); // duration
             }
             break;
 
@@ -346,7 +453,7 @@ double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
                 // get symbol value
                 if (df->lookupType.value(*(leaf->lvalue.l->lvalue.n)) == true) {
                     // numeric
-                    duration = m.getForSymbol(rename=df->lookupMap.value(*(leaf->lvalue.l->lvalue.n),""));
+                    duration = m->getForSymbol(rename=df->lookupMap.value(*(leaf->lvalue.l->lvalue.n),""));
                 } else {
                     duration = 0;
                 }
@@ -369,10 +476,10 @@ double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
         }
 
         if (leaf->function == "best")
-            return RideFileCache::best(df->context, f, leaf->seriesType, duration);
+            return RideFileCache::best(df->context, m->fileName, leaf->seriesType, duration);
 
         if (leaf->function == "tiz") // duration is really zone number
-            return RideFileCache::tiz(df->context, f, leaf->seriesType, duration); 
+            return RideFileCache::tiz(df->context, m->fileName, leaf->seriesType, duration); 
 
         // unknown function!?
         return 0 ;
@@ -392,7 +499,7 @@ double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
             default:
             case Leaf::Function :
             {
-                lhsdouble = eval(df, leaf->lvalue.l, m, f); // duration
+                lhsdouble = eval(context, df, leaf->lvalue.l, m); // duration
                 lhsisNumber=true;
             }
             break;
@@ -404,22 +511,49 @@ double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
 
                 // is it isRun ?
                 if (symbol == "isRun") {
-                    lhsdouble = m.isRun() ? 1 : 0;
+                    lhsdouble = m->isRun ? 1 : 0;
+                    lhsisNumber = true;
+
+                } else if (!symbol.compare("Current", Qt::CaseInsensitive)) {
+
+                    if (context->currentRideItem())
+                        lhsdouble = QDate(1900,01,01).
+                        daysTo(context->currentRideItem()->dateTime.date());
+                    else
+                        lhsdouble = 0;
+                    lhsisNumber = true;
+
+                } else if (!symbol.compare("Today", Qt::CaseInsensitive)) {
+
+                    lhsdouble = QDate(1900,01,01).daysTo(QDate::currentDate());
+                    lhsisNumber = true;
+
+                } else if (!symbol.compare("Date", Qt::CaseInsensitive)) {
+
+                    lhsdouble = QDate(1900,01,01).daysTo(m->dateTime.date());
+                    lhsisNumber = true;
+
+                } else if (isCoggan(symbol)) {
+                    // a coggan PMC metric
+                    PMCData *pmcData = context->athlete->getPMCFor("coggan_tss");
+                    if (!symbol.compare("ctl", Qt::CaseInsensitive)) lhsdouble = pmcData->lts(m->dateTime.date());
+                    if (!symbol.compare("atl", Qt::CaseInsensitive)) lhsdouble = pmcData->sts(m->dateTime.date());
+                    if (!symbol.compare("tsb", Qt::CaseInsensitive)) lhsdouble = pmcData->sb(m->dateTime.date());
                     lhsisNumber = true;
 
                 } else if ((lhsisNumber = df->lookupType.value(*(leaf->lvalue.l->lvalue.n))) == true) {
                     // get symbol value
                     // check metadata string to number first ...
-                    QString meta = m.getText(rename=df->lookupMap.value(*(leaf->lvalue.l->lvalue.n),""), "unknown");
+                    QString meta = m->getText(rename=df->lookupMap.value(*(leaf->lvalue.l->lvalue.n),""), "unknown");
                     if (meta == "unknown")
-                        lhsdouble = m.getForSymbol(rename=df->lookupMap.value(*(leaf->lvalue.l->lvalue.n),""));
+                        lhsdouble = m->getForSymbol(rename=df->lookupMap.value(*(leaf->lvalue.l->lvalue.n),""));
                     else
                         lhsdouble = meta.toDouble();
 
                     //qDebug()<<"symbol" << *(leaf->lvalue.l->lvalue.n) << "is" << lhsdouble << "via" << rename;
                 } else {
                     // string
-                    lhsstring = m.getText(rename=df->lookupMap.value(*(leaf->lvalue.l->lvalue.n),""), "");
+                    lhsstring = m->getText(rename=df->lookupMap.value(*(leaf->lvalue.l->lvalue.n),""), "");
                     //qDebug()<<"symbol" << *(leaf->lvalue.l->lvalue.n) << "is" << lhsstring << "via" << rename;
                 }
             }
@@ -436,8 +570,15 @@ double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
                 break;
 
             case Leaf::String :
-                lhsisNumber = false;
-                lhsstring = *(leaf->lvalue.l->lvalue.s);
+                QString string = *(leaf->lvalue.l->lvalue.s);
+                QDate date = QDate::fromString(string, "yyyy/MM/dd");
+                if (date.isValid()) {
+                    lhsdouble = QDate(1900,01,01).daysTo(date);
+                    lhsisNumber = true;
+                } else {
+                    lhsstring = string;
+                    lhsisNumber = false;
+                }
                 break;
 
             break;
@@ -449,7 +590,7 @@ double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
             default:
             case Leaf::Function :
             {
-                rhsdouble = eval(df, leaf->rvalue.l, m, f);
+                rhsdouble = eval(context, df, leaf->rvalue.l, m);
                 rhsisNumber=true;
             }
             break;
@@ -461,21 +602,49 @@ double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
                 // is it isRun ?
                 if (symbol == "isRun") {
 
-                    rhsdouble = m.isRun() ? 1 : 0;
+                    rhsdouble = m->isRun ? 1 : 0;
+                    rhsisNumber = true;
+
+                } else if (!symbol.compare("Current", Qt::CaseInsensitive)) {
+
+                    if (context->currentRideItem())
+                        rhsdouble = QDate(1900,01,01).
+                        daysTo(context->currentRideItem()->dateTime.date());
+                    else
+                        rhsdouble = 0;
+                    rhsisNumber = true;
+
+                } else if (!symbol.compare("Today", Qt::CaseInsensitive)) {
+
+                    rhsdouble = QDate(1900,01,01).daysTo(QDate::currentDate());
+                    rhsisNumber = true;
+
+                } else if (!symbol.compare("Date", Qt::CaseInsensitive)) {
+
+                    rhsdouble = QDate(1900,01,01).daysTo(m->dateTime.date());
+                    rhsisNumber = true;
+
+                } else if (isCoggan(symbol)) {
+ 
+                    // a coggan PMC metric
+                    PMCData *pmcData = context->athlete->getPMCFor("coggan_tss");
+                    if (!symbol.compare("ctl", Qt::CaseInsensitive)) rhsdouble = pmcData->lts(m->dateTime.date());
+                    if (!symbol.compare("atl", Qt::CaseInsensitive)) rhsdouble = pmcData->sts(m->dateTime.date());
+                    if (!symbol.compare("tsb", Qt::CaseInsensitive)) rhsdouble = pmcData->sb(m->dateTime.date());
                     rhsisNumber = true;
 
                 // get symbol value
                 } else if ((rhsisNumber=df->lookupType.value(*(leaf->rvalue.l->lvalue.n))) == true) {
                     // numeric
-                    QString meta = m.getText(rename=df->lookupMap.value(*(leaf->rvalue.l->lvalue.n),""), "unknown");
+                    QString meta = m->getText(rename=df->lookupMap.value(*(leaf->rvalue.l->lvalue.n),""), "unknown");
                     if (meta == "unknown")
-                        rhsdouble = m.getForSymbol(rename=df->lookupMap.value(*(leaf->rvalue.l->lvalue.n),""));
+                        rhsdouble = m->getForSymbol(rename=df->lookupMap.value(*(leaf->rvalue.l->lvalue.n),""));
                     else
                         rhsdouble = meta.toDouble();
                     //qDebug()<<"symbol" << *(leaf->rvalue.l->lvalue.n) << "is" << rhsdouble << "via" << rename;
                 } else {
                     // string
-                    rhsstring = m.getText(rename=df->lookupMap.value(*(leaf->rvalue.l->lvalue.n),""), "notfound");
+                    rhsstring = m->getText(rename=df->lookupMap.value(*(leaf->rvalue.l->lvalue.n),""), "notfound");
                     //qDebug()<<"symbol" << *(leaf->rvalue.l->lvalue.n) << "is" << rhsstring << "via" << rename;
                 }
             }
@@ -492,8 +661,15 @@ double Leaf::eval(DataFilter *df, Leaf *leaf, SummaryMetrics m, QString f)
                 break;
 
             case Leaf::String :
-                rhsisNumber = false;
-                rhsstring = *(leaf->rvalue.l->lvalue.s);
+                QString string = *(leaf->rvalue.l->lvalue.s);
+                QDate date = QDate::fromString(string, "yyyy/MM/dd");
+                if (date.isValid()) {
+                    rhsdouble = QDate(1900,01,01).daysTo(date);
+                    rhsisNumber = true;
+                } else {
+                    rhsstring = string;
+                    rhsisNumber = false;
+                }
                 break;
 
             break;

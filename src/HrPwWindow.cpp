@@ -23,7 +23,8 @@
 #include "HrPwPlot.h"
 #include "SmallPlot.h"
 #include "RideItem.h"
-#include <math.h>
+#include "HelpWhatsThis.h"
+#include <cmath>
 #include <stdlib.h>
 #include <QVector>
 #include <QtGui>
@@ -86,6 +87,8 @@ HrPwWindow::HrPwWindow(Context *context) :
     // main plot
     hrPwPlot = new HrPwPlot(context, this);
 
+    HelpWhatsThis *help = new HelpWhatsThis(hrPwPlot);
+    hrPwPlot->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_HRvsPw));
 
     // tooltip on hover over point
     hrPwPlot->tooltip = new LTMToolTip(QwtPlot::xBottom, QwtPlot::yLeft,
@@ -122,6 +125,8 @@ HrPwWindow::HrPwWindow(Context *context) :
     // the controls
     //
     QWidget *c = new QWidget(this);
+    HelpWhatsThis *helpConfig = new HelpWhatsThis(c);
+    c->setWhatsThis(helpConfig->getWhatsThisText(HelpWhatsThis::ChartRides_HRvsPw));
     setControls(c);
     QFormLayout *cl = new QFormLayout(c);
 
@@ -189,14 +194,15 @@ HrPwWindow::HrPwWindow(Context *context) :
     connect(rDelayEdit, SIGNAL(editingFinished()), this, SLOT(setrDelayFromLineEdit()));
     connect(rDelaySlider, SIGNAL(valueChanged(int)), this, SLOT(setrDelayFromSlider()));
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(rideChanged(RideItem*)), this, SLOT(rideSelected()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 
     // set colors etc on first run
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 void
-HrPwWindow::configChanged()
+HrPwWindow::configChanged(qint32)
 {
     setProperty("color", GColor(CPLOTBACKGROUND));
 }

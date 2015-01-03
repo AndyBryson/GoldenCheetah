@@ -24,6 +24,7 @@
 #include "IntervalNavigatorProxy.h"
 #include "SearchFilterBox.h"
 #include "TabView.h"
+#include "HelpWhatsThis.h"
 
 #include <QtGui>
 #include <QString>
@@ -54,10 +55,12 @@ IntervalNavigator::IntervalNavigator(Context *context, QString type, bool mainwi
     if (mainwindow) mainLayout->setContentsMargins(0,0,0,0);
     else mainLayout->setContentsMargins(2,2,2,2); // so we can resize!
 
+#ifdef GC_HAVE_INTERVALS
     if (type == "Best")
         sqlModel = context->athlete->sqlBestIntervalsModel;
     else
         sqlModel= context->athlete->sqlRouteIntervalsModel;
+#endif
 
     //QString filter = QString("type='%1'").arg(type);
     //context->athlete->sqlIntervalsModel->setFilter(filter);
@@ -81,6 +84,8 @@ IntervalNavigator::IntervalNavigator(Context *context, QString type, bool mainwi
     if (!mainwindow) {
         searchFilterBox = new SearchFilterBox(this, context, false);
         mainLayout->addWidget(searchFilterBox);
+        HelpWhatsThis *searchHelp = new HelpWhatsThis(searchFilterBox);
+        searchFilterBox->setWhatsThis(searchHelp->getWhatsThisText(HelpWhatsThis::SearchFilterBox));
     }
 #endif
 
@@ -121,10 +126,10 @@ IntervalNavigator::IntervalNavigator(Context *context, QString type, bool mainwi
 
 
     // refresh when database is updated
-    connect(context->athlete->metricDB, SIGNAL(dataChanged()), this, SLOT(refresh()));
+    //XXXREFRESH connect(context->athlete->metricDB, SIGNAL(dataChanged()), this, SLOT(refresh()));
 
     // refresh when config changes (metric/imperial?)
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
     // refresh when rides added/removed
     connect(context, SIGNAL(rideAdded(RideItem*)), this, SLOT(refresh()));
     connect(context, SIGNAL(rideDeleted(RideItem*)), this, SLOT(refresh()));
@@ -151,7 +156,7 @@ IntervalNavigator::IntervalNavigator(Context *context, QString type, bool mainwi
     setAcceptDrops(true);
 
     // lets go
-    configChanged();
+    configChanged(CONFIG_APPEARANCE | CONFIG_NOTECOLOR);
 }
 
 IntervalColumnChooser::IntervalColumnChooser(QList<QString>&logicalHeadings)
@@ -225,7 +230,7 @@ IntervalNavigator::~IntervalNavigator()
 }
 
 void
-IntervalNavigator::configChanged()
+IntervalNavigator::configChanged(qint32)
 {
     ColorEngine ce(context);
     fontHeight = QFontMetrics(QFont()).height();
@@ -802,11 +807,8 @@ IntervalNavigator::setColumnWidth(int x, bool resized, int logicalIndex, int old
 
 }
 
-
-
-
 //
-// This function is called for every row in the metricDB
+// This function is called for every row in the ride list
 // and wants to know what group string or 'name' you want
 // to put this row into. It is passed the heading value
 // as a string, and the row value for this column.

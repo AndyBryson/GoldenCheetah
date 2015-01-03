@@ -25,6 +25,7 @@
 #include "Settings.h"
 #include "Colors.h"
 #include "TabView.h"
+#include "HelpWhatsThis.h"
 
 #include <QtGui>
 #include <QString>
@@ -92,6 +93,8 @@ RideEditor::RideEditor(Context *context) : GcChartWindow(context), data(NULL), r
     toolbar->addAction(saveAct);
 
     toolbar->addSeparator();
+    HelpWhatsThis *helpToolbar = new HelpWhatsThis(toolbar);
+    toolbar->setWhatsThis(helpToolbar->getWhatsThisText(HelpWhatsThis::ChartRides_Editor));
 
     // undo and redo deliberately at a distance from the
     // save icon, since accidentally hitting the wrong
@@ -135,6 +138,9 @@ RideEditor::RideEditor(Context *context) : GcChartWindow(context), data(NULL), r
     table->setSelectionMode(QAbstractItemView::ContiguousSelection);
     table->installEventFilter(this);
 
+    HelpWhatsThis *helpTable = new HelpWhatsThis(table);
+    table->setWhatsThis(helpTable->getWhatsThisText(HelpWhatsThis::ChartRides_Editor));
+
     // prettify (and make anomalies more visible)
     table->setGridStyle(Qt::NoPen);
 
@@ -151,7 +157,7 @@ RideEditor::RideEditor(Context *context) : GcChartWindow(context), data(NULL), r
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
     connect(context, SIGNAL(rideDirty(RideItem*)), this, SLOT(rideDirty()));
     connect(context, SIGNAL(rideClean(RideItem*)), this, SLOT(rideClean()));
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 
     // put find tool and anomaly list in the controls
     findTool = new FindDialog(this);
@@ -163,11 +169,11 @@ RideEditor::RideEditor(Context *context) : GcChartWindow(context), data(NULL), r
     connect(anomalyTool->anomalyList, SIGNAL(itemSelectionChanged()), this, SLOT(anomalySelected()));
 
     // set initial color config
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 void
-RideEditor::configChanged() 
+RideEditor::configChanged(qint32) 
 {
     setProperty("color", GColor(CPLOTBACKGROUND));
 
@@ -1473,7 +1479,14 @@ RideEditor::endCommand(bool undo, RideCommand *cmd)
         default:
             break;
     }
-    if (!inLUW) anomalyTool->check(); // refresh the anomalies...
+
+    // check for anomalies
+    if (!inLUW) {
+        anomalyTool->check();
+
+        // let everyone know we changed some data
+        ride->notifyRideDataChanged();
+    }
 }
 
 void

@@ -23,10 +23,9 @@
 
 #include "Context.h"
 #include "Athlete.h"
-#include "MetricAggregator.h"
-#include "SummaryMetrics.h"
 #include "ChartSettings.h"
 #include "ColorButton.h"
+#include "Colors.h"
 #include "PowerHist.h"
 #include "RideFile.h"
 #include "RideFileCache.h"
@@ -35,7 +34,6 @@
 
 #include "Zones.h"
 #include "HrZones.h"
-#include "SummaryMetrics.h"
 
 #include "Season.h"
 #include "SeasonParser.h"
@@ -45,6 +43,7 @@
 #endif
 
 #include <QtGui>
+#include <QCheckBox>
 #include <QFormLayout>
 #include <QTextEdit>
 #include <QHeaderView>
@@ -151,6 +150,7 @@ class HistogramWindow : public GcChartWindow
 
     public slots:
 
+        void refreshUpdate(QDate);
         void rideSelected();
         void rideAddorRemove(RideItem*);
         void intervalSelected();
@@ -181,7 +181,7 @@ class HistogramWindow : public GcChartWindow
         void compareChanged();
 
         // update on config
-        void configChanged();
+        void configChanged(qint32);
 
     protected slots:
 
@@ -193,7 +193,6 @@ class HistogramWindow : public GcChartWindow
         void updateChart();
 
         void treeSelectionChanged();
-        void treeSelectionTimeout();
 
     private:
 
@@ -264,10 +263,9 @@ class HistogramWindow : public GcChartWindow
         // scrolls up and down metric/total treewidget. This is
         // to have a slight lag before redrawing since it is expensive
         // and users are likely to move up and down with the arrow keys
-        QTimer *lagger;
         ColorButton *colorButton;
-        QList<SummaryMetrics> results;
         DateRange last;
+        QTime lastupdate;
 };
 
 #endif // _GC_HistogramWindow_h

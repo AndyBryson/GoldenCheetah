@@ -25,7 +25,7 @@
 #include <QtAlgorithms>
 #include <qcolor.h>
 #include <assert.h>
-#include <math.h>
+#include <cmath>
 
 
 // the infinity endpoints are indicated with extreme date ranges
@@ -514,7 +514,7 @@ int Zones::whichZone(int rnum, double value) const
     }
 
     // if we got here either it is negative, nan, inf or way high
-    if (value < 0 || isnan(value)) return 0; else return range.zones.size()-1;
+    if (value < 0 || std::isnan(value)) return 0; else return range.zones.size()-1;
 }
 
 void Zones::zoneInfo(int rnum, int znum, QString &name, QString &description, int &low, int &high) const
@@ -913,7 +913,7 @@ int Zones::deleteRange(int rnum) {
 }
 
 quint16
-Zones::getFingerprint(Context *context) const
+Zones::getFingerprint() const
 {
     quint64 x = 0;
     for (int i=0; i<ranges.size(); i++) {
@@ -936,14 +936,13 @@ Zones::getFingerprint(Context *context) const
     }
     QByteArray ba = QByteArray::number(x);
 
-    // if default athlete weight changes everything needs to change !
-    double weight = appsettings->cvalue(context->athlete->cyclist, GC_WEIGHT, "0.0").toDouble();
-    return qChecksum(ba, ba.length()) + weight + (appsettings->value(this, GC_ELEVATION_HYSTERESIS).toDouble()*10);
+    // we spot other things separately
+    return qChecksum(ba, ba.length());
 }
 
 // get fingerprint just for the range that applies on this date
 quint16
-Zones::getFingerprint(Context *context, QDate forDate) const
+Zones::getFingerprint(QDate forDate) const
 {
     quint64 x = 0;
 
@@ -964,8 +963,7 @@ Zones::getFingerprint(Context *context, QDate forDate) const
     }
     QByteArray ba = QByteArray::number(x);
 
-    // if default athlete weight changes everything needs to change !
-    double weight = appsettings->cvalue(context->athlete->cyclist, GC_WEIGHT, "0.0").toDouble();
-    return qChecksum(ba, ba.length()) + weight + (appsettings->value(this, GC_ELEVATION_HYSTERESIS).toDouble()*10);
+    // limits to only zones now as we sport weight separately
+    return qChecksum(ba, ba.length());
 }
 

@@ -21,11 +21,11 @@
 #include "MainWindow.h"
 #include "Context.h"
 #include "Athlete.h"
+#include "RideCache.h"
 #include "RideItem.h"
 #include "IntervalItem.h"
 #include "RideFile.h"
 #include "RideFileCache.h"
-#include "SummaryMetrics.h"
 #include "Settings.h"
 #include "Zones.h"
 #include "HrZones.h"
@@ -122,11 +122,11 @@ PowerHist::PowerHist(Context *context, bool rangemode) :
     setAxisMaxMinor(xBottom, 0);
     setAxisMaxMinor(yLeft, 0);
 
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 void
-PowerHist::configChanged()
+PowerHist::configChanged(qint32)
 {
     // plot background
     setCanvasBackground(GColor(CPLOTBACKGROUND));
@@ -349,7 +349,7 @@ PowerHist::refreshPaceZoneLabels()
     }
     pacezoneLabels.clear();
 
-    if (!rideItem || !rideItem->isRun()) return;
+    if (!rideItem || !rideItem->isRun) return;
 
     if (series == RideFile::kph && context->athlete->paceZones()) {
         const PaceZones *zones = context->athlete->paceZones();
@@ -464,12 +464,12 @@ PowerHist::recalcCompare()
 
             }
 
-        } else if (series == RideFile::kph && !(zoned == true && (!rideItem || rideItem->isRun()))) {
+        } else if (series == RideFile::kph && !(zoned == true && (!rideItem || rideItem->isRun))) {
 
             array = &cid.kphArray;
             arrayLength = cid.kphArray.size();
 
-        } else if (series == RideFile::kph && zoned == true && (!rideItem || rideItem->isRun())) {
+        } else if (series == RideFile::kph && zoned == true && (!rideItem || rideItem->isRun)) {
 
             if (cpzoned) {
 
@@ -915,7 +915,7 @@ PowerHist::recalc(bool force)
         // pace scale draw
         int paceRange;
         if (series == RideFile::kph && zoned && rideItem &&
-            rideItem->isRun() && context->athlete->paceZones() &&
+            rideItem->isRun && context->athlete->paceZones() &&
             (paceRange=context->athlete->paceZones()->whichRange(rideItem->dateTime.date())) != -1) {
 
             if (cpzoned) {
@@ -971,7 +971,7 @@ PowerHist::recalc(bool force)
     }
 
     setYMax();
-    configChanged(); // setup the curve colors to appropriate values
+    configChanged(CONFIG_APPEARANCE); // setup the curve colors to appropriate values
     updatePlot();
 }
 
@@ -1046,13 +1046,13 @@ PowerHist::binData(HistData &standard, QVector<double>&x, // x-axis for data
             selectedArray = &standard.hrZoneSelectedArray;
         }
 
-    } else if (series == RideFile::kph && !(zoned == true && (!rideItem || rideItem->isRun()))) {
+    } else if (series == RideFile::kph && !(zoned == true && (!rideItem || rideItem->isRun))) {
 
         array = &standard.kphArray;
         arrayLength = standard.kphArray.size();
         selectedArray = &standard.kphSelectedArray;
 
-    } else if (series == RideFile::kph && zoned == true && (!rideItem || rideItem->isRun())) {
+    } else if (series == RideFile::kph && zoned == true && (!rideItem || rideItem->isRun)) {
 
         if (cpzoned) {
             array = &standard.paceCPZoneArray;
@@ -1561,8 +1561,18 @@ PowerHist::setDataFromCompare(QString totalMetric, QString distMetric)
         // set the data even if not checked
         HistData add;
 
+        // set the specification
+        FilterSet fs;
+#ifdef GC_HAVE_LUCENE
+        fs.addFilter(context->isfiltered, context->filters);
+        fs.addFilter(context->ishomefiltered, context->homeFilters);
+#endif
+        Specification spec;
+        spec.setDateRange(DateRange(cd.start,cd.end));
+        spec.setFilterSet(fs);
+
         // set it from the metric
-        setData(cd.metrics,  totalMetric, distMetric, false, QStringList(), &add);
+        setData(spec,  totalMetric, distMetric, &add);
 
         // add to the list
         compareData << add;
@@ -1602,8 +1612,7 @@ PowerHist::setDataFromCompare(QString totalMetric, QString distMetric)
 }
 
 void 
-PowerHist::setData(QList<SummaryMetrics>&results, QString totalMetric, QString distMetric,
-                     bool isFiltered, QStringList files, HistData *data)
+PowerHist::setData(Specification specification, QString totalMetric, QString distMetric, HistData *data)
 {
     // what metrics are we plotting?
     source = Metric;
@@ -1622,22 +1631,19 @@ PowerHist::setData(QList<SummaryMetrics>&results, QString totalMetric, QString d
 
     // LOOP THRU VALUES -- REPEATED WITH CUT AND PASTE BELOW
     // SO PLEASE MAKE SAME CHANGES TWICE (SORRY)
-    foreach(SummaryMetrics x, results) { 
+    foreach(RideItem *x, context->athlete->rideCache->rides()) { 
 
-        // skip filtered values
-        if (isFiltered && !files.contains(x.getFileName())) continue;
-
-        // and global filter too
-        if (context->isfiltered && !context->filters.contains(x.getFileName())) continue;
+        // not passed
+        if (!specification.pass(x)) continue;
 
         // get computed value
-        double v = x.getForSymbol(distMetric, context->athlete->useMetricUnits);
+        double v = x->getForSymbol(distMetric, context->athlete->useMetricUnits);
 
         // ignore no temp files
         if ((distMetric == "average_temp" || distMetric == "max_temp") && v == RideFile::NoTemp) continue;
 
         // clean up dodgy values
-        if (isnan(v) || isinf(v)) v = 0;
+        if (std::isnan(v) || std::isinf(v)) v = 0;
 
         // seconds to minutes
         if (m->units(context->athlete->useMetricUnits) == "seconds" ||
@@ -1663,22 +1669,19 @@ PowerHist::setData(QList<SummaryMetrics>&results, QString totalMetric, QString d
 
     // LOOP THRU VALUES -- REPEATED WITH CUT AND PASTE ABOVE
     // SO PLEASE MAKE SAME CHANGES TWICE (SORRY)
-    foreach(SummaryMetrics x, results) { 
+    foreach(RideItem *x, context->athlete->rideCache->rides()) { 
 
-        // skip filtered values
-        if (isFiltered && !files.contains(x.getFileName())) continue;
-
-        // and global filter too
-        if (context->isfiltered && !context->filters.contains(x.getFileName())) continue;
+        // does it match
+        if (!specification.pass(x)) continue;
 
         // get computed value
-        double v = x.getForSymbol(distMetric, context->athlete->useMetricUnits);
+        double v = x->getForSymbol(distMetric, context->athlete->useMetricUnits);
 
         // ignore no temp files
         if ((distMetric == "average_temp" || distMetric == "max_temp") && v == RideFile::NoTemp) continue;
 
         // clean up dodgy values
-        if (isnan(v) || isinf(v)) v = 0;
+        if (std::isnan(v) || std::isinf(v)) v = 0;
 
         // seconds to minutes
         if (m->units(context->athlete->useMetricUnits) == "seconds" ||
@@ -1694,7 +1697,7 @@ PowerHist::setData(QList<SummaryMetrics>&results, QString totalMetric, QString d
         // there will be some loss of precision due to totalising
         // a double in an int, but frankly that should be minimal
         // since most values of note are integer based anyway.
-        double t = x.getForSymbol(totalMetric, context->athlete->useMetricUnits);
+        double t = x->getForSymbol(totalMetric, context->athlete->useMetricUnits);
 
         // totalise in minutes
         if (tm->units(context->athlete->useMetricUnits) == "seconds" ||
@@ -2177,7 +2180,7 @@ PowerHist::setParameterAxisTitle()
             break;
 
         case RideFile::kph:
-            if (zoned && (!rideItem || rideItem->isRun()))
+            if (zoned && (!rideItem || rideItem->isRun))
                 axislabel = tr("Pace zone");
             else
                 axislabel = QString(tr("Speed (%1)")).arg(context->athlete->useMetricUnits ? tr("kph") : tr("mph"));
@@ -2222,7 +2225,7 @@ PowerHist::setSeries(RideFile::SeriesType x)
 {
     // user selected a different series to plot
     series = x;
-    configChanged(); // set colors
+    configChanged(CONFIG_APPEARANCE); // set colors
     setParameterAxisTitle();
 }
 
@@ -2278,7 +2281,7 @@ PowerHist::pointHover(QwtPlotCurve *curve, int index)
                 // for speed series add pace with units according to settings
                 // only when there is no ride (home) or the activity is a run.
                 QString paceStr;
-                if (series == RideFile::kph && (!rideItem || rideItem->isRun())) {
+                if (series == RideFile::kph && (!rideItem || rideItem->isRun)) {
                     bool metricPace = appsettings->value(this, GC_PACE, true).toBool();
                     QString paceunit = metricPace ? tr("min/km") : tr("min/mile");
                     paceStr = tr("\n%1 Pace (%2)").arg(context->athlete->useMetricUnits ? kphToPace(xvalue, metricPace) : mphToPace(xvalue, metricPace)).arg(paceunit);
@@ -2331,5 +2334,5 @@ PowerHist::isZoningEnabled()
     return (zoned == true &&
             (series == RideFile::watts || series == RideFile::wattsKg ||
             series == RideFile::hr ||
-            (series == RideFile::kph && (!rideItem || rideItem->isRun()))));
+            (series == RideFile::kph && (!rideItem || rideItem->isRun))));
 }

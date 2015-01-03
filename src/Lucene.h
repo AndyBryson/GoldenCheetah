@@ -22,10 +22,10 @@
 #include <QObject>
 #include <QString>
 #include <QDir>
+#include <QMutex>
 
 #include "Context.h"
 #include "RideMetadata.h"
-#include "SummaryMetrics.h"
 #include "RideFile.h"
 
 #include "CLucene.h"
@@ -49,6 +49,7 @@ public:
     // Create/Delete Metrics
 	bool importRide(RideFile *ride);
     bool deleteRide(QString);
+    bool exists(QString);
     void optimise(); // for optimising the index once updated
 
     QStringList &files() { return filenames; }
@@ -65,6 +66,10 @@ signals:
 private:
     Context *context;
     QDir dir;
+
+    // when multithreaded only once indexwriter
+    // can be active at any one time
+    QMutex mutex;
 
     // CLucene objects
     lucene::analysis::standard::StandardAnalyzer analyzer;

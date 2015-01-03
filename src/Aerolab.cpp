@@ -27,7 +27,7 @@
 #include "Units.h"
 #include "Colors.h"
 
-#include <math.h>
+#include <cmath>
 #include <qwt_series_data.h>
 #include <qwt_legend.h>
 #include <qwt_plot_curve.h>
@@ -273,12 +273,12 @@ Aerolab::Aerolab(
   grid->enableX(false);
   grid->attach(this);
 
-  configChanged();
+  configChanged(CONFIG_APPEARANCE);
 }
 
 
 void
-Aerolab::configChanged()
+Aerolab::configChanged(qint32)
 {
 
   // set colors

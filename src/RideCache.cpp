@@ -18,10 +18,12 @@
 
 #include "RideCache.h"
 
-#include "DBAccess.h"
-
 #include "Context.h"
 #include "Athlete.h"
+#include "RideFileCache.h"
+#include "RideCacheModel.h"
+#include "Specification.h"
+
 #include "Route.h"
 #include "RouteWindow.h"
 
@@ -31,13 +33,21 @@
 
 #include "JsonRideFile.h" // for DATETIME_FORMAT
 
+#ifdef SLOW_REFRESH
+#include "unistd.h"
+#endif
+
+// for sorting
+bool rideCacheGreaterThan(const RideItem *a, const RideItem *b) { return a->dateTime > b->dateTime; }
+bool rideCacheLessThan(const RideItem *a, const RideItem *b) { return a->dateTime < b->dateTime; }
+
 RideCache::RideCache(Context *context) : context(context)
 {
     progress_ = 100;
     exiting = false;
 
     // get the new zone configuration fingerprint
-    fingerprint = static_cast<unsigned long>(context->athlete->zones()->getFingerprint(context))
+    fingerprint = static_cast<unsigned long>(context->athlete->zones()->getFingerprint())
                   + static_cast<unsigned long>(context->athlete->paceZones()->getFingerprint())
                   + static_cast<unsigned long>(context->athlete->hrZones()->getFingerprint());
 
@@ -50,6 +60,10 @@ RideCache::RideCache(Context *context) : context(context)
         QDateTime dt;
         if (RideFile::parseRideFileName(name, &dt)) {
             last = new RideItem(context->athlete->home->activities().canonicalPath(), name, dt, context);
+
+            connect(last, SIGNAL(rideDataChanged()), this, SLOT(itemChanged()));
+            connect(last, SIGNAL(rideMetadataChanged()), this, SLOT(itemChanged()));
+
             rides_ << last;
         }
     }
@@ -57,13 +71,17 @@ RideCache::RideCache(Context *context) : context(context)
     // load the store - will unstale once cache restored
     load();
 
+    // set model once we have the basics
+    model_ = new RideCacheModel(context, this);
+
     // now refresh just in case.
     refresh();
 
     // do we have any stale items ?
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 
     // future watching
+    connect(&watcher, SIGNAL(finished()), this, SLOT(save()));
     connect(&watcher, SIGNAL(finished()), context, SLOT(notifyRefreshEnd()));
     connect(&watcher, SIGNAL(started()), context, SLOT(notifyRefreshStart()));
     connect(&watcher, SIGNAL(progressValueChanged(int)), this, SLOT(progressing(int)));
@@ -81,20 +99,40 @@ RideCache::~RideCache()
 }
 
 void
-RideCache::configChanged()
+RideCache::configChanged(qint32 what)
 {
-    // this is the overall config fingerprint, not for a specific
-    // ride. We now refresh only when the zones change, and refresh
-    // a single ride only when the zones that apply to that ride change
-    unsigned long prior = fingerprint;
+    // if the wbal formula changed invalidate all cached values
+    if (what & CONFIG_WBAL) {
+        foreach(RideItem *item, rides()) {
+            if (item->isOpen()) item->ride()->wstale=true;
+        }
+    }
 
-    // get the new zone configuration fingerprint
-    fingerprint = static_cast<unsigned long>(context->athlete->zones()->getFingerprint(context))
-                  + static_cast<unsigned long>(context->athlete->paceZones()->getFingerprint())
-                  + static_cast<unsigned long>(context->athlete->hrZones()->getFingerprint());
+    // if zones or weight has changed refresh metrics
+    // will add more as they come
+    qint32 want = CONFIG_ATHLETE | CONFIG_ZONES | CONFIG_NOTECOLOR | CONFIG_GENERAL;
+    if (what & want) {
+        refresh();
+    }
+}
 
-    // if zones etc changed then recalculate metrics
-    if (prior != fingerprint) refresh();
+void
+RideCache::itemChanged()
+{
+    // one of our kids changed, they grow up so fast.
+    // NOTE ONLY CONNECT THIS TO RIDEITEMS !!!
+    // BECAUSE IT IS ASSUMED BELOW THE SENDER IS A RIDEITEM
+    RideItem *item = static_cast<RideItem*>(QObject::sender());
+
+    // the model is particularly interested in ANY item that changes
+    emit itemChanged(item);
+
+    // current ride changed is more relevant for the charts lets notify
+    // them the ride they're showing has changed 
+    if (item == context->currentRideItem()) {
+
+        context->notifyRideChanged(item);
+    }
 }
 
 // add a new ride
@@ -108,6 +146,9 @@ RideCache::addRide(QString name, bool dosignal)
     // new ride item
     RideItem *last = new RideItem(context->athlete->home->activities().canonicalPath(), name, dt, context);
 
+    connect(last, SIGNAL(rideDataChanged()), this, SLOT(itemChanged()));
+    connect(last, SIGNAL(rideMetadataChanged()), this, SLOT(itemChanged()));
+
     // now add to the list, or replace if already there
     bool added = false;
     for (int index=0; index < rides_.count(); index++) {
@@ -117,8 +158,13 @@ RideCache::addRide(QString name, bool dosignal)
         }
     }
 
-    if (!added) rides_ << last;
-    qSort(rides_); // sort by date
+    // add and sort, model needs to know !
+    if (!added) {
+        model_->beginReset();
+        rides_ << last;
+        qSort(rides_.begin(), rides_.end(), rideCacheLessThan);
+        model_->endReset();
+    }
 
     // refresh metrics for *this ride only* 
     last->refresh();
@@ -171,7 +217,10 @@ RideCache::removeCurrentRide()
     // remove from the cache, before deleting it this is so
     // any aggregating functions no longer see it, when recalculating
     // during aride deleted operation
+    // but model needs to know about this!
+    model_->startRemove(index);
     rides_.remove(index, 1);
+    model_->endRemove(index);
 
     // delete the file by renaming it
     QString strOldFileName = context->ride->fileName;
@@ -185,8 +234,8 @@ RideCache::removeCurrentRide()
     QFile::remove(context->athlete->home->fileBackup().canonicalPath() + "/" + strNewName);
 
     if (!file.rename(context->athlete->home->fileBackup().canonicalPath() + "/" + strNewName)) {
-        QMessageBox::critical(NULL, "Rename Error", tr("Can't rename %1 to %2")
-            .arg(strOldFileName).arg(strNewName));
+        QMessageBox::critical(NULL, "Rename Error", tr("Can't rename %1 to %2 in %3")
+            .arg(strOldFileName).arg(strNewName).arg(context->athlete->home->fileBackup().canonicalPath()));
     }
 
     // remove any other derived/additional files; notes, cpi etc (they can only exist in /cache )
@@ -209,8 +258,8 @@ RideCache::removeCurrentRide()
     context->notifyRideDeleted(todelete);
 
     // ..but before MEMORY cleared
-    todelete->close();
-    delete todelete;
+    // todelete->close(); // <<< pointHover crash in AllPlot
+    todelete->deleteLater();
 
     // now we can update
     context->mainWindow->setUpdatesEnabled(true);
@@ -220,118 +269,74 @@ RideCache::removeCurrentRide()
     context->notifyRideSelected(select);
 }
 
-// Escape special characters (JSON compliance)
-static QString protect(const QString string)
-{
-    QString s = string;
-    s.replace("\\", "\\\\"); // backslash
-    s.replace("\"", "\\\""); // quote
-    s.replace("\t", "\\t");  // tab
-    s.replace("\n", "\\n");  // newline
-    s.replace("\r", "\\r");  // carriage-return
-    s.replace("\b", "\\b");  // backspace
-    s.replace("\f", "\\f");  // formfeed
-    s.replace("/", "\\/");   // solidus
-
-    // add a trailing space to avoid conflicting with GC special tokens
-    s += " "; 
-
-    return s;
-}
-
 // NOTE:
 // We use a bison parser to reduce memory
 // overhead and (believe it or not) simplicity
-// RideCache::load() -- see RideDB.y
+// RideCache::load() and save() -- see RideDB.y
 
-// save cache to disk, "cache/rideDB.json"
-void RideCache::save()
+// export metrics to csv, for users to play with R, Matlab, Excel etc
+void
+RideCache::writeAsCSV(QString filename)
 {
+    const RideMetricFactory &factory = RideMetricFactory::instance();
+    QVector<const RideMetric *> indexed(factory.metricCount());
 
-    // now save data away
-    QFile rideDB(QString("%1/rideDB.json").arg(context->athlete->home->cache().canonicalPath()));
-    if (rideDB.open(QFile::WriteOnly)) {
+    // get metrics indexed in same order as the array
+    foreach(QString name, factory.allMetrics()) {
 
-        const RideMetricFactory &factory = RideMetricFactory::instance();
+        const RideMetric *m = factory.rideMetric(name);
+        indexed[m->index()] = m;
+    }
 
-        // ok, lets write out the cache
-        QTextStream stream(&rideDB);
-        stream.setCodec("UTF-8");
-        stream.setGenerateByteOrderMark(true);
+    // open file.. truncate if exists already
+    QFile file(filename);
+    file.open(QFile::WriteOnly);
+    file.resize(0);
+    QTextStream out(&file);
 
-        stream << "{" ;
-        stream << "\n  \"VERSION\":\"1.0\",";
-        stream << "\n  \"RIDES\":[\n";
+    // write headings
+    out<<"date, time, filename";
+    foreach(const RideMetric *m, indexed) {
+        if (m->name().startsWith("BikeScore"))
+            out <<", BikeScore";
+        else
+            out <<", " <<m->name();
+    }
+    out<<"\n";
 
-        bool firstRide = true;
-        foreach(RideItem *item, rides()) {
+    // write values
+    foreach(RideItem *item, rides()) {
 
-            // skip if not loaded/refreshed, a special case
-            // if saving during an initial refresh
-            if (item->metrics().count() == 0) continue;
+        // date, time, filename
+        out << item->dateTime.date().toString("MM/dd/yy");
+        out << "," << item->dateTime.time().toString("hh:mm:ss");
+        out << "," << item->fileName;
 
-            // comma separate each ride
-            if (!firstRide) stream << ",\n";
-            firstRide = false;
-
-            // basic ride information
-            stream << "\t{\n";
-            stream << "\t\t\"filename\":\"" <<item->fileName <<"\",\n";
-            stream << "\t\t\"date\":\"" <<item->dateTime.toUTC().toString(DATETIME_FORMAT) << "\",\n";
-            stream << "\t\t\"fingerprint\":\"" <<item->fingerprint <<"\",\n";
-            stream << "\t\t\"crc\":\"" <<item->crc <<"\",\n";
-            stream << "\t\t\"timestamp\":\"" <<item->timestamp <<"\",\n";
-            stream << "\t\t\"dbversion\":\"" <<item->dbversion <<"\",\n";
-            stream << "\t\t\"weight\":\"" <<item->weight <<"\",\n";
-
-            // pre-computed metrics
-            stream << "\n\t\t\"METRICS\":{\n";
-
-            bool firstMetric = true;
-            for(int i=0; i<factory.metricCount(); i++) {
-                QString name = factory.metricName(i);
-                int index = factory.rideMetric(name)->index();
-
-                if (!firstMetric) stream << ",\n";
-                firstMetric = false;
-
-                stream << "\t\t\t\"" << name << "\":\"" << QString("%1").arg(item->metrics()[index], 0, 'f', 5) <<"\"";
-            }
-            stream << "\n\t\t}";
-
-            // pre-loaded metadata
-            if (item->metadata().count()) {
-
-                stream << ",\n\t\t\"TAGS\":{\n";
-
-                QMap<QString,QString>::const_iterator i;
-                for (i=item->metadata().constBegin(); i != item->metadata().constEnd(); i++) {
-
-                    stream << "\t\t\t\"" << i.key() << "\":\"" << protect(i.value()) << "\"";
-                    if (i+1 != item->metadata().constEnd()) stream << ",\n";
-                    else stream << "\n";
-                }
-
-                // end of the tags
-                stream << "\n\t\t}";
-
-            }
-
-            // end of the ride
-            stream << "\n\t}";
+        // values
+        foreach(double value, item->metrics()) {
+            out << "," << QString("%1").arg(value, 'f').simplified();
         }
 
-        stream << "\n  ]\n}";
-
-        rideDB.close();
+        out<<"\n";
     }
+    file.close();
 }
 
 void
 itemRefresh(RideItem *&item)
 {
     // need parser to be reentrant !item->refresh();
-    if (item->isstale) item->refresh();
+    if (item->isstale) {
+        item->refresh();
+
+        // and trap changes during refresh to current ride
+        if (item == item->context->currentRideItem())
+            item->context->notifyRideChanged(item);
+
+#ifdef SLOW_REFRESH
+        sleep(1);
+#endif
+    }
 }
 
 void
@@ -339,7 +344,10 @@ RideCache::progressing(int value)
 {
     // we're working away, notfy everyone where we got
     progress_ = 100.0f * (double(value) / double(watcher.progressMaximum()));
-    context->notifyRefreshUpdate();
+    if (value) {
+        QDate here = reverse_.at(value-1)->dateTime.date();
+        context->notifyRefreshUpdate(here);
+    }
 }
 
 // cancel the refresh map, we're about to exit !
@@ -369,10 +377,400 @@ RideCache::refresh()
             staleCount++;
     }
 
+    // reset emptyindex, we will have spotted that now
+#ifdef GC_HAVE_LUCENE
+    context->athlete->emptyindex= false;
+#endif
+
     // start if there is work to do
     // and future watcher can notify of updates
     if (staleCount)  {
-        future = QtConcurrent::map(rides_, itemRefresh);
+        reverse_ = rides_;
+        qSort(reverse_.begin(), reverse_.end(), rideCacheGreaterThan);
+        future = QtConcurrent::map(reverse_, itemRefresh);
         watcher.setFuture(future);
     }
+}
+
+QString
+RideCache::getAggregate(QString name, Specification spec, bool useMetricUnits, bool nofmt)
+{
+    // get the metric details, so we can convert etc
+    const RideMetric *metric = RideMetricFactory::instance().rideMetric(name);
+    if (!metric) return QString("%1 unknown").arg(name);
+
+    // what we will return
+    double rvalue = 0;
+    double rcount = 0; // using double to avoid rounding issues with int when dividing
+
+    // loop through and aggregate
+    foreach (RideItem *item, rides()) {
+
+        // skip filtered rides
+        if (!spec.pass(item)) continue;
+
+        // get this value
+        double value = item->getForSymbol(name);
+        double count = item->getForSymbol("workout_time"); // for averaging
+
+        // check values are bounded, just in case
+        if (std::isnan(value) || std::isinf(value)) value = 0;
+
+        // imperial / metric conversion
+        if (useMetricUnits == false) {
+            value *= metric->conversion();
+            value += metric->conversionSum();
+        }
+
+        // do we aggregate zero values ?
+        bool aggZero = metric->aggregateZero();
+
+        // set aggZero to false and value to zero if is temperature and -255
+        if (metric->symbol() == "average_temp" && value == RideFile::NoTemp) {
+            value = 0;
+            aggZero = false;
+        }
+
+        switch (metric->type()) {
+        case RideMetric::Total:
+            rvalue += value;
+            break;
+        case RideMetric::Average:
+            {
+            // average should be calculated taking into account
+            // the duration of the ride, otherwise high value but
+            // short rides will skew the overall average
+            if (value || aggZero) {
+                rvalue += value*count;
+                rcount += count;
+            }
+            break;
+            }
+        case RideMetric::Low:
+            {
+            if (value < rvalue) rvalue = value;
+            break;
+            }
+        case RideMetric::Peak:
+            {
+            if (value > rvalue) rvalue = value;
+            break;
+            }
+        }
+    }
+
+    // now compute the average
+    if (metric->type() == RideMetric::Average) {
+        if (rcount) rvalue = rvalue / rcount;
+    }
+
+    // Format appropriately
+    QString result;
+    if (metric->units(useMetricUnits) == "seconds" ||
+        metric->units(useMetricUnits) == tr("seconds")) {
+        if (nofmt) result = QString("%1").arg(rvalue);
+        else result = time_to_string(rvalue);
+
+    } else result = QString("%1").arg(rvalue, 0, 'f', metric->precision());
+
+    // 0 temp from aggregate means no values 
+    if ((metric->symbol() == "average_temp" || metric->symbol() == "max_temp") && result == "0.0") result = "-";
+    return result;
+}
+
+bool rideCachesummaryBestGreaterThan(const AthleteBest &s1, const AthleteBest &s2)
+{
+     return s1.nvalue > s2.nvalue;
+}
+
+QList<AthleteBest> 
+RideCache::getBests(QString symbol, int n, Specification specification, bool useMetricUnits)
+{
+    QList<AthleteBest> results;
+
+    // get the metric details, so we can convert etc
+    const RideMetric *metric = RideMetricFactory::instance().rideMetric(symbol);
+    if (!metric) return results;
+
+    // loop through and aggregate
+    foreach (RideItem *ride, rides_) {
+
+        // skip filtered rides
+        if (!specification.pass(ride)) continue;
+
+        // get this value
+        AthleteBest add;
+        add.nvalue = ride->getForSymbol(symbol, true);
+        add.date = ride->dateTime.date();
+
+        const_cast<RideMetric*>(metric)->setValue(add.nvalue);
+        add.value = metric->toString(useMetricUnits);
+
+        // nil values are not needed
+        if (add.nvalue < 0 || add.nvalue > 0) results << add;
+    }
+
+    // now sort
+    qStableSort(results.begin(), results.end(), rideCachesummaryBestGreaterThan);
+
+    // truncate
+    if (results.count() > n) results.erase(results.begin()+n,results.end());
+
+    // return the array with the right number of entries in #1 - n order
+    return results;
+}
+
+class RollingBests {
+    private:
+
+        // buffer of best values; Watts or Watts/KG
+        // is a double to handle both use cases
+        QVector<QVector<float> > buffer;
+
+        // current location in circular buffer
+        int index;
+
+    public:
+
+        // iniitalise with circular buffer size
+        RollingBests(int size) {
+            index=1;
+            buffer.resize(size);
+        }
+
+        // add a new weeks worth of data, losing
+        // whatever is at the back of the buffer
+        void addBests(QVector<float> array) {
+            buffer[index++] = array;
+            if (index >= buffer.count()) index=0;
+        }
+
+        // get an aggregate of all the bests
+        // currently in the circular buffer
+        QVector<float> aggregate() {
+
+            QVector<float> returning;
+
+            // set return buffer size
+            int size=0;
+            for(int i=0; i<buffer.count(); i++)
+                if (buffer[i].size() > size)
+                    size = buffer[i].size();
+
+            // initialise return values
+            returning.fill(0.0f, size);
+
+            // get largest values
+            for(int i=0; i<buffer.count(); i++) 
+                for (int j=0; j<buffer[i].count(); j++)
+                    if(buffer[i].at(j) > returning[j])
+                        returning[j] = buffer[i].at(j);
+
+            // return the aggregate
+            return returning;
+        }
+};
+
+void
+RideCache::refreshCPModelMetrics()
+{
+    // this needs to be done once all the other metrics
+    // Calculate a *monthly* estimate of CP, W' etc using
+    // bests data from the previous 12 weeks
+    RollingBests bests(12);
+    RollingBests bestsWPK(12);
+
+    // clear any previous calculations
+    context->athlete->PDEstimates.clear(); 
+
+    // we do this by aggregating power data into bests
+    // for each month, and having a rolling set of 3 aggregates
+    // then aggregating those up into a rolling 3 month 'bests'
+    // which we feed to the models to get the estimates for that
+    // point in time based upon the available data
+    QDate from, to;
+
+    // what dates have any power data ?
+    foreach(RideItem *item, rides()) {
+
+        if (item->present.contains("P")) {
+
+            // no date set
+            if (from == QDate()) from = item->dateTime.date();
+            if (to == QDate()) to = item->dateTime.date();
+
+            // later...
+            if (item->dateTime.date() < from) from = item->dateTime.date();
+
+            // earlier...
+            if (item->dateTime.date() > to) to = item->dateTime.date();
+        }
+    }
+
+    // if we don't have 2 rides or more then skip this but add a blank estimate
+    if (from == to || to == QDate()) {
+        context->athlete->PDEstimates << PDEstimate();
+        return;
+    }
+
+    // set up the models we support
+    CP2Model p2model(context);
+    CP3Model p3model(context);
+    MultiModel multimodel(context);
+    ExtendedModel extmodel(context);
+
+    QList <PDModel *> models;
+    models << &p2model;
+    models << &p3model;
+    models << &multimodel;
+    models << &extmodel;
+
+
+    // run backwards stopping when date is at 1990 or first ride date with data
+    QDate date = from.addDays(-84);
+    while (date < to.addDays(7)) {
+
+        QDate begin = date;
+        QDate end = date.addDays(7);
+
+        // let others know where we got to...
+        emit modelProgress(date.year(), date.month());
+
+        // months is a rolling 3 months sets of bests
+        QVector<float> wpk; // for getting the wpk values
+        bests.addBests(RideFileCache::meanMaxPowerFor(context, wpk, begin, end));
+        bestsWPK.addBests(wpk);
+
+        // we now have the data
+        foreach(PDModel *model, models) {
+
+            PDEstimate add;
+
+            // set the data
+            model->setData(bests.aggregate());
+            model->saveParameters(add.parameters); // save the computed parms
+
+            add.wpk = false;
+            add.from = begin;
+            add.to = end;
+            add.model = model->code();
+            add.WPrime = model->hasWPrime() ? model->WPrime() : 0;
+            add.CP = model->hasCP() ? model->CP() : 0;
+            add.PMax = model->hasPMax() ? model->PMax() : 0;
+            add.FTP = model->hasFTP() ? model->FTP() : 0;
+
+            if (add.CP && add.WPrime) add.EI = add.WPrime / add.CP ;
+
+            // so long as the model derived values are sensible ...
+            if (add.WPrime > 1000 && add.CP > 100 && add.PMax > 100 && add.FTP > 100)
+                context->athlete->PDEstimates << add;
+
+            //qDebug()<<add.to<<add.from<<model->code()<< "W'="<< model->WPrime() <<"CP="<< model->CP() <<"pMax="<<model->PMax();
+
+            // set the wpk data
+            model->setData(bestsWPK.aggregate());
+            model->saveParameters(add.parameters); // save the computed parms
+
+            add.wpk = true;
+            add.from = begin;
+            add.to = end;
+            add.model = model->code();
+            add.WPrime = model->hasWPrime() ? model->WPrime() : 0;
+            add.CP = model->hasCP() ? model->CP() : 0;
+            add.PMax = model->hasPMax() ? model->PMax() : 0;
+            add.FTP = model->hasFTP() ? model->FTP() : 0;
+            if (add.CP && add.WPrime) add.EI = add.WPrime / add.CP ;
+
+            // so long as the model derived values are sensible ...
+            if (add.WPrime > 100.0f && add.CP > 1.0f && add.PMax > 1.0f && add.FTP > 1.0f)
+                context->athlete->PDEstimates << add;
+
+            //qDebug()<<add.from<<model->code()<< "KG W'="<< model->WPrime() <<"CP="<< model->CP() <<"pMax="<<model->PMax();
+        }
+
+        // go back a week
+        date = date.addDays(7);
+    }
+
+    // add a dummy entry if we have no estimates to stop constantly trying to refresh
+    if (context->athlete->PDEstimates.count() == 0) {
+        context->athlete->PDEstimates << PDEstimate();
+    }
+
+    emit modelProgress(0, 0); // all done
+}
+
+QList<QDateTime> 
+RideCache::getAllDates()
+{
+    QList<QDateTime> returning;
+    foreach(RideItem *item, rides()) {
+        returning << item->dateTime;
+    }
+    return returning;
+}
+
+QStringList 
+RideCache::getAllFilenames()
+{
+    QStringList returning;
+    foreach(RideItem *item, rides()) {
+        returning << item->fileName;
+    }
+    return returning;
+}
+
+RideItem *
+RideCache::getRide(QString filename)
+{
+    foreach(RideItem *item, rides())
+        if (item->fileName == filename)
+            return item;
+    return NULL;
+}
+
+QHash<QString,int>
+RideCache::getRankedValues(QString field)
+{
+    QHash<QString, int> returning;
+    foreach(RideItem *item, rides()) {
+        QString value = item->metadata().value(field, "");
+        if (value != "") {
+            int count = returning.value(value,0);
+            returning.insert(value,++count);
+        }
+    }    
+    return returning;
+}
+
+class OrderedList {
+    public:
+        OrderedList(QString string, int rank) : string(string), rank(rank) {}
+        QString string;
+        int rank;
+};
+
+bool rideCacheOrderListGreaterThan(const OrderedList a, const OrderedList b) { return a.rank > b.rank; }
+
+QStringList
+RideCache::getDistinctValues(QString field)
+{
+    QStringList returning;
+
+    // ranked
+    QHashIterator<QString,int> i(getRankedValues(field));
+    QList<OrderedList> ranked;
+    while(i.hasNext()) {
+        i.next();
+        ranked << OrderedList(i.key(), i.value());
+    }
+
+    // sort from big to small
+    qSort(ranked.begin(), ranked.end(), rideCacheOrderListGreaterThan);
+
+    // extract ordered values
+    foreach(OrderedList x, ranked)
+        returning << x.string;
+
+    return returning;
 }

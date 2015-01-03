@@ -19,36 +19,48 @@
 #include "RideItem.h"
 #include "RideMetric.h"
 #include "RideFile.h"
+#include "RideFileCache.h"
+#include "RideMetadata.h"
 #include "Context.h"
-#include "DBAccess.h" // only for DBSchemaVersion
 #include "Zones.h"
 #include "HrZones.h"
 #include "PaceZones.h"
 #include "Settings.h"
-#include <math.h>
+#include "Colors.h" // for ColorEngine
+
+#include <cmath>
+#include <QtAlgorithms>
+#include <QMap>
+#include <QMapIterator>
+#include <QByteArray>
+
+#ifdef GC_HAVE_LUCENE
+#include "Lucene.h"
+#endif
 
 // used to create a temporary ride item that is not in the cache and just
 // used to enable using the same calling semantics in things like the
 // merge wizard and interval navigator
 RideItem::RideItem() 
     : 
-    ride_(NULL), context(NULL), isdirty(false), isstale(true), isedit(false), path(""), fileName(""),
-    fingerprint(0), crc(0), timestamp(0), dbversion(0), weight(0) {
+    ride_(NULL), fileCache_(NULL), context(NULL), isdirty(false), isstale(true), isedit(false), skipsave(false), path(""), fileName(""),
+    color(QColor(1,1,1)), isRun(false), fingerprint(0), metacrc(0), crc(0), timestamp(0), dbversion(0), weight(0) {
     metrics_.fill(0, RideMetricFactory::instance().metricCount());
 }
 
 RideItem::RideItem(RideFile *ride, Context *context) 
     : 
-    ride_(ride), context(context), isdirty(false), isstale(true), isedit(false), path(""), fileName(""),
-    fingerprint(0), crc(0), timestamp(0), dbversion(0), weight(0) 
+    ride_(ride), fileCache_(NULL), context(context), isdirty(false), isstale(true), isedit(false), skipsave(false), path(""), fileName(""),
+    color(QColor(1,1,1)), isRun(false), fingerprint(0), metacrc(0), crc(0), timestamp(0), dbversion(0), weight(0) 
 {
     metrics_.fill(0, RideMetricFactory::instance().metricCount());
 }
 
 RideItem::RideItem(QString path, QString fileName, QDateTime &dateTime, Context *context) 
     :
-    ride_(NULL), context(context), isdirty(false), isstale(true), isedit(false), path(path), 
-    fileName(fileName), dateTime(dateTime), fingerprint(0), crc(0), timestamp(0), dbversion(0), weight(0) 
+    ride_(NULL), fileCache_(NULL), context(context), isdirty(false), isstale(true), isedit(false), skipsave(false), path(path), 
+    fileName(fileName), dateTime(dateTime), color(QColor(1,1,1)), isRun(false), fingerprint(0), 
+    metacrc(0), crc(0), timestamp(0), dbversion(0), weight(0) 
 {
     metrics_.fill(0, RideMetricFactory::instance().metricCount());
 }
@@ -57,16 +69,18 @@ RideItem::RideItem(QString path, QString fileName, QDateTime &dateTime, Context 
 // pre-computed metrics and storing ride metadata
 RideItem::RideItem(RideFile *ride, QDateTime &dateTime, Context *context)
     :
-    ride_(ride), context(context), isdirty(true), isstale(true), isedit(false), dateTime(dateTime),
-    fingerprint(0), crc(0), timestamp(0), dbversion(0), weight(0)
+    ride_(ride), fileCache_(NULL), context(context), isdirty(true), isstale(true), isedit(false), skipsave(false), dateTime(dateTime),
+    fingerprint(0), metacrc(0), crc(0), timestamp(0), dbversion(0), weight(0)
 {
     metrics_.fill(0, RideMetricFactory::instance().metricCount());
 }
 
+// clone a ride item
 void
-RideItem::setFrom(RideItem&here)
+RideItem::setFrom(RideItem&here) // used when loading cache/rideDB.json
 {
     ride_ = NULL;
+    fileCache_ = NULL;
     metrics_ = here.metrics_;
 	metadata_ = here.metadata_;
 	errors_ = here.errors_;
@@ -74,14 +88,45 @@ RideItem::setFrom(RideItem&here)
 	isdirty = here.isdirty;
 	isstale = here.isstale;
 	isedit = here.isedit;
+	skipsave = here.skipsave;
 	path = here.path;
 	fileName = here.fileName;
 	dateTime = here.dateTime;
 	fingerprint = here.fingerprint;
-	crc = here.crc;
+	metacrc = here.metacrc;
+    crc = here.crc;
 	timestamp = here.timestamp;
 	dbversion = here.dbversion;
+	color = here.color;
+	present = here.present;
+    isRun = here.isRun;
 	weight = here.weight;
+}
+
+// set the metric array
+void
+RideItem::setFrom(QHash<QString, RideMetricPtr> computed)
+{
+    QHashIterator<QString, RideMetricPtr> i(computed);
+    while (i.hasNext()) {
+        i.next();
+        metrics_[i.value()->index()] = i.value()->value(true);
+    }
+}
+
+// calculate metadata crc
+unsigned long 
+RideItem::metaCRC()
+{
+    QMapIterator<QString,QString> i(metadata_);
+    QByteArray ba;
+    i.toFront();
+    while(i.hasNext()) {
+        i.next();
+        ba.append(i.key());
+        ba.append(i.value());
+    }
+    return qChecksum(ba, ba.length());
 }
 
 RideFile *RideItem::ride(bool open)
@@ -93,8 +138,7 @@ RideFile *RideItem::ride(bool open)
     ride_ = RideFileFactory::instance().openRideFile(context, file, errors_);
     if (ride_ == NULL) return NULL; // failed to read ride
 
-    // forced refresh into cache
-    isstale=true;
+    // refresh if stale..
     refresh();
 
     setDirty(false); // we're gonna use on-disk so by
@@ -109,6 +153,23 @@ RideFile *RideItem::ride(bool open)
     connect(ride_, SIGNAL(reverted()), this, SLOT(reverted()));
 
     return ride_;
+}
+
+RideItem::~RideItem()
+{
+    //qDebug()<<"deleting:"<<fileName;
+    if (isOpen()) close();
+    if (fileCache_) delete fileCache_;
+}
+
+RideFileCache *
+RideItem::fileCache()
+{
+    if (!fileCache_) {
+        fileCache_ = new RideFileCache(context, fileName, ride());
+        if (isDirty()) fileCache_->refresh(ride()); // refresh from what we have now !
+    }
+    return fileCache_;
 }
 
 void
@@ -139,12 +200,32 @@ RideItem::setRide(RideFile *overwrite)
 void
 RideItem::notifyRideDataChanged()
 {
+    // refresh the metrics
+    isstale=true;
+
+    // force a recompute of derived data series
+    if (ride_) {
+        ride_->wstale = true;
+        ride_->recalculateDerivedSeries(true);
+    }
+
+    // refresh the cache
+    if (fileCache_) fileCache_->refresh(ride());
+
+
+    // refresh the data
+    refresh();
+
     emit rideDataChanged();
 }
 
 void
 RideItem::notifyRideMetadataChanged()
 {
+    // refresh the metrics
+    isstale=true;
+    refresh();
+
     emit rideMetadataChanged();
 }
 
@@ -158,12 +239,17 @@ void
 RideItem::saved()
 {
     setDirty(false);
+    isstale=true;
+    refresh(); // update !
+    context->notifyRideSaved(this);
 }
 
 void
 RideItem::reverted()
 {
     setDirty(false);
+    isstale=true;
+    refresh();
 }
 
 void
@@ -220,6 +306,9 @@ RideItem::checkStale()
     // if we're marked stale already then just return that !
     if (isstale) return true;
 
+    // just change it .. its as quick to change as it is to check !
+    color = context->athlete->colorEngine->colorFor(getText(context->athlete->rideMetadata()->getColorField(), ""));
+
     // upgraded metrics
     if (dbversion != DBSchemaVersion) {
 
@@ -246,7 +335,7 @@ RideItem::checkStale()
             // metrics for older rides !
 
             // get the new zone configuration fingerprint that applies for the ride date
-            unsigned long rfingerprint = static_cast<unsigned long>(context->athlete->zones()->getFingerprint(context, dateTime.date()))
+            unsigned long rfingerprint = static_cast<unsigned long>(context->athlete->zones()->getFingerprint(dateTime.date()))
                         + static_cast<unsigned long>(context->athlete->paceZones()->getFingerprint(dateTime.date()))
                         + static_cast<unsigned long>(context->athlete->hrZones()->getFingerprint(dateTime.date()));
 
@@ -264,7 +353,7 @@ RideItem::checkStale()
                 if (timestamp < QFileInfo(file).lastModified().toTime_t()) {
 
                     // if timestamp has changed then check crc
-                    unsigned long fcrc = DBAccess::computeFileCRC(fullPath);
+                    unsigned long fcrc = RideFile::computeFileCRC(fullPath);
 
                     if (crc == 0 || crc != fcrc) {
                         crc = fcrc; // update as expensive to calculate
@@ -274,6 +363,25 @@ RideItem::checkStale()
             }
         }
     }
+
+    // still reckon its clean? what about the cache ?
+    if (isstale == false) isstale = RideFileCache::checkStale(context, this);
+
+#ifdef GC_HAVE_LUCENE
+    // lucene metadata value ?
+    if (isstale == false) {
+
+        if (context->athlete->emptyindex == true) {
+            metacrc = 0; // reset as index missing
+            isstale = true;
+        } 
+    }
+#endif
+
+    // we need to mark stale for 2 reasons
+    // 1) lucene index needs updating
+    // 2) "special" fields may have changed (e.g. CP)
+    if (metacrc != metaCRC()) isstale = true;
 
     return isstale;
 }
@@ -298,6 +406,11 @@ RideItem::refresh()
         // get weight that applies to the date
         getWeight();
 
+        // first class stuff
+        isRun = f->isRun();
+        color = context->athlete->colorEngine->colorFor(f->getTag(context->athlete->rideMetadata()->getColorField(), ""));
+        present = f->getTag("Data", "");
+
         // refresh metrics etc
         const RideMetricFactory &factory = RideMetricFactory::instance();
         QHash<QString,RideMetricPtr> computed= RideMetric::computeMetrics(context, f, context->athlete->zones(), 
@@ -319,16 +432,34 @@ RideItem::refresh()
         isstale = false;
 
         // update fingerprints etc, crc done above
-        fingerprint = static_cast<unsigned long>(context->athlete->zones()->getFingerprint(context, dateTime.date()))
+        fingerprint = static_cast<unsigned long>(context->athlete->zones()->getFingerprint(dateTime.date()))
                     + static_cast<unsigned long>(context->athlete->paceZones()->getFingerprint(dateTime.date()))
                     + static_cast<unsigned long>(context->athlete->hrZones()->getFingerprint(dateTime.date()));
 
         dbversion = DBSchemaVersion;
         timestamp = QDateTime::currentDateTime().toTime_t();
 
+        // RideFile cache needs refreshing possibly
+        RideFileCache updater(context, context->athlete->home->activities().canonicalPath() + "/" + fileName, ride_, true);
+
+        // and Lucene search texts if they have changed since we
+        // last updated lucene for this ride item
+#ifdef GC_HAVE_LUCENE
+        unsigned long mc = metaCRC();
+        if (metacrc != mc) {
+            context->athlete->lucene->importRide(ride_);
+            metacrc = mc;
+        }
+#endif
+
         // close if we opened it
         if (doclose) {
             close();
+        } else {
+
+            // if it is open then recompute
+            ride_->wstale = true;
+            ride_->recalculateDerivedSeries(true);
         }
 
     } else {
@@ -353,4 +484,43 @@ RideItem::getWeight()
     if (weight <= 0.00) weight = 80.00;
 
     return weight;
+}
+
+double
+RideItem::getForSymbol(QString name, bool useMetricUnits)
+{
+    if (metrics_.size()) {
+        // return the precomputed metric value
+        const RideMetricFactory &factory = RideMetricFactory::instance();
+        const RideMetric *m = factory.rideMetric(name);
+        if (m) {
+            if (useMetricUnits) return metrics_[m->index()];
+            else {
+                // little hack to set/get for conversion
+                const_cast<RideMetric*>(m)->setValue(metrics_[m->index()]);
+                return m->value(useMetricUnits);
+            }
+        }
+    }
+    return 0.0f;
+}
+
+QString
+RideItem::getStringForSymbol(QString name, bool useMetricUnits)
+{
+    QString returning("-");
+
+    if (metrics_.size()) {
+        // return the precomputed metric value
+        const RideMetricFactory &factory = RideMetricFactory::instance();
+        const RideMetric *m = factory.rideMetric(name);
+        if (m) {
+
+            double value = metrics_[m->index()];
+            if (std::isinf(value) || std::isnan(value)) value=0;
+            const_cast<RideMetric*>(m)->setValue(value);
+            returning = m->toString(useMetricUnits);
+        }
+    }
+    return returning;
 }

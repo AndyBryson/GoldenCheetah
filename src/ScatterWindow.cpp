@@ -18,9 +18,11 @@
 
 #include "ScatterWindow.h"
 #include "ScatterPlot.h"
+#include "GcOverlayWidget.h"
 #include "Athlete.h"
 #include "Context.h"
 #include "Colors.h"
+#include "HelpWhatsThis.h"
 
 #include <QtGui>
 #include <QString>
@@ -85,7 +87,7 @@ ScatterWindow::addrStandardChannels(QxtStringSpinBox *box)
 }
 
 ScatterWindow::ScatterWindow(Context *context) :
-    GcChartWindow(context), context(context), ride(NULL), current(NULL)
+    GcChartWindow(context), context(context), ride(NULL), current(NULL), stale(false)
 {
     //
     // reveal controls widget
@@ -104,7 +106,7 @@ ScatterWindow::ScatterWindow(Context *context) :
     rIgnore->setChecked(true);
     rIgnore->hide();
     rFrameInterval = new QCheckBox(tr("Frame intervals"));
-    rFrameInterval->setChecked(true); 
+    rFrameInterval->setChecked(true);
 
     // layout reveal controls
     QHBoxLayout *r = new QHBoxLayout;
@@ -121,6 +123,8 @@ ScatterWindow::ScatterWindow(Context *context) :
     setRevealLayout(r);
 
     QWidget *c = new QWidget;
+    HelpWhatsThis *helpConfig = new HelpWhatsThis(c);
+    c->setWhatsThis(helpConfig->getWhatsThisText(HelpWhatsThis::ChartRides_2D));
     QFormLayout *cl = new QFormLayout(c);
     setControls(c);
 
@@ -128,6 +132,8 @@ ScatterWindow::ScatterWindow(Context *context) :
     scatterPlot= new ScatterPlot(context);
     QVBoxLayout *vlayout = new QVBoxLayout;
     vlayout->addWidget(scatterPlot);
+    HelpWhatsThis *help = new HelpWhatsThis(scatterPlot);
+    scatterPlot->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_2D));
 
     setChartLayout(vlayout);
 
@@ -145,6 +151,25 @@ ScatterWindow::ScatterWindow(Context *context) :
     ySelector->setCurrentIndex(2); // heartrate
     rySelector->setValue(2);
     cl->addRow(yLabel, ySelector);
+
+    QLabel *smoothLabel = new QLabel(tr("Smooth"), this);
+    smoothLineEdit = new QLineEdit(this);
+    smoothLineEdit->setFixedWidth(40);
+
+    smoothSlider = new QSlider(Qt::Horizontal, this);
+    smoothSlider->setTickPosition(QSlider::TicksBelow);
+    smoothSlider->setTickInterval(10);
+    smoothSlider->setMinimum(1);
+    smoothSlider->setMaximum(60);
+    smoothLineEdit->setValidator(new QIntValidator(smoothSlider->minimum(),
+                                                   smoothSlider->maximum(),
+                                                   smoothLineEdit));
+    smoothSlider->setValue(0);
+
+    QHBoxLayout *smoothLayout = new QHBoxLayout;
+    smoothLayout->addWidget(smoothLineEdit);
+    smoothLayout->addWidget(smoothSlider);
+    cl->addRow(smoothLabel, smoothLayout);
 
     // selectors
     ignore = new QCheckBox(tr("Ignore Zero"));
@@ -173,9 +198,17 @@ ScatterWindow::ScatterWindow(Context *context) :
     cl->addRow(new QLabel(tr("Trend line")), trendLine);
     trendLine->setCurrentIndex(0);
 
+    // the model helper -- showing model parameters etc
+    QWidget *helper = new QWidget(this);
+    helper->setAutoFillBackground(true);
+
+    addHelper(QString(tr("Trend")), helper);
+    helperWidget()->hide();
+
     // now connect up the widgets
     //connect(main, SIGNAL(rideSelected()), this, SLOT(rideSelected()));
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
+    connect(context, SIGNAL(rideChanged(RideItem*)), this, SLOT(forceReplot()));
     connect(context, SIGNAL(intervalSelected()), this, SLOT(intervalSelected()));
     connect(context, SIGNAL(intervalsChanged()), this, SLOT(intervalSelected()));
     connect(xSelector, SIGNAL(currentIndexChanged(int)), this, SLOT(xSelectorChanged(int)));
@@ -189,18 +222,21 @@ ScatterWindow::ScatterWindow(Context *context) :
     connect(rFrameInterval, SIGNAL(stateChanged(int)), this, SLOT(setrFrame()));
     connect(rIgnore, SIGNAL(stateChanged(int)), this, SLOT(setrIgnore()));
     connect(compareMode, SIGNAL(currentIndexChanged(int)), this, SLOT(setCompareMode(int)));
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(trendLine, SIGNAL(currentIndexChanged(int)), this, SLOT(setTrendLine(int)));
+    connect(smoothSlider, SIGNAL(valueChanged(int)), this, SLOT(setSmoothingFromSlider()));
+    connect(smoothLineEdit, SIGNAL(editingFinished()), this, SLOT(setSmoothingFromLineEdit()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 
     // comparing things
     connect(context, SIGNAL(compareIntervalsStateChanged(bool)), this, SLOT(compareChanged()));
     connect(context, SIGNAL(compareIntervalsChanged()), this, SLOT(compareChanged()));
 
     // set colors
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 void
-ScatterWindow::configChanged()
+ScatterWindow::configChanged(qint32)
 {
     setProperty("color", GColor(CPLOTBACKGROUND));
 
@@ -212,14 +248,20 @@ ScatterWindow::configChanged()
 }
 
 void
+ScatterWindow::forceReplot()
+{
+    stale=true;
+    rideSelected();
+}
+
+void
 ScatterWindow::rideSelected()
 {
-    if (!amVisible())
-        return;
+    if (!amVisible()) return;
 
     ride = myRideItem;
 
-    if (ride == current) return;
+    if (ride == current && !stale) return;
 
     if (!ride || !ride->ride() || !ride->ride()->dataPoints().count()) {
         current = NULL;
@@ -229,6 +271,8 @@ ScatterWindow::rideSelected()
         setIsBlank(false);
 
     current = ride;
+    stale = false;
+
     setData();
 }
 
@@ -284,6 +328,33 @@ ScatterWindow::setTrendLine(int value)
 {
     trendLine->setCurrentIndex(value);
     settings.trendLine = value;
+
+    // need a helper any more ?
+    if (value > 0) {
+        helperWidget()->hide(); //show();
+    } else {
+        helperWidget()->hide();
+    }
+
+    setData();
+}
+
+void
+ScatterWindow::setSmoothingFromSlider()
+{
+    smoothLineEdit->setText(QString("%1").arg(smoothSlider->value()));
+
+    settings.smoothing = smoothSlider->value();
+    setData();
+}
+
+void
+ScatterWindow::setSmoothingFromLineEdit()
+{
+    int value = smoothLineEdit->text().toInt();
+
+    smoothSlider->setValue(value);
+    settings.smoothing = value;
     setData();
 }
 
@@ -334,6 +405,7 @@ ScatterWindow::setData()
     settings.frame = frame->isChecked();
     settings.compareMode = compareMode->currentIndex();
     settings.trendLine = trendLine->currentIndex();
+    settings.smoothing = smoothSlider->value();
 
     /* Not a blank state ? Just no data and we can change series ?
     if ((setting.x == MODEL_POWER || setting.y == MODEL_POWER ) && !ride->ride()->isDataPresent(RideFile::watts))
@@ -369,6 +441,28 @@ ScatterWindow::compareChanged()
     setData();
     repaint();
 
+}
+
+bool
+ScatterWindow::event(QEvent *event)
+{
+    // nasty nasty nasty hack to move widgets as soon as the widget geometry
+    // is set properly by the layout system, by default the width is 100 and
+    // we wait for it to be set properly then put our helper widget on the RHS
+    if (event->type() == QEvent::Resize && geometry().width() != 100) {
+
+        // put somewhere nice on first show
+        if (firstShow) {
+            firstShow = false;
+            helperWidget()->move(mainWidget()->geometry().width()-275, 50);
+        }
+
+        // if off the screen move on screen
+        if (helperWidget()->geometry().x() > geometry().width()) {
+            helperWidget()->move(mainWidget()->geometry().width()-275, 50);
+        }
+    }
+    return QWidget::event(event);
 }
 
 

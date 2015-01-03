@@ -55,7 +55,7 @@ CPPlot::CPPlot(QWidget *parent, Context *context, bool rangemode) : QwtPlot(pare
     model(0), modelVariant(0),
 
     // state
-    context(context), rideCache(NULL), bestsCache(NULL), rideSeries(RideFile::watts), 
+    context(context), bestsCache(NULL), rideSeries(RideFile::watts), 
     isFiltered(false), shadeMode(2),
     shadeIntervals(true), rangemode(rangemode), 
     showBest(true), showPercent(false), showHeat(false), showHeatByDate(false), showDelta(false), showDeltaPercent(false),
@@ -104,12 +104,12 @@ CPPlot::CPPlot(QWidget *parent, Context *context, bool rangemode) : QwtPlot(pare
     connect(canvasPicker, SIGNAL(pointHover(QwtPlotCurve*, int)), this, SLOT(pointHover(QwtPlotCurve*, int)));
 
     // now color everything we created
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 // set colours mostly
 void
-CPPlot::configChanged()
+CPPlot::configChanged(qint32)
 {
     QPalette palette;
     palette.setBrush(QPalette::Window, QBrush(GColor(CPLOTBACKGROUND)));
@@ -1185,6 +1185,30 @@ CPPlot::plotBests()
     zoomer->setZoomBase(false);
 }
 
+void
+CPPlot::refreshUpdate(QDate)
+{
+    // we don't need to lookat the date since we know if the data is incomplete
+    if (bestsCache && bestsCache->incomplete && (lastupdate == QTime() || lastupdate.secsTo(QTime::currentTime()) > 5)) {
+        lastupdate = QTime::currentTime();
+        clearCurves();
+        setRide(const_cast<RideItem*>(context->currentRideItem()));
+    }
+
+    // what about in compare season mode ?
+    if (rangemode && context->isCompareDateRanges && (lastupdate == QTime() || lastupdate.secsTo(QTime::currentTime()) > 5)) {
+        lastupdate = QTime::currentTime();
+        calculateForDateRanges(context->compareDateRanges);
+        return;
+    }
+}
+
+void
+CPPlot::refreshEnd()
+{
+    refreshUpdate(QDate());
+}
+
 // plot the currently selected ride
 void
 CPPlot::plotRide(RideItem *rideItem)
@@ -1198,14 +1222,14 @@ CPPlot::plotRide(RideItem *rideItem)
     if (rideCurve) return;
 
     // there is not data to plot!
-    if (rideCache->meanMaxArray(rideSeries).size() == 0) return;
+    if (rideItem->fileCache()->meanMaxArray(rideSeries).size() == 0) return;
 
     // check what we do have to plot
     int maxNonZero = 0;
-    QVector<double> timeArray(rideCache->meanMaxArray(rideSeries).size());
-    for (int i = 0; i < rideCache->meanMaxArray(rideSeries).size(); ++i) {
+    QVector<double> timeArray(rideItem->fileCache()->meanMaxArray(rideSeries).size());
+    for (int i = 0; i < rideItem->fileCache()->meanMaxArray(rideSeries).size(); ++i) {
         timeArray[i] = i / 60.0;
-        if (rideCache->meanMaxArray(rideSeries)[i] > 0) maxNonZero = i;
+        if (rideItem->fileCache()->meanMaxArray(rideSeries)[i] > 0) maxNonZero = i;
     }
 
     // do we have nonzero data to plot ?
@@ -1231,9 +1255,9 @@ CPPlot::plotRide(RideItem *rideItem)
 
         // WORK
 
-        QVector<double> energyArray(rideCache->meanMaxArray(RideFile::watts).size());
+        QVector<double> energyArray(rideItem->fileCache()->meanMaxArray(RideFile::watts).size());
         for (int i = 0; i <= maxNonZero; ++i) {
-            energyArray[i] = timeArray[i] * rideCache->meanMaxArray(RideFile::watts)[i] * 60.0 / 1000.0;
+            energyArray[i] = timeArray[i] * rideItem->fileCache()->meanMaxArray(RideFile::watts)[i] * 60.0 / 1000.0;
         }
         rideCurve->setSamples(timeArray.data() + 1, energyArray.constData() + 1,
                               maxNonZero > 0 ? maxNonZero-1 : 0);
@@ -1242,11 +1266,11 @@ CPPlot::plotRide(RideItem *rideItem)
 
         // Veloclinic plot
 
-        QVector<double> array(rideCache->meanMaxArray(RideFile::watts).size());
+        QVector<double> array(rideItem->fileCache()->meanMaxArray(RideFile::watts).size());
         for (int i = 0; i <= maxNonZero; ++i) {
-            array[i] =  (rideCache->meanMaxArray(rideSeries)[i]<pdModel->CP()?0:(rideCache->meanMaxArray(rideSeries)[i]-pdModel->CP()) * timeArray[i] * 60.0);
+            array[i] =  (rideItem->fileCache()->meanMaxArray(rideSeries)[i]<pdModel->CP()?0:(rideItem->fileCache()->meanMaxArray(rideSeries)[i]-pdModel->CP()) * timeArray[i] * 60.0);
         }
-        rideCurve->setSamples(rideCache->meanMaxArray(rideSeries).constData()  + 1, array.constData() + 1,
+        rideCurve->setSamples(rideItem->fileCache()->meanMaxArray(rideSeries).constData()  + 1, array.constData() + 1,
                               maxNonZero > 0 ? maxNonZero-1 : 0);
     } else  {
 
@@ -1260,10 +1284,10 @@ CPPlot::plotRide(RideItem *rideItem)
             QVector<double> samples(timeArray.size());
 
             // percentify from the cache
-            for(int i=0; i <samples.size() && i < rideCache->meanMaxArray(rideSeries).size() &&
+            for(int i=0; i <samples.size() && i < rideItem->fileCache()->meanMaxArray(rideSeries).size() &&
                     i <bestsCache->meanMaxArray(rideSeries).size(); i++) {
 
-                samples[i] = rideCache->meanMaxArray(rideSeries)[i] /
+                samples[i] = rideItem->fileCache()->meanMaxArray(rideSeries)[i] /
                              bestsCache->meanMaxArray(rideSeries)[i] * 100.00f;
             }
             rideCurve->setSamples(timeArray.data() + 1, samples.data() + 1,
@@ -1284,7 +1308,7 @@ CPPlot::plotRide(RideItem *rideItem)
 
             // JUST A NORMAL CURVE
             rideCurve->setYAxis(yLeft);
-            rideCurve->setSamples(timeArray.data() + 1, rideCache->meanMaxArray(rideSeries).constData() + 1,
+            rideCurve->setSamples(timeArray.data() + 1, rideItem->fileCache()->meanMaxArray(rideSeries).constData() + 1,
                                   maxNonZero > 0 ? maxNonZero-1 : 0);
 
             // Set the YAxis Title if Heat is active
@@ -1323,10 +1347,6 @@ CPPlot::setRide(RideItem *rideItem)
         delete rideCurve;
         rideCurve = NULL;
     }
-    if (rideCache) {
-        delete rideCache;
-        rideCache = NULL;
-    }
     // clear any centile and interval curves
     // since they will be for an old ride
     foreach(QwtPlotCurve *c, centileCurves) {
@@ -1356,7 +1376,6 @@ CPPlot::setRide(RideItem *rideItem)
             {
                 // MEANMAX
                 // Plot as normal or percent
-                rideCache = new RideFileCache(context, context->athlete->home->cache().canonicalPath() + "/" + rideItem->fileName);
                 plotRide(rideItem);
                 refreshReferenceLines(rideItem);
             }
@@ -1944,8 +1963,7 @@ CPPlot::calculateForDateRanges(QList<CompareDateRange> compareDateRanges)
     if (showDelta && compareDateRanges.count()) {
 
         // set the baseline data
-        CompareDateRange range = compareDateRanges.at(0);
-        baseline = range.rideFileCache()->meanMaxArray(rideSeries);
+        baseline = compareDateRanges[0].rideFileCache()->meanMaxArray(rideSeries);
 
         if (model && (rideSeries == RideFile::watts || rideSeries == RideFile::wattsKg || rideSeries == RideFile::kph)) {
 
@@ -1983,11 +2001,9 @@ CPPlot::calculateForDateRanges(QList<CompareDateRange> compareDateRanges)
     // prepare aggregates
     for (int j = 0; j < compareDateRanges.size(); ++j) {
 
-        CompareDateRange range = compareDateRanges.at(j);
+        if (compareDateRanges[j].isChecked())  {
 
-        if (range.isChecked())  {
-
-            RideFileCache *cache = range.rideFileCache();
+            RideFileCache *cache = compareDateRanges[j].rideFileCache();
 
             // create a delta array
             if (showDelta && cache) {
@@ -2009,11 +2025,11 @@ CPPlot::calculateForDateRanges(QList<CompareDateRange> compareDateRanges)
                 deltaArray.resize(n-1);
 
                 // now plot using the delta series and NOT the cache
-                if (showBest) plotCache(deltaArray, range.color);
+                if (showBest) plotCache(deltaArray, compareDateRanges[j].color);
 
                 // and plot a model too -- its neat to compare them...
                 if (rideSeries == RideFile::watts || rideSeries == RideFile::wattsKg || rideSeries == RideFile::kph) {
-                    plotModel(cache->meanMaxArray(rideSeries), range.color, baselineModel);
+                    plotModel(cache->meanMaxArray(rideSeries), compareDateRanges[j].color, baselineModel);
                 }
 
                 foreach(double v, deltaArray) {
@@ -2030,11 +2046,11 @@ CPPlot::calculateForDateRanges(QList<CompareDateRange> compareDateRanges)
             if (!showDelta && cache->meanMaxArray(rideSeries).size()) {
 
                 // plot the bests if we want them
-                if (showBest) plotCache(cache->meanMaxArray(rideSeries), range.color);
+                if (showBest) plotCache(cache->meanMaxArray(rideSeries), compareDateRanges[j].color);
 
                 // and plot a model too -- its neat to compare them...
                 if (rideSeries == RideFile::watts || rideSeries == RideFile::wattsKg || rideSeries == RideFile::kph)
-                    plotModel(cache->meanMaxArray(rideSeries), range.color, NULL);
+                    plotModel(cache->meanMaxArray(rideSeries), compareDateRanges[j].color, NULL);
 
                 int xCount = 0;
                 double vamYMax = 0;
@@ -2122,8 +2138,7 @@ CPPlot::calculateForIntervals(QList<CompareInterval> compareIntervals)
     if (showDelta && compareIntervals.count()) {
 
         // set the baseline data
-        CompareInterval range = compareIntervals.at(0);
-        baseline = range.rideFileCache()->meanMaxArray(rideSeries);
+        baseline = compareIntervals[0].rideFileCache()->meanMaxArray(rideSeries);
     }
 
     double ymax = 0;
@@ -2133,7 +2148,7 @@ CPPlot::calculateForIntervals(QList<CompareInterval> compareIntervals)
 
     // prepare aggregates
     for (int i = 0; i < compareIntervals.size(); ++i) {
-        CompareInterval interval = compareIntervals.at(i);
+        CompareInterval &interval = compareIntervals[i];
 
         if (interval.isChecked())  {
 

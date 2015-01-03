@@ -18,6 +18,7 @@
 
 #include "MetadataWindow.h"
 #include "Colors.h"
+#include "HelpWhatsThis.h"
 
 MetadataWindow::MetadataWindow(Context *context) :
     GcChartWindow(context), context(context)
@@ -36,11 +37,15 @@ MetadataWindow::MetadataWindow(Context *context) :
     vlayout->addWidget(rideMetadata);
     setChartLayout(vlayout);
 
+    HelpWhatsThis *help = new HelpWhatsThis(rideMetadata);
+    rideMetadata->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_Details));
+
+
     connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideItemChanged()));
-    connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 
     // set colors
-    configChanged();
+    configChanged(CONFIG_APPEARANCE);
 }
 
 void
@@ -52,7 +57,7 @@ MetadataWindow::rideItemChanged()
 }
 
 void
-MetadataWindow::configChanged()
+MetadataWindow::configChanged(qint32)
 {
     setProperty("color", GColor(CPLOTBACKGROUND));
 }

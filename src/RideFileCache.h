@@ -26,8 +26,9 @@
 
 class Context;
 class RideFile;
-class SummaryMetrics;
+class RideBest;
 class MetricDetail;
+class Specification;
 
 #include "GoldenCheetah.h"
 
@@ -138,6 +139,7 @@ class RideFileCache
         typedef enum cachetype CacheType;
         QDate start, end;
         unsigned int crc;
+        bool incomplete; // skipped over data
 
         // Construct from a ridefile or its filename
         // will reference cache if it exists, and create it
@@ -146,11 +148,17 @@ class RideFileCache
         // the calling class.
         // to save time you can pass the ride file if you already have it open
         // and if you don't want the data and just want to check pass check=true
-        RideFileCache(Context *context, QString filename, RideFile *ride =0, bool check = false);
+        RideFileCache(Context *context, QString filename, RideFile *ride =0, bool check = false, bool refresh = true);
 
         // Construct a ridefile cache that represents the data
         // across a date range. This is used to provide aggregated data.
         RideFileCache(Context *context, QDate start, QDate end, bool filter = false, QStringList files = QStringList(), bool onhome = true);
+
+        // once a cache is loaded we can refresh from in-memory if needed
+        void refresh(RideFile*ride = NULL);
+
+        // are we stale ?
+        static bool checkStale(Context *context, RideItem*item);
 
         // Just get mean max values for power & wpk for a ride
         static QVector<float> meanMaxPowerFor(Context *context, QVector<float>&wpk, QDate from, QDate to);
@@ -164,12 +172,14 @@ class RideFileCache
 
         // get a single best or time in zone value from the cache file
         // intended to be very fast (using lseek to jump direct to the value requested
+        static int rank(Context *context, RideFile::SeriesType series, int duration, 
+                        double value, Specification spec, int &of);
         static double best(Context *context, QString fileName, RideFile::SeriesType series, int duration);
         static int tiz(Context *context, QString fileName, RideFile::SeriesType series, int zone);
 
         // get all the bests passed and return a list of summary metrics, like the DBAccess
         // function but using CPX files as the source
-        static QList<SummaryMetrics> getAllBestsFor(Context *context, QList<MetricDetail>, QDateTime from, QDateTime to);
+        static QList<RideBest> getAllBestsFor(Context *context, QList<MetricDetail>, Specification spec);
 
         static int decimalsFor(RideFile::SeriesType series);
 
@@ -321,6 +331,30 @@ class RideFileCache
         QVector<float> hrCPTimeInZone;   // time in zone in seconds for polarized zones
         QVector<float> paceTimeInZone;      // time in zone in seconds
         QVector<float> paceCPTimeInZone;   // time in zone in seconds for polarized zones
+};
+
+// Ride Bests in an associative array
+// used to plot peak x seconds on LTM
+
+class RideBest
+{
+	public:
+        // filename
+	    QString getFileName() const { return fileName; }
+        void    setFileName(QString fileName) { this->fileName = fileName; }
+
+        // ride date
+        QDateTime getRideDate() const { return rideDate; }
+        void setRideDate(QDateTime rideDate) { this->rideDate = rideDate; }
+
+        // metric values
+        void setForSymbol(QString symbol, double v) { value.insert(symbol, v); }
+        double getForSymbol(QString symbol, bool metric=true) const;
+
+	private:
+	    QString fileName;
+        QDateTime rideDate;
+        QMap<QString, double> value;
 };
 
 // Working structured inherited from CPPlot.cpp

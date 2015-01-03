@@ -41,7 +41,7 @@
 #include <QFormLayout>
 #include <QSqlTableModel>
 
-#include "math.h" // for round()
+#include "cmath" // for round()
 #include "Units.h" // for MILES_PER_KM
 
 // Status settings
@@ -139,7 +139,7 @@ class TrainSidebar : public GcWindow
         void selectWorkout(QString fullpath);
 
     public slots:
-        void configChanged();
+        void configChanged(qint32);
         void deleteWorkouts(); // deletes selected workouts
         void deleteVideos(); // deletes selected workouts
 

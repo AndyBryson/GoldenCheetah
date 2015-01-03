@@ -21,12 +21,12 @@
 #include "TreeMapPlot.h"
 #include "LTMSettings.h"
 #include "Context.h"
-#include "Context.h"
 #include "Athlete.h"
-#include "SummaryMetrics.h"
+#include "RideCache.h"
 #include "Settings.h"
-#include "math.h"
+#include "cmath"
 #include "Units.h" // for MILES_PER_KM
+#include "HelpWhatsThis.h"
 
 #include <QtGui>
 #include <QString>
@@ -47,8 +47,13 @@ TreeMapWindow::TreeMapWindow(Context *context) :
     mainLayout->setContentsMargins(0,0,0,0);
     setLayout(mainLayout);
 
+    HelpWhatsThis *helpLTMPlot = new HelpWhatsThis(ltmPlot);
+    ltmPlot->setWhatsThis(helpLTMPlot->getWhatsThisText(HelpWhatsThis::ChartTrends_CollectionTreeMap));
+
     // the controls
     QWidget *c = new QWidget;
+    HelpWhatsThis *helpConfig = new HelpWhatsThis(c);
+    c->setWhatsThis(helpConfig->getWhatsThisText(HelpWhatsThis::ChartTrends_CollectionTreeMap));
     QFormLayout *cl = new QFormLayout(c);
     setControls(c);
 
@@ -56,7 +61,7 @@ TreeMapWindow::TreeMapWindow(Context *context) :
     QString filename = context->athlete->home->config().absolutePath()+"/metadata.xml";
     QString colorfield;
     if (!QFile(filename).exists()) filename = ":/xml/metadata.xml";
-    RideMetadata::readXML(filename, keywordDefinitions, fieldDefinitions, colorfield);
+    RideMetadata::readXML(filename, keywordDefinitions, fieldDefinitions, colorfield, defaultDefinitions);
 
     //title = new QLabel(this);
     //QFont font;
@@ -138,7 +143,7 @@ TreeMapWindow::TreeMapWindow(Context *context) :
     connect(context, SIGNAL(filterChanged()), this, SLOT(refresh(void)));
     connect(context, SIGNAL(homeFilterChanged()), this, SLOT(refresh(void)));
 
-    connect(context, SIGNAL(configChanged()), this, SLOT(refresh()));
+    connect(context, SIGNAL(configChanged(qint32)), this, SLOT(refresh()));
 
     // user clicked on a cell in the plot
     connect(ltmPlot, SIGNAL(clicked(QString,QString)), this, SLOT(cellClicked(QString,QString)));
@@ -214,26 +219,33 @@ TreeMapWindow::refresh()
             }
         }
 
+        DateRange dr;
+
         if (useCustom) {
-            settings.from = custom.from;
-            settings.to = custom.to;
+            dr.from = custom.from;
+            dr.to = custom.to;
         } else if (useToToday) {
             QDate today = QDate::currentDate();
-            settings.from = myDateRange.from;
-            settings.to = myDateRange.to > today ? today : myDateRange.to;
+            dr.from = myDateRange.from;
+            dr.to = myDateRange.to > today ? today : myDateRange.to;
         } else {
-            settings.from = myDateRange.from;
-            settings.to = myDateRange.to;
+            dr.from = myDateRange.from;
+            dr.to = myDateRange.to;
         }
+
+        // set the specification
+        FilterSet fs;
+#ifdef GC_HAVE_LUCENE
+        fs.addFilter(context->isfiltered, context->filters);
+        fs.addFilter(context->ishomefiltered, context->homeFilters);
+#endif
+        settings.specification.setFilterSet(fs);
+        settings.specification.setDateRange(dr);
+
+        // and the fields to use
         SpecialFields sp;
         settings.field1 = sp.internalName(field1->currentText());
         settings.field2 = sp.internalName(field2->currentText());
-        settings.data = &results;
-
-        // get the data
-        results.clear(); // clear any old data
-        results = context->athlete->metricDB->getAllMetricsFor(QDateTime(settings.from, QTime(0,0,0)),
-                                                   QDateTime(settings.to, QTime(0,0,0)));
 
         refreshPlot();
     }
@@ -261,27 +273,40 @@ TreeMapWindow::fieldSelected(int)
 void
 TreeMapWindow::cellClicked(QString f1, QString f2)
 {
-    QList<SummaryMetrics> cell;
+    QStringList match;
 
     // create a list of activities in this cell
     int count = 0;
-    foreach(SummaryMetrics x, results) {
+    foreach(RideItem *item, context->athlete->rideCache->rides()) {
+
+        // honour the settings
+        if (!settings.specification.pass(item)) continue;
+
         // text may either not exists, then "unknown" or just be "" but f1, f2 don't know ""
-        QString x1 = x.getText(settings.field1, tr("(unknown)"));
-        QString x2 = x.getText(settings.field2, tr("(unknown)"));
+        QString x1 = item->getText(settings.field1, tr("(unknown)"));
+        QString x2 = item->getText(settings.field2, tr("(unknown)"));
         if (x1 == "") x1 = tr("(unknown)");
         if (x2 == "") x2 = tr("(unknown)");
-        // now we can compare and append
+
+        // match !
         if (x1 == f1 && x2 == f2) {
-            cell.append(x);
+            match << item->fileName;
             count++;
         }
     }
 
+    // create a specification for ours
+    Specification spec;
+    spec.setDateRange(settings.specification.dateRange());
+    FilterSet fs = settings.specification.filterSet();
+    fs.addFilter(true, match);
+    spec.setFilterSet(fs);
+
+    // and the metric to display
     const RideMetricFactory &factory = RideMetricFactory::instance();
     const RideMetric *metric = factory.rideMetric(settings.symbol);
 
-    ltmPopup->setData(cell, metric, QString(tr("%1 ride%2")).arg(count).arg(count == 1 ? "" : tr("s")));
+    ltmPopup->setData(spec, metric, QString(tr("%1 ride%2")).arg(count).arg(count == 1 ? "" : tr("s")));
     popup->show();
 
 }

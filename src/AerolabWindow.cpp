@@ -24,6 +24,7 @@
 #include "IntervalItem.h"
 #include "RideItem.h"
 #include "Colors.h"
+#include "HelpWhatsThis.h"
 #include <QtGui>
 #include <qwt_plot_zoomer.h>
 
@@ -37,6 +38,9 @@ AerolabWindow::AerolabWindow(Context *context) :
 
   // Plot:
   aerolab = new Aerolab(this, context);
+
+  HelpWhatsThis *help = new HelpWhatsThis(aerolab);
+  aerolab->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::ChartRides_Aerolab));
 
   // Left controls layout:
   QVBoxLayout *leftControls  =  new QVBoxLayout;
@@ -233,6 +237,7 @@ AerolabWindow::AerolabWindow(Context *context) :
 
   // SIGNALs to SLOTs:
   connect(this, SIGNAL(rideItemChanged(RideItem*)), this, SLOT(rideSelected()));
+  connect(context, SIGNAL(rideChanged(RideItem*)), this, SLOT(rideSelected()));
   connect(crrSlider, SIGNAL(valueChanged(int)),this, SLOT(setCrrFromSlider()));
   connect(crrLineEdit, SIGNAL(textChanged(const QString)), this, SLOT(setCrrFromText(const QString)));
   connect(cdaSlider, SIGNAL(valueChanged(int)), this, SLOT(setCdaFromSlider()));
@@ -249,8 +254,8 @@ AerolabWindow::AerolabWindow(Context *context) :
   connect(constantAlt, SIGNAL(stateChanged(int)), this, SLOT(setConstantAlt(int)));
   connect(comboDistance, SIGNAL(currentIndexChanged(int)), this, SLOT(setByDistance(int)));
   connect(btnEstCdACrr, SIGNAL(clicked()), this, SLOT(doEstCdACrr()));
-  connect(context, SIGNAL(configChanged()), aerolab, SLOT(configChanged()));
-  connect(context, SIGNAL(configChanged()), this, SLOT(configChanged()));
+  connect(context, SIGNAL(configChanged(qint32)), aerolab, SLOT(configChanged(qint32)));
+  connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
   connect(context, SIGNAL(intervalSelected() ), this, SLOT(intervalSelected()));
   connect(context, SIGNAL(intervalZoom(IntervalItem*) ), this, SLOT(zoomInterval(IntervalItem*)));
   connect(allZoomer, SIGNAL( zoomed(const QRectF) ), this, SLOT(zoomChanged()));
@@ -284,7 +289,7 @@ AerolabWindow::AerolabWindow(Context *context) :
              aerolab,                SLOT  ( pointHover( QwtPlotCurve*, int ) ) );
 
 
-  configChanged(); // pickup colors etc
+  configChanged(CONFIG_APPEARANCE); // pickup colors etc
 }
 
 void
@@ -296,7 +301,7 @@ AerolabWindow::zoomChanged()
 
 
 void
-AerolabWindow::configChanged()
+AerolabWindow::configChanged(qint32)
 {
   allZoomer->setRubberBandPen(GColor(CPLOTSELECT));
   setProperty("color", GColor(CPLOTBACKGROUND));

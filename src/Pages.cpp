@@ -260,6 +260,13 @@ GeneralPage::GeneralPage(Context *context) : context(context)
 
     connect(workoutBrowseButton, SIGNAL(clicked()), this, SLOT(browseWorkoutDir()));
 
+    // save away initial values
+    b4.wheel = wheelSize;
+    b4.crank = crankLengthCombo->currentIndex();
+    b4.hyst = elevationHysteresis.toFloat();
+    b4.wbal = wbalForm->currentIndex();
+    b4.lts = perfManLTSVal.toInt();
+    b4.sts = perfManSTSVal.toInt();
 }
 
 void
@@ -277,7 +284,7 @@ GeneralPage::resetWheelSize()
    tireSizeCombo->setCurrentIndex(0);
 }
 
-void
+qint32
 GeneralPage::saveClicked()
 {
     // Language
@@ -314,6 +321,24 @@ GeneralPage::saveClicked()
     appsettings->setValue(GC_LTS_ACRONYM, appsettings->value(this, GC_LTS_ACRONYM,tr("LTS")));
     appsettings->setValue(GC_SB_NAME, appsettings->value(this, GC_SB_NAME,tr("Stress Balance")));
     appsettings->setValue(GC_SB_ACRONYM, appsettings->value(this, GC_SB_ACRONYM,tr("SB")));
+
+    qint32 state=0;
+
+    // general stuff changed ?
+    if (b4.wheel != wheelSizeEdit->text().toInt() ||
+        b4.crank != crankLengthCombo->currentIndex() ||
+        b4.hyst != hystedit->text().toFloat())
+        state += CONFIG_GENERAL;
+
+    if (b4.wbal != wbalForm->currentIndex())
+        state += CONFIG_WBAL;
+
+    // PMC constants changed ?
+    if(b4.lts != perfManLTSavg->text().toInt() ||
+        b4.sts != perfManSTSavg->text().toInt()) 
+        state += CONFIG_PMC;
+
+    return state;
 }
 
 void
@@ -345,6 +370,8 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
 
     QFont current;
     current.setWeight(QFont::Black);
+
+    QPixmap passwords = QPixmap(":/images/toolbar/passwords.png");
 
     //////////////////////////////////////////////////
     // TrainingPeaks
@@ -393,40 +420,9 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
 
 
     //////////////////////////////////////////////////
-    // Golden Cheetah Racing
-
-    QLabel *gc = new QLabel(tr("Golden Cheetah Racing"));
-    gc->setFont(current);
-
-    QLabel *gcurlLabel = new QLabel(tr("Website"));
-    QLabel *gcuserLabel = new QLabel(tr("Username"));
-    QLabel *gcpassLabel = new QLabel(tr("Password"));
-
-    gcURL = new QLineEdit(this);
-    gcURL->setText(appsettings->cvalue(context->athlete->cyclist, GC_GCURL, "http://race.goldencheetah.org").toString());
-
-    gcUser = new QLineEdit(this);
-    gcUser->setText(appsettings->cvalue(context->athlete->cyclist, GC_GCUSER, "").toString());
-
-    gcPass = new QLineEdit(this);
-    gcPass->setEchoMode(QLineEdit::Password);
-    gcPass->setText(appsettings->cvalue(context->athlete->cyclist, GC_GCPASS, "").toString());
-
-    grid->addWidget(gc, ++row, 0);
-
-    grid->addWidget(gcurlLabel, ++row, 0);
-    grid->addWidget(gcURL, row, 1, 0);
-
-    grid->addWidget(gcuserLabel, ++row, 0);
-    grid->addWidget(gcUser, row, 1, Qt::AlignLeft | Qt::AlignVCenter);
-
-    grid->addWidget(gcpassLabel, ++row, 0);
-    grid->addWidget(gcPass, row, 1, Qt::AlignLeft | Qt::AlignVCenter);
-
-    //////////////////////////////////////////////////
     // Twitter
 
-#ifdef GC_HAVE_LIBOAUTH
+#ifdef GC_HAVE_KQOAUTH
     QLabel *twp = new QLabel(tr("Twitter"));
     twp->setFont(current);
 
@@ -437,7 +433,6 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
     twitterURL = new QLineEdit(this);
     twitterURL->setText(appsettings->cvalue(context->athlete->cyclist, GC_TWURL, "http://www.twitter.com").toString());
     twitterAuthorise = new QPushButton(tr("Authorise"), this);
-    QPixmap passwords = QPixmap(":/images/toolbar/passwords.png");
 
     twitterAuthorised = new QPushButton(this);
     twitterAuthorised->setContentsMargins(0,0,0,0);
@@ -466,12 +461,9 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
     //////////////////////////////////////////////////
     // Strava
 
-#ifdef GC_HAVE_LIBOAUTH
     QLabel *str = new QLabel(tr("Strava"));
     str->setFont(current);
 
-    //QLabel *struserLabel = new QLabel(tr("Username"));
-    //QLabel *strpassLabel = new QLabel(tr("Password"));
     QLabel *strauthLabel = new QLabel(tr("Authorise"));
 
     stravaAuthorise = new QPushButton(tr("Authorise"), this);
@@ -497,12 +489,11 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
         stravaAuthorised->hide(); // if no token no show
 
     connect(stravaAuthorise, SIGNAL(clicked()), this, SLOT(authoriseStrava()));
-#endif
 
     //////////////////////////////////////////////////
     // Cycling Analytics
 
-#ifdef GC_HAVE_LIBOAUTH
+
     QLabel *can = new QLabel(tr("Cycling Analytics"));
     can->setFont(current);
     QLabel *canauthLabel = new QLabel(tr("Authorise"));
@@ -529,7 +520,7 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
         cyclingAnalyticsAuthorised->hide();
 
     connect(cyclingAnalyticsAuthorise, SIGNAL(clicked()), this, SLOT(authoriseCyclingAnalytics()));
-#endif
+
 
     //////////////////////////////////////////////////
     // RideWithGPS
@@ -720,67 +711,37 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
 }
 
 
-#ifdef GC_HAVE_LIBOAUTH
+#ifdef GC_HAVE_KQOAUTH
 void CredentialsPage::authoriseTwitter()
 {
     OAuthDialog *oauthDialog = new OAuthDialog(context, OAuthDialog::TWITTER);
     oauthDialog->setWindowModality(Qt::ApplicationModal);
     oauthDialog->exec();
-    /*
-#ifdef GC_HAVE_LIBOAUTH
-    int rc;
-    char **rv = NULL;
-    QString token;
-    QString url = QString();
-    t_key = NULL;
-    t_secret = NULL;
 
-    const char *request_token_uri = "https://api.twitter.com/oauth/request_token";
-
-    char *req_url = NULL;
-    char *postarg = NULL;
-    char *reply   = NULL;
-    req_url = oauth_sign_url2(request_token_uri, NULL, OA_HMAC, NULL, GC_TWITTER_CONSUMER_KEY, GC_TWITTER_CONSUMER_SECRET, NULL, NULL);
-    reply = oauth_http_get(req_url,postarg);
-
-    rc = oauth_split_url_parameters(reply, &rv);
-    qsort(rv, rc, sizeof(char *), oauth_cmpstringp);
-    token = QString(rv[1]);
-    t_key  =strdup(&(rv[1][12]));
-    t_secret =strdup(&(rv[2][19]));
-    url = QString("https://api.twitter.com/oauth/authorize?");
-    url.append(token);
-    QDesktopServices::openUrl(QUrl(url));
-    if(rv) free(rv);
-#endif
-    */
 }
 #endif
 
-#ifdef GC_HAVE_LIBOAUTH
+
 void CredentialsPage::authoriseStrava()
 {
     OAuthDialog *oauthDialog = new OAuthDialog(context, OAuthDialog::STRAVA);
     oauthDialog->setWindowModality(Qt::ApplicationModal);
     oauthDialog->exec();
 }
-#endif
 
-#ifdef GC_HAVE_LIBOAUTH
+
+
 void CredentialsPage::authoriseCyclingAnalytics()
 {
     OAuthDialog *oauthDialog = new OAuthDialog(context, OAuthDialog::CYCLING_ANALYTICS);
     oauthDialog->setWindowModality(Qt::ApplicationModal);
     oauthDialog->exec();
 }
-#endif
 
-void
+
+qint32
 CredentialsPage::saveClicked()
 {
-    appsettings->setCValue(context->athlete->cyclist, GC_GCURL, gcURL->text());
-    appsettings->setCValue(context->athlete->cyclist, GC_GCUSER, gcUser->text());
-    appsettings->setCValue(context->athlete->cyclist, GC_GCPASS, gcPass->text());
     appsettings->setCValue(context->athlete->cyclist, GC_TPURL, tpURL->text());
     appsettings->setCValue(context->athlete->cyclist, GC_TPUSER, tpUser->text());
     appsettings->setCValue(context->athlete->cyclist, GC_TPPASS, tpPass->text());
@@ -804,6 +765,8 @@ CredentialsPage::saveClicked()
     appsettings->setCValue(context->athlete->cyclist, GC_DVURL, url);
     appsettings->setCValue(context->athlete->cyclist, GC_DVUSER, dvUser->text());
     appsettings->setCValue(context->athlete->cyclist, GC_DVPASS, dvPass->text());
+
+    return 0;
 }
 
 //
@@ -912,6 +875,17 @@ RiderPage::RiderPage(QWidget *parent, Context *context) : QWidget(parent), conte
     all->addLayout(grid);
     all->addStretch();
 
+    // save initial values for things we care about
+    // note we don't worry about age or sex at this point
+    // since they are not used, nor the W'bal tau used in
+    // the realtime code. This is limited to stuff we
+    // care about tracking as it is used by metrics
+    b4.unit = unitCombo->currentIndex();
+
+    // height and weight as stored (always metric)
+    b4.height = appsettings->cvalue(context->athlete->cyclist, GC_HEIGHT).toDouble();
+    b4.weight = appsettings->cvalue(context->athlete->cyclist, GC_WEIGHT).toDouble();
+
     connect (avatarButton, SIGNAL(clicked()), this, SLOT(chooseAvatar()));
     connect (unitCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(unitChanged(int)));
 }
@@ -953,7 +927,7 @@ RiderPage::unitChanged(int currentIndex)
 }
 
 
-void
+qint32
 RiderPage::saveClicked()
 {
     appsettings->setCValue(context->athlete->cyclist, GC_NICKNAME, nickname->text());
@@ -971,6 +945,19 @@ RiderPage::saveClicked()
     appsettings->setCValue(context->athlete->cyclist, GC_BIO, bio->toPlainText());
     avatar.save(context->athlete->home->config().canonicalPath() + "/" + "avatar.png", "PNG");
 
+    qint32 state=0;
+
+    // units prefs changed?
+    if (b4.unit != unitCombo->currentIndex())
+        state += CONFIG_UNITS;
+
+    // default height or weight changed ?
+    if (b4.height != appsettings->cvalue(context->athlete->cyclist, GC_HEIGHT).toDouble() ||
+        b4.weight != appsettings->cvalue(context->athlete->cyclist, GC_WEIGHT).toDouble()) {
+        state += CONFIG_ATHLETE;
+    }
+
+    return state;
 }
 
 //
@@ -1025,13 +1012,15 @@ DevicePage::DevicePage(QWidget *parent, Context *context) : QWidget(parent), con
     connect(delButton, SIGNAL(clicked()), this, SLOT(devdelClicked()));
 }
 
-void
+qint32
 DevicePage::saveClicked()
 {
     // Save the device configuration...
     DeviceConfigurations all;
     all.writeConfig(deviceListModel->Configuration);
     appsettings->setValue(TRAIN_MULTI, multiCheck->isChecked());
+
+    return 0;
 }
 
 void
@@ -1453,6 +1442,16 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
 
     }
     connect(colorTab, SIGNAL(currentChanged(int)), this, SLOT(tabChanged()));
+
+    // save initial values
+    b4.alias = antiAliased->isChecked();
+#ifndef Q_OS_MAC
+    b4.scroll = rideScroll->isChecked();
+    b4.head = rideHead->isChecked();
+#endif
+    b4.line = lineWidth->value();
+    b4.chrome = chromeCombo->currentIndex();
+    b4.fingerprint = Colors::fingerprint(colorSet);
 }
 
 void
@@ -1557,7 +1556,7 @@ ColorsPage::applyThemeClicked()
     }
 }
 
-void
+qint32
 ColorsPage::saveClicked()
 {
     // chrome style only has 2 types for now
@@ -1611,6 +1610,22 @@ ColorsPage::saveClicked()
     font.fromString(appsettings->value(this, GC_FONT_DEFAULT, QFont().toString()).toString());
     font.setPointSize(appsettings->value(this, GC_FONT_DEFAULT_SIZE, 13).toInt());
     QApplication::setFont(font);
+
+    // reread into colorset so we can check for changes
+    GCColor::readConfig();
+
+    // did we change anything ?
+    if(b4.alias != antiAliased->isChecked() ||
+#ifndef Q_OS_MAC // not needed on mac
+       b4.scroll != rideScroll->isChecked() ||
+       b4.head != rideHead->isChecked() ||
+#endif
+       b4.line != lineWidth->value() ||
+       b4.chrome != chromeCombo->currentIndex() ||
+       b4.fingerprint != Colors::fingerprint(colorSet))
+        return CONFIG_APPEARANCE;
+    else
+        return 0;
 }
 
 IntervalMetricsPage::IntervalMetricsPage(QWidget *parent) :
@@ -1793,15 +1808,17 @@ IntervalMetricsPage::selectedChanged()
     leftButton->setEnabled(true);
 }
 
-void
+qint32
 IntervalMetricsPage::saveClicked()
 {
-    if (!changed)
-        return;
+    if (!changed) return 0;
+
     QStringList metrics;
     for (int i = 0; i < selectedList->count(); ++i)
         metrics << selectedList->item(i)->data(Qt::UserRole).toString();
     appsettings->setValue(GC_SETTINGS_INTERVAL_METRICS, metrics.join(","));
+
+    return 0;
 }
 
 BestsMetricsPage::BestsMetricsPage(QWidget *parent) :
@@ -1984,15 +2001,17 @@ BestsMetricsPage::selectedChanged()
     leftButton->setEnabled(true);
 }
 
-void
+qint32
 BestsMetricsPage::saveClicked()
 {
-    if (!changed)
-        return;
+    if (!changed) return 0;
+
     QStringList metrics;
     for (int i = 0; i < selectedList->count(); ++i)
         metrics << selectedList->item(i)->data(Qt::UserRole).toString();
     appsettings->setValue(GC_SETTINGS_BESTS_METRICS, metrics.join(","));
+
+    return 0;
 }
 
 SummaryMetricsPage::SummaryMetricsPage(QWidget *parent) :
@@ -2171,15 +2190,17 @@ SummaryMetricsPage::selectedChanged()
     leftButton->setEnabled(true);
 }
 
-void
+qint32
 SummaryMetricsPage::saveClicked()
 {
-    if (!changed)
-        return;
+    if (!changed) return 0;
+
     QStringList metrics;
     for (int i = 0; i < selectedList->count(); ++i)
         metrics << selectedList->item(i)->data(Qt::UserRole).toString();
     appsettings->setValue(GC_SETTINGS_SUMMARY_METRICS, metrics.join(","));
+
+    return 0;
 }
 
 MetadataPage::MetadataPage(Context *context) : context(context)
@@ -2190,39 +2211,59 @@ MetadataPage::MetadataPage(Context *context) : context(context)
     keywordDefinitions = context->athlete->rideMetadata()->getKeywords();
     fieldDefinitions = context->athlete->rideMetadata()->getFields();
     colorfield = context->athlete->rideMetadata()->getColorField();
+    defaultDefinitions = context->athlete->rideMetadata()->getDefaults();
 
     // setup maintenance pages using current config
     fieldsPage = new FieldsPage(this, fieldDefinitions);
     keywordsPage = new KeywordsPage(this, keywordDefinitions);
+    defaultsPage = new DefaultsPage(this, defaultDefinitions);
     processorPage = new ProcessorPage(context);
+
 
     tabs = new QTabWidget(this);
     tabs->addTab(fieldsPage, tr("Fields"));
     tabs->addTab(keywordsPage, tr("Notes Keywords"));
+    tabs->addTab(defaultsPage, tr("Defaults"));
     tabs->addTab(processorPage, tr("Processing"));
+
 
     // refresh the keywords combo when change tabs .. will do more often than
     // needed but better that than less often than needed
     connect (tabs, SIGNAL(currentChanged(int)), keywordsPage, SLOT(pageSelected()));
 
     layout->addWidget(tabs);
+
+    // save initial values
+    b4.keywordFingerprint = KeywordDefinition::fingerprint(keywordDefinitions);
+    b4.fieldFingerprint = FieldDefinition::fingerprint(fieldDefinitions);
 }
 
-void
+qint32
 MetadataPage::saveClicked()
 {
     // get current state
     fieldsPage->getDefinitions(fieldDefinitions);
     keywordsPage->getDefinitions(keywordDefinitions);
+    defaultsPage->getDefinitions(defaultDefinitions);
 
     // save settings
     appsettings->setValue(GC_RIDEBG, keywordsPage->rideBG->isChecked());
 
     // write to metadata.xml
-    RideMetadata::serialize(context->athlete->home->config().canonicalPath() + "/metadata.xml", keywordDefinitions, fieldDefinitions, colorfield);
+    RideMetadata::serialize(context->athlete->home->config().canonicalPath() + "/metadata.xml", keywordDefinitions, fieldDefinitions, colorfield, defaultDefinitions);
 
     // save processors config
     processorPage->saveClicked();
+
+    qint32 state = 0;
+
+    if (b4.keywordFingerprint != KeywordDefinition::fingerprint(keywordDefinitions))
+        state += CONFIG_NOTECOLOR;
+
+    if (b4.fieldFingerprint != FieldDefinition::fingerprint(fieldDefinitions))
+        state += CONFIG_FIELDS;
+
+    return state;
 }
 
 // little helper since we create/recreate combos
@@ -2734,7 +2775,7 @@ ProcessorPage::ProcessorPage(Context *context) : context(context)
     mainLayout->addWidget(processorTree, 0,0);
 }
 
-void
+qint32
 ProcessorPage::saveClicked()
 {
     // call each processor config widget's saveConfig() to
@@ -2746,6 +2787,161 @@ ProcessorPage::saveClicked()
                         "Auto" : "Manual";
         appsettings->setValue(configsetting, apply);
         ((DataProcessorConfig*)(processorTree->itemWidget(processorTree->invisibleRootItem()->child(i), 2)))->saveConfig();
+    }
+
+    return 0;
+}
+
+//
+// Default values page
+//
+DefaultsPage::DefaultsPage(QWidget *parent, QList<DefaultDefinition>defaultDefinitions) : QWidget(parent)
+{
+    QGridLayout *mainLayout = new QGridLayout(this);
+
+    addButton = new QPushButton(tr("+"));
+    deleteButton = new QPushButton(tr("-"));
+#ifndef Q_OS_MAC
+    upButton = new QToolButton(this);
+    downButton = new QToolButton(this);
+    upButton->setArrowType(Qt::UpArrow);
+    downButton->setArrowType(Qt::DownArrow);
+    upButton->setFixedSize(20,20);
+    downButton->setFixedSize(20,20);
+    addButton->setFixedSize(20,20);
+    deleteButton->setFixedSize(20,20);
+#else
+    addButton->setText(tr("Add"));
+    deleteButton->setText(tr("Delete"));
+    upButton = new QPushButton(tr("Up"));
+    downButton = new QPushButton(tr("Down"));
+#endif
+    QHBoxLayout *actionButtons = new QHBoxLayout;
+    actionButtons->setSpacing(2);
+    actionButtons->addWidget(upButton);
+    actionButtons->addWidget(downButton);
+    actionButtons->addStretch();
+    actionButtons->addWidget(addButton);
+    actionButtons->addWidget(deleteButton);
+
+    defaults = new QTreeWidget;
+    defaults->headerItem()->setText(0, tr("Field"));
+    defaults->headerItem()->setText(1, tr("Value"));
+    defaults->headerItem()->setText(2, tr("Linked field"));
+    defaults->headerItem()->setText(3, tr("Default Value"));
+    defaults->setColumnWidth(0,80);
+    defaults->setColumnWidth(1,100);
+    defaults->setColumnWidth(2,80);
+    defaults->setColumnWidth(3,100);
+    defaults->setColumnCount(4);
+    defaults->setSelectionMode(QAbstractItemView::SingleSelection);
+    defaults->setEditTriggers(QAbstractItemView::SelectedClicked); // allow edit
+    //defaults->setUniformRowHeights(true); // causes height problems when adding - in case of non-text fields
+    defaults->setIndentation(0);
+
+    SpecialFields specials;
+    foreach(DefaultDefinition adefault, defaultDefinitions) {
+        QTreeWidgetItem *add;
+
+        add = new QTreeWidgetItem(defaults->invisibleRootItem());
+        add->setFlags(add->flags() | Qt::ItemIsEditable);
+
+        // field name
+        add->setText(1, specials.displayName(adefault.field));
+        // value
+        add->setText(2, adefault.value);
+        // Linked field
+        add->setText(3, adefault.linkedField);
+        // Default Value
+        add->setText(4, adefault.linkedValue);
+    }
+    defaults->setCurrentItem(defaults->invisibleRootItem()->child(0));
+
+    mainLayout->addWidget(defaults, 0,0);
+    mainLayout->addLayout(actionButtons, 1,0);
+
+    // connect up slots
+    connect(upButton, SIGNAL(clicked()), this, SLOT(upClicked()));
+    connect(downButton, SIGNAL(clicked()), this, SLOT(downClicked()));
+    connect(addButton, SIGNAL(clicked()), this, SLOT(addClicked()));
+    connect(deleteButton, SIGNAL(clicked()), this, SLOT(deleteClicked()));
+}
+
+void
+DefaultsPage::upClicked()
+{
+    if (defaults->currentItem()) {
+        int index = defaults->invisibleRootItem()->indexOfChild(defaults->currentItem());
+        if (index == 0) return; // its at the top already
+
+        QTreeWidgetItem* moved = defaults->invisibleRootItem()->takeChild(index);
+        defaults->invisibleRootItem()->insertChild(index-1, moved);
+        defaults->setCurrentItem(moved);
+    }
+}
+
+void
+DefaultsPage::downClicked()
+{
+    if (defaults->currentItem()) {
+        int index = defaults->invisibleRootItem()->indexOfChild(defaults->currentItem());
+        if (index == (defaults->invisibleRootItem()->childCount()-1)) return; // its at the bottom already
+
+        QTreeWidgetItem* moved = defaults->invisibleRootItem()->takeChild(index);
+        defaults->invisibleRootItem()->insertChild(index+1, moved);
+        defaults->setCurrentItem(moved);
+    }
+}
+
+void
+DefaultsPage::addClicked()
+{
+    int index = defaults->invisibleRootItem()->indexOfChild(defaults->currentItem());
+    if (index < 0) index = 0;
+    QTreeWidgetItem *add;
+
+    add = new QTreeWidgetItem;
+    defaults->invisibleRootItem()->insertChild(index, add);
+    add->setFlags(add->flags() | Qt::ItemIsEditable);
+
+    // field
+    QString text = tr("New");
+    for (int i=0; defaults->findItems(text, Qt::MatchExactly, 1).count() > 0; i++) {
+        text = QString(tr("New (%1)")).arg(i+1);
+    }
+    add->setText(0, text);
+}
+
+void
+DefaultsPage::deleteClicked()
+{
+    if (defaults->currentItem()) {
+        int index = defaults->invisibleRootItem()->indexOfChild(defaults->currentItem());
+
+        // zap!
+        delete defaults->invisibleRootItem()->takeChild(index);
+    }
+}
+
+void
+DefaultsPage::getDefinitions(QList<DefaultDefinition> &defaultList)
+{
+    SpecialFields sp;
+
+    // clear current just in case
+    defaultList.clear();
+
+    for (int idx =0; idx < defaults->invisibleRootItem()->childCount(); idx++) {
+
+        DefaultDefinition add;
+        QTreeWidgetItem *item = defaults->invisibleRootItem()->child(idx);
+
+        add.field = sp.internalName(item->text(0));
+        add.value = item->text(1);
+        add.linkedField = sp.internalName(item->text(2));
+        add.linkedValue = item->text(3);
+
+        defaultList.append(add);
     }
 }
 
@@ -2761,6 +2957,7 @@ ZonePage::ZonePage(Context *context) : context(context)
     if (zonesFile.exists()) {
         zones.read(zonesFile);
         zonesFile.close();
+        b4Fingerprint = zones.getFingerprint(); // remember original state
     }
 
     // setup maintenance pages using current config
@@ -2774,11 +2971,20 @@ ZonePage::ZonePage(Context *context) : context(context)
     layout->addWidget(tabs);
 }
 
-void
+qint32
 ZonePage::saveClicked()
 {
+    // write
     zones.setScheme(schemePage->getScheme());
     zones.write(context->athlete->home->config());
+
+    // re-read Zones in case it changed
+    QFile zonesFile(context->athlete->home->config().canonicalPath() + "/power.zones");
+    context->athlete->zones_->read(zonesFile);
+
+    // did we change ?
+    if (zones.getFingerprint() != b4Fingerprint) return CONFIG_ZONES;
+    else return 0;
 }
 
 SchemePage::SchemePage(ZonePage* zonePage) : zonePage(zonePage)
@@ -3337,6 +3543,7 @@ HrZonePage::HrZonePage(Context *context) : context(context)
     if (zonesFile.exists()) {
         zones.read(zonesFile);
         zonesFile.close();
+        b4Fingerprint = zones.getFingerprint(); // remember original state
     }
 
     // setup maintenance pages using current config
@@ -3350,11 +3557,19 @@ HrZonePage::HrZonePage(Context *context) : context(context)
     layout->addWidget(tabs);
 }
 
-void
+qint32
 HrZonePage::saveClicked()
 {
     zones.setScheme(schemePage->getScheme());
     zones.write(context->athlete->home->config());
+
+    // reread HR zones
+    QFile hrzonesFile(context->athlete->home->config().canonicalPath() + "/hr.zones");
+    context->athlete->hrzones_->read(hrzonesFile);
+
+    // did we change ?
+    if (zones.getFingerprint() != b4Fingerprint) return CONFIG_ZONES;
+    else return 0;
 }
 
 HrSchemePage::HrSchemePage(HrZonePage* zonePage) : zonePage(zonePage)
@@ -3961,6 +4176,7 @@ PaceZonePage::PaceZonePage(Context *context) : context(context)
     if (zonesFile.exists()) {
         zones.read(zonesFile);
         zonesFile.close();
+        b4Fingerprint = zones.getFingerprint(); // remember original state
     }
 
     // setup maintenance pages using current config
@@ -3974,12 +4190,21 @@ PaceZonePage::PaceZonePage(Context *context) : context(context)
     layout->addWidget(tabs);
 }
 
-void
+qint32
 PaceZonePage::saveClicked()
 {
+    // write it
     appsettings->setValue(GC_PACE, cvPage->metric->isChecked());
     zones.setScheme(schemePage->getScheme());
     zones.write(context->athlete->home->config());
+
+    // reread Pace zones
+    QFile pacezonesFile(context->athlete->home->config().canonicalPath() + "/pace.zones");
+    context->athlete->pacezones_->read(pacezonesFile);
+
+    // did we change ?
+    if (zones.getFingerprint() != b4Fingerprint) return CONFIG_ZONES;
+    else return 0;
 }
 
 PaceSchemePage::PaceSchemePage(PaceZonePage* zonePage) : zonePage(zonePage)
@@ -4542,209 +4767,6 @@ CVPage::zonesChanged()
 }
 
 //
-// Ride metadata page
-//
-MeasuresPage::MeasuresPage(Context *context) : context(context)
-{
-    QGridLayout *mainLayout = new QGridLayout(this);
-
-    addButton = new QPushButton(tr("+"));
-    deleteButton = new QPushButton(tr("-"));
-#ifndef Q_OS_MAC
-    upButton = new QToolButton(this);
-    downButton = new QToolButton(this);
-    upButton->setArrowType(Qt::UpArrow);
-    downButton->setArrowType(Qt::DownArrow);
-    upButton->setFixedSize(20,20);
-    downButton->setFixedSize(20,20);
-    addButton->setFixedSize(20,20);
-    deleteButton->setFixedSize(20,20);
-#else
-    addButton->setText(tr("Add"));
-    deleteButton->setText(tr("Delete"));
-    upButton = new QPushButton(tr("Up"));
-    downButton = new QPushButton(tr("Down"));
-#endif
-
-    QHBoxLayout *actionButtons = new QHBoxLayout;
-    actionButtons->setSpacing(2);
-    actionButtons->addWidget(upButton);
-    actionButtons->addWidget(downButton);
-    actionButtons->addStretch();
-    actionButtons->addWidget(addButton);
-    actionButtons->addWidget(deleteButton);
-
-    fields = new QTreeWidget;
-    fields->headerItem()->setText(0, tr("Screen Tab"));
-    fields->headerItem()->setText(1, tr("Measure"));
-    fields->headerItem()->setText(2, tr("Type"));
-    fields->setColumnCount(3);
-    fields->setSelectionMode(QAbstractItemView::SingleSelection);
-    fields->setEditTriggers(QAbstractItemView::SelectedClicked); // allow edit
-    //fields->setUniformRowHeights(true);
-    fields->setIndentation(0);
-    //fields->header()->resizeSection(0,130);
-    //fields->header()->resizeSection(1,140);
-
-    // temporary storage for measures config
-    QList<FieldDefinition> fieldDefinitions;
-    QList<KeywordDefinition> keywordDefinitions; //NOTE: not used in measures.xml
-
-    // check we have one and use built in if not there
-    QString filename = context->athlete->home->config().absolutePath()+"/measures.xml";
-    QString colorfield;
-
-    if (!QFile(filename).exists()) filename = ":/xml/measures.xml";
-    RideMetadata::readXML(filename, keywordDefinitions, fieldDefinitions, colorfield);
-
-    // iterate over the fields and setup the editable items
-    foreach(FieldDefinition field, fieldDefinitions) {
-        QTreeWidgetItem *add;
-        QComboBox *comboButton = new QComboBox(this);
-
-        FieldsPage::addFieldTypes(comboButton);
-        comboButton->setCurrentIndex(field.type);
-
-        add = new QTreeWidgetItem(fields->invisibleRootItem());
-        add->setFlags(add->flags() | Qt::ItemIsEditable);
-
-        // tab name
-        add->setText(0, field.tab);
-        // field name
-        add->setText(1, field.name);
-
-        // type button
-        add->setTextAlignment(2, Qt::AlignHCenter);
-        fields->setItemWidget(add, 2, comboButton);
-    }
-    fields->setCurrentItem(fields->invisibleRootItem()->child(0));
-
-    mainLayout->addWidget(fields, 0,0);
-    mainLayout->addLayout(actionButtons, 1,0);
-
-    // connect up slots
-    connect(upButton, SIGNAL(clicked()), this, SLOT(upClicked()));
-    connect(downButton, SIGNAL(clicked()), this, SLOT(downClicked()));
-    connect(addButton, SIGNAL(clicked()), this, SLOT(addClicked()));
-    connect(deleteButton, SIGNAL(clicked()), this, SLOT(deleteClicked()));
-}
-
-void
-MeasuresPage::upClicked()
-{
-    if (fields->currentItem()) {
-        int index = fields->invisibleRootItem()->indexOfChild(fields->currentItem());
-        if (index == 0) return; // its at the top already
-
-        // movin on up!
-        QWidget *button = fields->itemWidget(fields->currentItem(),2);
-        QComboBox *comboButton = new QComboBox(this);
-        FieldsPage::addFieldTypes(comboButton);
-        comboButton->setCurrentIndex(((QComboBox*)button)->currentIndex());
-        QTreeWidgetItem* moved = fields->invisibleRootItem()->takeChild(index);
-        fields->invisibleRootItem()->insertChild(index-1, moved);
-        fields->setItemWidget(moved, 2, comboButton);
-        fields->setCurrentItem(moved);
-    }
-}
-
-void
-MeasuresPage::downClicked()
-{
-    if (fields->currentItem()) {
-        int index = fields->invisibleRootItem()->indexOfChild(fields->currentItem());
-        if (index == (fields->invisibleRootItem()->childCount()-1)) return; // its at the bottom already
-
-        QWidget *button = fields->itemWidget(fields->currentItem(),2);
-        QComboBox *comboButton = new QComboBox(this);
-        FieldsPage::addFieldTypes(comboButton);
-        comboButton->setCurrentIndex(((QComboBox*)button)->currentIndex());
-        QTreeWidgetItem* moved = fields->invisibleRootItem()->takeChild(index);
-        fields->invisibleRootItem()->insertChild(index+1, moved);
-        fields->setItemWidget(moved, 2, comboButton);
-        fields->setCurrentItem(moved);
-    }
-}
-
-void
-MeasuresPage::renameClicked()
-{
-    // which one is selected?
-    if (fields->currentItem()) fields->editItem(fields->currentItem(), 0);
-}
-
-void
-MeasuresPage::addClicked()
-{
-    int index = fields->invisibleRootItem()->indexOfChild(fields->currentItem());
-    if (index < 0) index = 0;
-    QTreeWidgetItem *add;
-    QComboBox *comboButton = new QComboBox(this);
-    FieldsPage::addFieldTypes(comboButton);
-
-    add = new QTreeWidgetItem;
-    fields->invisibleRootItem()->insertChild(index, add);
-    add->setFlags(add->flags() | Qt::ItemIsEditable);
-
-    // field
-    QString text = tr("New");
-    for (int i=0; fields->findItems(text, Qt::MatchExactly, 1).count() > 0; i++) {
-        text = QString(tr("New (%1)")).arg(i+1);
-    }
-    add->setText(1, text);
-
-    // type button
-    add->setTextAlignment(2, Qt::AlignHCenter);
-    fields->setItemWidget(add, 2, comboButton);
-}
-
-void
-MeasuresPage::deleteClicked()
-{
-    if (fields->currentItem()) {
-        int index = fields->invisibleRootItem()->indexOfChild(fields->currentItem());
-
-        // zap!
-        delete fields->invisibleRootItem()->takeChild(index);
-    }
-}
-
-void
-MeasuresPage::getDefinitions(QList<FieldDefinition> &fieldList)
-{
-    QStringList checkdups;
-
-    // clear current just in case
-    fieldList.clear();
-
-    for (int idx =0; idx < fields->invisibleRootItem()->childCount(); idx++) {
-
-        FieldDefinition add;
-        QTreeWidgetItem *item = fields->invisibleRootItem()->child(idx);
-
-        // silently ignore duplicates
-        if (checkdups.contains(item->text(1))) continue;
-        else checkdups << item->text(1);
-
-        add.tab = item->text(0);
-        add.name = item->text(1);
-        add.type = ((QComboBox*)fields->itemWidget(item, 2))->currentIndex();
-
-        fieldList.append(add);
-    }
-}
-
-void
-MeasuresPage::saveClicked()
-{
-    QList<FieldDefinition> current;
-    getDefinitions(current);
-
-    // write to measures.xml (uses same format as metadata.xml)
-    RideMetadata::serialize(context->athlete->home->config().canonicalPath() + "/measures.xml", QList<KeywordDefinition>(), current, "");
-}
-
-//
 // Season Editor
 //
 SeasonsPage::SeasonsPage(QWidget *parent, Context *context) : QWidget(parent), context(context)
@@ -4958,7 +4980,7 @@ SeasonsPage::deleteClicked()
     }
 }
 
-void
+qint32
 SeasonsPage::saveClicked()
 {
     // get any edits to the names and dates
@@ -4980,6 +5002,8 @@ SeasonsPage::saveClicked()
 
     // re-read
     context->athlete->seasons->readSeasons();
+
+    return 0;
 }
 
 
@@ -5127,8 +5151,9 @@ AutoImportPage::deleteClicked()
     }
 }
 
-void
-AutoImportPage::saveClicked() {
+qint32
+AutoImportPage::saveClicked() 
+{
 
     rules.clear();
     for(int i=0; i<fields->invisibleRootItem()->childCount(); i++) {
@@ -5149,6 +5174,7 @@ AutoImportPage::saveClicked() {
     // re-read
     context->athlete->autoImportConfig->readConfig();
 
+    return 0;
 }
 
 void

@@ -29,6 +29,7 @@
 #include <QObject>
 
 class RideItem;
+class RideCache;
 class WPrime;
 class RideFile;
 struct RideFilePoint;
@@ -86,10 +87,15 @@ struct RideFileInterval
     RideFileInterval(double start, double stop, QString name) :
         start(start), stop(stop), name(name) {}
 
-    // order bu start time
-    bool operator< (RideFileInterval right) const { return start < right.start; }
-    bool operator== (RideFileInterval right) const { return start == right.start && stop == right.stop; }
+    // order bu start time (and stop+name for QMap)
+    bool operator< (RideFileInterval right) const { return start < right.start ||
+                                                        (start == right.start && stop < right.stop) ||
+                                                        (start == right.start && stop == right.stop && name < right.name); }
+    bool operator== (RideFileInterval right) const { return start == right.start && stop == right.stop && name == right.name; }
     bool operator!= (RideFileInterval right) const { return start != right.start || stop != right.stop; }
+
+    bool isPeak() const { return QRegExp("^(Peak *[0-9]*(s|min)|Entire workout|Find #[0-9]*) *\\([^)]*\\)$").exactMatch(name); }
+    bool isMatch() const { return QRegExp("^(Match ).*").exactMatch(name); }
 };
 
 struct RideFileCalibration
@@ -114,8 +120,13 @@ class RideFile : public QObject // QObject to emit signals
     public:
 
         friend class RideFileCommand; // tells us we were modified
+        friend class RideCache; // tells us if wbal is stale
+        friend class RideItem; // derived/wbal stale
         friend class MainWindow; // tells us we were modified
         friend class Context; // tells us we were saved
+
+        // utility
+        static unsigned int computeFileCRC(QString); 
 
         // Constructor / Destructor
         RideFile();
@@ -268,6 +279,7 @@ class RideFile : public QObject // QObject to emit signals
         void emitReverted();
         void emitModified();
 
+        bool wstale;
 
     private:
 
@@ -288,7 +300,6 @@ class RideFile : public QObject // QObject to emit signals
         QMap<QString,QString> tags_;
         EditorData *data;
         WPrime *wprime_;
-        bool wstale;
         double weight_; // cached to save calls to getWeight();
         double totalCount, totalTemp;
 
@@ -359,6 +370,7 @@ struct RideFileReader {
     virtual bool writeRideFile(Context *, const RideFile *, QFile &) const { return false; }
 };
 
+class MetricAggregator;
 class RideFileFactory {
 
     private:
@@ -369,6 +381,18 @@ class RideFileFactory {
 
         RideFileFactory() {}
 
+    protected:
+
+        friend class ::MetricAggregator;
+        friend class ::RideCache;
+
+        // will become private as code should work with
+        // in memory representation not on disk .. but as we
+        // migrate will add friends in here.
+        // NOTE: DO NOT USE THIS, USE THE athlete->rideCache
+        //       TO GET ACCESS TO THE RIDE LIST AND RIDE DATA
+        QStringList listRideFiles(const QDir &dir) const;
+
     public:
 
         static RideFileFactory &instance();
@@ -377,7 +401,6 @@ class RideFileFactory {
                            RideFileReader *reader);
         RideFile *openRideFile(Context *context, QFile &file, QStringList &errors, QList<RideFile*>* = 0) const;
         bool writeRideFile(Context *context, const RideFile *ride, QFile &file, QString format) const;
-        QStringList listRideFiles(const QDir &dir) const;
         QStringList suffixes() const;
         QStringList writeSuffixes() const;
         QString description(const QString &suffix) const {
