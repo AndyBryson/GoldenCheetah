@@ -63,6 +63,7 @@ private:
     };
 
     RideNavigator *rideNavigator;
+    QAbstractItemModel *model;
     int groupBy;
     int calendarText;
     int colorColumn;
@@ -103,9 +104,7 @@ public:
     }
     ~GroupByModel() {}
 
-    void setSourceModel(QAbstractItemModel *model) {
-        QAbstractProxyModel::setSourceModel(model);
-        setGroupBy(groupBy);
+    void setIndexes() {
 
         // find the Calendar TextColumn
         calendarText = -1;
@@ -129,11 +128,22 @@ public:
             if (model->headerData(i, Qt::Horizontal, Qt::DisplayRole).toString() == "ZCalendar_Text") {
                 calendarText = i;
             }
+            if (model->headerData(i, Qt::Horizontal, Qt::DisplayRole).toString() == "Calendar Text") {
+                calendarText = i;
+            }
             if (model->headerData(i, Qt::Horizontal, Qt::DisplayRole).toString() == "ride_date") {
                 dateColumn = i;
             }
             starttimeHeader = "ride_time"; //initialisation with techname
         }
+    }
+
+    void setSourceModel(QAbstractItemModel *model) {
+
+        this->model=model;
+        QAbstractProxyModel::setSourceModel(model);
+        setGroupBy(groupBy);
+        setIndexes();
 
         connect(model, SIGNAL(modelReset()), this, SLOT(sourceModelChanged()));
         connect(model, SIGNAL(dataChanged(QModelIndex, QModelIndex)), this, SLOT(sourceModelChanged()));
@@ -279,7 +289,6 @@ public:
                     int groupNo = ((QModelIndex*)proxyIndex.internalPointer())->row();
                     if (groupNo < 0 || groupNo >= groups.count() || proxyIndex.column() == 0) returning="";
                     else string = sourceModel()->data(sourceModel()->index(groupToSourceRow.value(groups[groupNo])->at(proxyIndex.row()), calendarText)).toString();
-
                     // get rid of cr, lf and tab chars
                     string.replace("\n", " ");
                     string.replace("\t", " ");
@@ -578,12 +587,17 @@ public slots:
 
         clearGroups();
         setGroupBy(groupBy+2); // accommodate virtual columns
+        setIndexes();
 
         endResetModel();// we're clean
 
         // lets expand column 0 for the groupBy heading
         for (int i=0; i < groupCount(); i++)
             rideNavigator->tableView->setFirstColumnSpanned(i, QModelIndex(), true);
+
+        // reset the view
+        rideNavigator->resetView();
+
         // now show em
         rideNavigator->tableView->expandAll();
     }
