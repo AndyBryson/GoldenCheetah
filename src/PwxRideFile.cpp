@@ -247,7 +247,11 @@ PwxFileReader::PwxFromDomDoc(QDomDocument doc, QStringList &errors) const
             // add the data point
             rideFile->appendPoint(add.secs, add.cad, add.hr, add.km, add.kph,
                     add.nm, add.watts, add.alt, add.lon, add.lat, add.headwind,
-                    add.slope, add.temp, add.lrbalance, add.lte, add.rte, add.lps, add.rps,
+                    add.slope, add.temp, add.lrbalance,
+                    add.lte, add.rte, add.lps, add.rps,
+                    add.lpco, add.rpco,
+                    add.ltdc, add.rtdc, add.lbdc, add.rbdc,
+                    add.ltppp, add.rtppp, add.lbppp, add.rbppp,
                     add.smo2, add.thb,
                     add.rvert, add.rcad, add.rcontact,
                     add.interval);
@@ -622,14 +626,14 @@ PwxFileReader::writeRideFile(Context *context, const RideFile *ride, QFile &file
             // lat
             if (ride->areDataPresent()->lat && point->lat > -90.0 && point->lat < 90.0) {
                 QDomElement lat = doc.createElement("lat");
-                text = doc.createTextNode(QString("%1").arg(point->lat));
+                text = doc.createTextNode(QString("%1").arg(point->lat, 0, 'g', 11));
                 lat.appendChild(text);
                 sample.appendChild(lat);
             }
             // lon
             if (ride->areDataPresent()->lon && point->lon > -180.00 && point->lon < 180.00) {
                 QDomElement lon = doc.createElement("lon");
-                text = doc.createTextNode(QString("%1").arg(point->lon));
+                text = doc.createTextNode(QString("%1").arg(point->lon, 0, 'g', 11));
                 lon.appendChild(text);
                 sample.appendChild(lon);
             }
