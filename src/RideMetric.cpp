@@ -99,8 +99,10 @@
 // 93  26  Nov 2014 Mark Liversedge    Added Min, Max, Avg SmO2
 // 94  02  Dec 2014 Ale Martinez       Added xPace
 // 95  08  Dec 2014 Ale Martinez       Deprecated Measures table
+// 96  06  Jan 2015 Damien Grauser     Garmin Cycling Dynamics
+// 97  07  Jan 2015 Mark Liversedge    Added isSwim first class variable
 
-int DBSchemaVersion = 95;
+int DBSchemaVersion = 97;
 
 RideMetricFactory *RideMetricFactory::_instance;
 QVector<QString> RideMetricFactory::noDeps;
@@ -154,5 +156,5 @@ QString
 RideMetric::toString(bool useMetricUnits) const
 {
     if (isTime()) return time_to_string(value(useMetricUnits));
-    return QString("%1").arg(value(useMetricUnits), 0, 'f', precision());
+    return QString("%1").arg(value(useMetricUnits), 0, 'f', precision(useMetricUnits));
 }

@@ -298,7 +298,7 @@ ComparePane::refreshTable()
                                 + (context->athlete->useMetricUnits ? 0 : m->conversionSum());
 
                     // use right precision
-                    strValue = QString("%1").arg(value, 0, 'f', m->precision());
+                    strValue = QString("%1").arg(value, 0, 'f', m->precision(context->athlete->useMetricUnits));
     
                     // or maybe its a duration (worry about local lang or translated)
                     if (m->units(true) == "seconds" || m->units(true) == tr("seconds"))
@@ -719,7 +719,7 @@ ComparePane::dropEvent(QDropEvent *event)
                                           p->watts, p->alt, p->lon, p->lat, p->headwind,
                                           p->slope, p->temp,
                                           p->lrbalance, p->lte, p->rte, p->lps, p->rps,
-                                          p->lpco, p->rpco, p->ltdc, p->rtdc, p->lbdc, p->rbdc, p->ltppp, p->rtppp, p->lbppp, p->rbppp,
+                                          p->lpco, p->rpco, p->lppb, p->rppb, p->lppe, p->rppe, p->lpppb, p->rpppb, p->lpppe, p->rpppe,
                                           p->smo2, p->thb, p->rvert, p->rcad, p->rcontact, 0);
 
                     // get derived data calculated

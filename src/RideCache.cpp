@@ -81,6 +81,7 @@ RideCache::RideCache(Context *context) : context(context)
     connect(context, SIGNAL(configChanged(qint32)), this, SLOT(configChanged(qint32)));
 
     // future watching
+    connect(&watcher, SIGNAL(finished()), this, SLOT(garbageCollect()));
     connect(&watcher, SIGNAL(finished()), this, SLOT(save()));
     connect(&watcher, SIGNAL(finished()), context, SLOT(notifyRefreshEnd()));
     connect(&watcher, SIGNAL(started()), context, SLOT(notifyRefreshStart()));
@@ -99,6 +100,15 @@ RideCache::~RideCache()
 }
 
 void
+RideCache::garbageCollect()
+{
+    foreach(RideItem *item, delete_) {
+        if (item) item->deleteLater();
+    }
+    delete_.clear();
+}
+
+void
 RideCache::configChanged(qint32 what)
 {
     // if the wbal formula changed invalidate all cached values
@@ -112,6 +122,9 @@ RideCache::configChanged(qint32 what)
     // will add more as they come
     qint32 want = CONFIG_ATHLETE | CONFIG_ZONES | CONFIG_NOTECOLOR | CONFIG_GENERAL;
     if (what & want) {
+
+        // restart !
+        cancel();
         refresh();
     }
 }
@@ -220,6 +233,7 @@ RideCache::removeCurrentRide()
     // but model needs to know about this!
     model_->startRemove(index);
     rides_.remove(index, 1);
+    delete_<<todelete;
     model_->endRemove(index);
 
     // delete the file by renaming it
@@ -254,12 +268,8 @@ RideCache::removeCurrentRide()
     // select a different ride
     context->ride = select;
 
-    // notify AFTER deleted from DISK..
+    // notify after removed from list
     context->notifyRideDeleted(todelete);
-
-    // ..but before MEMORY cleared
-    // todelete->close(); // <<< pointHover crash in AllPlot
-    todelete->deleteLater();
 
     // now we can update
     context->mainWindow->setUpdatesEnabled(true);
@@ -471,7 +481,7 @@ RideCache::getAggregate(QString name, Specification spec, bool useMetricUnits, b
         if (nofmt) result = QString("%1").arg(rvalue);
         else result = time_to_string(rvalue);
 
-    } else result = QString("%1").arg(rvalue, 0, 'f', metric->precision());
+    } else result = QString("%1").arg(rvalue, 0, 'f', metric->precision(useMetricUnits));
 
     // 0 temp from aggregate means no values 
     if ((metric->symbol() == "average_temp" || metric->symbol() == "max_temp") && result == "0.0") result = "-";
@@ -661,8 +671,8 @@ RideCache::refreshCPModelMetrics()
 
             if (add.CP && add.WPrime) add.EI = add.WPrime / add.CP ;
 
-            // so long as the model derived values are sensible ...
-            if (add.WPrime > 1000 && add.CP > 100 && add.PMax > 100 && add.FTP > 100)
+            // so long as the important model derived values are sensible ...
+            if (add.WPrime > 1000 && add.CP > 100) 
                 context->athlete->PDEstimates << add;
 
             //qDebug()<<add.to<<add.from<<model->code()<< "W'="<< model->WPrime() <<"CP="<< model->CP() <<"pMax="<<model->PMax();

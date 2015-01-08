@@ -635,6 +635,8 @@ RideSummaryWindow::htmlSummary()
 
              const RideMetric *m = factory.rideMetric(symbol);
              if (!m) break;
+
+             if (ridesummary && !m->isRelevantForRide(rideItem)) continue; // don't display non relevant metric
  
              // HTML table row
              QString s("<tr><td>%1%2:</td><td align=\"right\">%3</td></tr>");
@@ -677,7 +679,7 @@ RideSummaryWindow::htmlSummary()
                     // get the value - from metrics or from data array
                     if (ridesummary) {
                             QString v = QString("%1").arg(rideItem->getForSymbol(symbol) * (useMetricUnits ? 1 : m->conversion())
-                                + (useMetricUnits ? 0 : m->conversionSum()), 0, 'f', m->precision());
+                                + (useMetricUnits ? 0 : m->conversionSum()), 0, 'f', m->precision(useMetricUnits));
 
                             // W' over 100% is not a good thing!
                             if (symbol == "skiba_wprime_max" && rideItem->getForSymbol(symbol) > 100) {
@@ -810,21 +812,20 @@ RideSummaryWindow::htmlSummary()
     }
 
     //
-    // Time In Zones
+    // Time In Zones for Running and Swimming
     //
     int numzones = 0;
     int range = -1;
 
-    if (ridesummary && rideItem && rideItem->ride() && rideItem->ride()->isRun()) {
+    if (ridesummary && rideItem && rideItem->ride() &&
+        (rideItem->ride()->isRun() || rideItem->ride()->isSwim())) {
 
-        if (context->athlete->paceZones()) {
+        if (context->athlete->paceZones(rideItem->ride()->isSwim())) {
 
-            // no power zones on a run, should show pace here ...
-            // ... when we have pace zones implemented
-            range = context->athlete->paceZones()->whichRange(rideItem->dateTime.date());
+            range = context->athlete->paceZones(rideItem->ride()->isSwim())->whichRange(rideItem->dateTime.date());
             if (range > -1) {
 
-                numzones = context->athlete->paceZones()->numZones(range);
+                numzones = context->athlete->paceZones(rideItem->ride()->isSwim())->numZones(range);
 
                 if (numzones > 0) {
 
@@ -840,7 +841,7 @@ RideSummaryWindow::htmlSummary()
                     }
         
                     summary += tr("<h3>Pace Zones</h3>");
-                    summary += context->athlete->paceZones()->summarize(range, time_in_zone, altColor); //aggregating
+                    summary += context->athlete->paceZones(rideItem->ride()->isSwim())->summarize(range, time_in_zone, altColor); //aggregating
                 }
             }
         }
@@ -922,7 +923,7 @@ RideSummaryWindow::htmlSummary()
             Season rideSeason;
             bool wantRank=false;
 #ifdef GC_HAVE_RANKING
-            if (!ride->isRun() && ride->areDataPresent()->watts == true) {
+            if (!ride->isRun() && !ride->isSwim() && ride->areDataPresent()->watts == true) {
                 rideSeason = context->athlete->seasons->seasonFor(ride->startTime().date());
                 wantRank = true;
             }
@@ -948,7 +949,7 @@ RideSummaryWindow::htmlSummary()
                                 p->watts, p->alt, p->lon, p->lat, p->headwind,
                                 p->slope, p->temp, p->lrbalance,
                                 p->lte, p->rte, p->lps, p->rps,
-                                p->lpco, p->rpco, p->ltdc, p->rtdc, p->lbdc, p->rbdc, p->ltppp, p->rtppp, p->lbppp, p->rbppp,
+                                p->lpco, p->rpco, p->lppb, p->rppb, p->lppe, p->rppe, p->lpppb, p->rpppb, p->lpppe, p->rpppe,
                                 p->smo2, p->thb, p->rvert, p->rcad, p->rcontact, 0);
 
                     // derived data
@@ -1047,7 +1048,7 @@ RideSummaryWindow::htmlSummary()
                         summary += s.arg(QTime(0,0,0,0).addSecs(pace*60).toString("mm:ss"));
 
                     } else {
-                        summary += s.arg(m->value(useMetricUnits), 0, 'f', m->precision());
+                        summary += s.arg(m->value(useMetricUnits), 0, 'f', m->precision(useMetricUnits));
                     }
                 }
 
@@ -1059,7 +1060,7 @@ RideSummaryWindow::htmlSummary()
     }
 
     //
-    // If summarising a date range show metrics for each ride in the date range
+    // If summarising a date range show metrics for each activity in the date range
     //
     if (!ridesummary) {
 
@@ -1071,14 +1072,18 @@ RideSummaryWindow::htmlSummary()
         int activities = 0;
         int runs = 0;
         int rides = 0;
+        int swims = 0;
         int totalruns = 0;
         int totalrides = 0;
+        int totalswims = 0;
 
         foreach (RideItem *item, context->athlete->rideCache->rides()) {
 
             // get totals regardless of filter
             if (item->isRun) {
                 totalruns++;
+            } else if (item->isSwim) {
+                totalswims++;
             } else {
                 totalrides++;
             }
@@ -1088,6 +1093,8 @@ RideSummaryWindow::htmlSummary()
             // how many of each after filter
             if (item->isRun) {
                 runs++;
+            } else if (item->isSwim) {
+                swims++;
             } else {
                 rides++;
             }
@@ -1173,7 +1180,7 @@ RideSummaryWindow::htmlSummary()
             // apply the filter if there is one active
             if (!specification.pass(ride)) continue;
 
-            if (ride->isRun) continue;
+            if (ride->isRun || ride->isSwim) continue;
 
             if (even) summary += "<tr>";
             else {
@@ -1301,6 +1308,106 @@ RideSummaryWindow::htmlSummary()
             summary += "</tr>";
         }
         summary += "</table><br>";
+
+        //Swims Last
+        if (context->ishomefiltered || context->isfiltered || filtered) {
+
+            // "n of x activities" shown in header of list when filtered
+            summary += ("<p><h3>" +
+                        QString(tr("%1 of %2")).arg(swims).arg(totalswims)
+                                           + (totalruns == 1 ? tr(" swim") : tr(" swims")) +
+                        "</h3><p>");
+        } else {
+
+            // just "n activities" shown in header of list when not filtered
+            summary += ("<p><h3>" +
+                        QString("%1").arg(swims) + (swims == 1 ? tr(" swim") : tr(" swims")) +
+                        "</h3><p>");
+        }
+
+        // table of activities
+        summary += "<table align=\"center\" width=\"80%\" border=\"0\">";
+
+        // header row 1 - name
+        summary += "<tr>";
+        summary += tr("<td align=\"center\">Date</td>");
+        for (j = 0; j< totalCols; ++j) {
+            QString symbol = rtotalColumn[j];
+            const RideMetric *m = factory.rideMetric(symbol);
+
+            summary += QString("<td align=\"center\">%1</td>").arg(m->name());
+        }
+        for (j = 0; j< metricCols; ++j) {
+            QString symbol = metricColumn[j];
+            const RideMetric *m = factory.rideMetric(symbol);
+
+            summary += QString("<td align=\"center\">%1</td>").arg(m->name());
+        }
+        summary += "</tr>";
+
+        // header row 2 - units
+        summary += "<tr>";
+        summary += tr("<td align=\"center\"></td>"); // date no units
+        for (j = 0; j< totalCols; ++j) {
+            QString symbol = rtotalColumn[j];
+            const RideMetric *m = factory.rideMetric(symbol);
+
+            QString units = m->units(useMetricUnits);
+            if (units == "seconds" || units == tr("seconds")) units = "";
+            summary += QString("<td align=\"center\">%1</td>").arg(units);
+        }
+        for (j = 0; j< metricCols; ++j) {
+            QString symbol = metricColumn[j];
+            const RideMetric *m = factory.rideMetric(symbol);
+
+            QString units = m->units(useMetricUnits);
+            if (units == "seconds" || units == tr("seconds")) units = "";
+            summary += QString("<td align=\"center\">%1</td>").arg(units);
+        }
+        summary += "</tr>";
+
+        // activities 1 per row
+        even = false;
+
+        // iterate once again
+        ridelist.toBack();
+        while (ridelist.hasPrevious()) {
+
+            RideItem *ride = ridelist.previous();
+
+            // apply the filter if there is one active
+            if (!specification.pass(ride)) continue;
+
+            if (!ride->isSwim) continue;
+
+            if (even) summary += "<tr>";
+            else {
+                    summary += "<tr bgcolor='" + altColor.name() + "'>";
+            }
+            even = !even;
+
+            // date of ride
+            summary += QString("<td align=\"center\">%1</td>")
+                       .arg(ride->dateTime.date().toString(tr("dd MMM yyyy")));
+
+            for (j = 0; j< totalCols; ++j) {
+                QString symbol = rtotalColumn[j];
+
+                // get this value
+                QString value = ride->getStringForSymbol(symbol,useMetricUnits);
+                summary += QString("<td align=\"center\">%1</td>").arg(value);
+            }
+            for (j = 0; j< metricCols; ++j) {
+                QString symbol = metricColumn[j];
+
+                // get this value
+                QString value = ride->getStringForSymbol(symbol,useMetricUnits);
+                summary += QString("<td align=\"center\">%1</td>").arg(value);
+            }
+            summary += "</tr>";
+        }
+        summary += "</table><br>";
+
     }
 
     // summarise errors reading file if it was a ride summary
@@ -1612,7 +1719,7 @@ RideSummaryWindow::htmlCompareSummary() const
                                 + (context->athlete->useMetricUnits ? 0 : m->conversionSum());
 
                     // use right precision
-                    QString strValue = QString("%1").arg(value, 0, 'f', m->precision());
+                    QString strValue = QString("%1").arg(value, 0, 'f', m->precision(context->athlete->useMetricUnits));
 
                     // or maybe its a duration (worry about local lang or translated)
                     if (m->units(true) == "seconds" || m->units(true) == tr("seconds"))
@@ -1632,7 +1739,7 @@ RideSummaryWindow::htmlCompareSummary() const
 
                         // use right precision
                         QString strValue = QString("%1%2").arg(value >= 0 ? "+" : "") // - sign added anyway
-                                                        .arg(value, 0, 'f', m->precision());
+                                                        .arg(value, 0, 'f', m->precision(context->athlete->useMetricUnits));
 
                         // or maybe its a duration (worry about local lang or translated)
                         if (m->units(true) == "seconds" || m->units(true) == tr("seconds"))
@@ -1880,7 +1987,7 @@ RideSummaryWindow::htmlCompareSummary() const
                                                                                  context->athlete->useMetricUnits, true).toDouble();
 
                     // use right precision
-                    QString strValue = QString("%1").arg(value, 0, 'f', m->precision());
+                    QString strValue = QString("%1").arg(value, 0, 'f', m->precision(context->athlete->useMetricUnits));
 
                     // or maybe its a duration (worry about local lang or translated)
                     if (m->units(true) == "seconds" || m->units(true) == tr("seconds"))
@@ -1900,7 +2007,7 @@ RideSummaryWindow::htmlCompareSummary() const
 
                         // use right precision
                         QString strValue = QString("%1%2").arg(value >= 0 ? "+" : "") // - sign added anyway
-                                                        .arg(value, 0, 'f', m->precision());
+                                                        .arg(value, 0, 'f', m->precision(context->athlete->useMetricUnits));
 
                         // or maybe its a duration (worry about local lang or translated)
                         if (m->units(true) == "seconds" || m->units(true) == tr("seconds"))

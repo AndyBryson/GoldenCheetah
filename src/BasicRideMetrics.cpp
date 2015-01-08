@@ -20,6 +20,7 @@
 #include "Athlete.h"
 #include "Context.h"
 #include "Settings.h"
+#include "RideItem.h"
 #include "LTMOutliers.h"
 #include "Units.h"
 #include "cmath"
@@ -675,6 +676,9 @@ struct AvgSmO2 : public RideMetric {
         setValue(count > 0 ? total / count : 0);
         setCount(count);
     }
+
+    bool isRelevantForRide(const RideItem *ride) const { return ride->present.contains("O"); }
+
     RideMetric *clone() const { return new AvgSmO2(*this); }
 };
 
@@ -795,6 +799,9 @@ struct AvgHeartRate : public RideMetric {
         setValue(count > 0 ? total / count : 0);
         setCount(count);
     }
+
+    bool isRelevantForRide(const RideItem *ride) const { return ride->present.contains("H"); }
+
     RideMetric *clone() const { return new AvgHeartRate(*this); }
 };
 
@@ -817,7 +824,7 @@ class HrPw : public RideMetric {
         setImperialUnits("");
         setMetricUnits("");
         setPrecision(3);
-        setType(RideMetric::Peak);
+        setType(RideMetric::Average);
     }
     void compute(const RideFile *, const Zones *, int,
                  const HrZones *, int,
@@ -909,7 +916,7 @@ class HrNp : public RideMetric {
         setImperialUnits("");
         setMetricUnits("");
         setPrecision(3);
-        setType(RideMetric::Peak);
+        setType(RideMetric::Average);
     }
     void compute(const RideFile *, const Zones *, int,
                  const HrZones *, int,
@@ -973,6 +980,9 @@ struct AvgCadence : public RideMetric {
         setValue(count > 0 ? total / count : count);
         setCount(count);
     }
+
+    bool isRelevantForRide(const RideItem *ride) const { return ride->present.contains("C"); }
+
     RideMetric *clone() const { return new AvgCadence(*this); }
 };
 
@@ -1092,6 +1102,9 @@ class MaxSmO2 : public RideMetric {
         }
         setValue(max);
     }
+
+    bool isRelevantForRide(const RideItem *ride) const { return ride->present.contains("O"); }
+
     RideMetric *clone() const { return new MaxSmO2(*this); }
 };
 
@@ -1158,6 +1171,9 @@ class MaxHr : public RideMetric {
         }
         setValue(max);
     }
+
+    bool isRelevantForRide(const RideItem *ride) const { return ride->present.contains("H"); }
+
     RideMetric *clone() const { return new MaxHr(*this); }
 };
 
@@ -1245,6 +1261,9 @@ class MaxCadence : public RideMetric {
 
         setValue(mc.value(true) > value(true) ? mc.value(true) : value(true));
     }
+
+    bool isRelevantForRide(const RideItem *ride) const { return ride->present.contains("C"); }
+
     RideMetric *clone() const { return new MaxCadence(*this); }
 };
 
@@ -1761,6 +1780,689 @@ class AvgRPS : public RideMetric {
     RideMetric *clone() const { return new AvgRPS(*this); }
 };
 
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgLPCO : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgLPCO)
+
+    public:
+
+    AvgLPCO()
+    {
+        setSymbol("average_lpco");
+        setInternalName("Average Left Pedal Center Offset");
+    }
+    void initialize() {
+        setName(tr("Average Left Pedal Center Offset"));
+        setMetricUnits(tr("mm"));
+        setImperialUnits(tr("in")); // inches would need more precision than 1
+        setType(RideMetric::Average);
+        setPrecision(0);
+        setImperialPrecision(2);
+        setConversion(INCH_PER_MM);
+    }
+
+    void compute(const RideFile *ride, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        if (ride->areDataPresent()->lpco) {
+
+            double total = 0.0f;
+            double secs = 0.0f;
+
+            foreach (const RideFilePoint *point, ride->dataPoints()) {
+
+                if (point->cad) {
+                    secs += ride->recIntSecs();
+                    total += point->lpco;
+                }
+            }
+
+            if (secs > 0.0f) setValue(total / secs);
+            else setValue(0.0);
+
+        } else {
+
+            setValue(0.0);
+        }
+    }
+
+    RideMetric *clone() const { return new AvgLPCO(*this); }
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgRPCO : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgRPCO)
+
+    public:
+
+    AvgRPCO()
+    {
+        setSymbol("average_rpco");
+        setInternalName("Average Right Pedal Center Offset");
+    }
+    void initialize() {
+        setName(tr("Average Right Pedal Center Offset"));
+        setMetricUnits(tr("mm"));
+        setImperialUnits(tr("in")); // inches would need more precision than 1
+        setType(RideMetric::Average);
+        setPrecision(0);
+        setImperialPrecision(2);
+        setConversion(INCH_PER_MM);
+    }
+
+    void compute(const RideFile *ride, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        if (ride->areDataPresent()->rpco) {
+
+            double total = 0.0f;
+            double secs = 0.0f;
+
+            foreach (const RideFilePoint *point, ride->dataPoints()) {
+
+                if (point->cad) {
+                    secs += ride->recIntSecs();
+                    total += point->rpco;
+                }
+            }
+
+            if (secs > 0.0f) setValue(total / secs);
+            else setValue(0.0);
+
+        } else {
+
+            setValue(0.0);
+        }
+    }
+
+    RideMetric *clone() const { return new AvgRPCO(*this); }
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgLPPB : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgLPPB)
+
+    public:
+
+    AvgLPPB()
+    {
+        setSymbol("average_lppb");
+        setInternalName("Average Left Power Phase Start");
+    }
+    void initialize() {
+        setName(tr("Average Left Power Phase Start"));
+        setMetricUnits(tr("°"));
+        setType(RideMetric::Average);
+        setPrecision(0);
+    }
+
+    void compute(const RideFile *ride, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        if (ride->areDataPresent()->lppb) {
+
+            double total = 0.0f;
+            double secs = 0.0f;
+
+            foreach (const RideFilePoint *point, ride->dataPoints()) {
+
+                if (point->lppe>0) { // use for average if we have an end
+                    secs += ride->recIntSecs();
+                    total += point->lppb + (point->lppb>180?-360:0);
+                }
+            }
+
+            if (secs > 0.0f) setValue(total / secs);
+            else setValue(0.0);
+
+        } else {
+
+            setValue(0.0);
+        }
+    }
+
+    RideMetric *clone() const { return new AvgLPPB(*this); }
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgRPPB : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgRTPP)
+
+    public:
+
+    AvgRPPB()
+    {
+        setSymbol("average_rppb");
+        setInternalName("Average Right Power Phase Start");
+    }
+    void initialize() {
+        setName(tr("Average Right Power Phase Start"));
+        setMetricUnits(tr("°"));
+        setType(RideMetric::Average);
+        setPrecision(0);
+    }
+
+    void compute(const RideFile *ride, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        if (ride->areDataPresent()->rppb) {
+
+            double total = 0.0f;
+            double secs = 0.0f;
+
+            foreach (const RideFilePoint *point, ride->dataPoints()) {
+
+                if (point->rppe>0) { // use for average if we have an end
+                    secs += ride->recIntSecs();
+                    total += point->rppb + (point->rppb>180?-360:0);
+                }
+            }
+
+            if (secs > 0.0f) setValue(total / secs);
+            else setValue(0.0);
+
+        } else {
+
+            setValue(0.0);
+        }
+    }
+
+    RideMetric *clone() const { return new AvgRPPB(*this); }
+};
+
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgLPPE : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgLPPE)
+
+    public:
+
+    AvgLPPE()
+    {
+        setSymbol("average_lppe");
+        setInternalName("Average Left Power Phase End");
+    }
+    void initialize() {
+        setName(tr("Average Left Power Phase End"));
+        setMetricUnits(tr("°"));
+        setType(RideMetric::Average);
+        setPrecision(0);
+    }
+
+    void compute(const RideFile *ride, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        if (ride->areDataPresent()->lppe) { // end has to be > 0
+
+            double total = 0.0f;
+            double secs = 0.0f;
+
+            foreach (const RideFilePoint *point, ride->dataPoints()) {
+
+                if (point->lppe > 0) {
+                    secs += ride->recIntSecs();
+                    total += point->lppe;
+                }
+            }
+
+            if (secs > 0.0f) setValue(total / secs);
+            else setValue(0.0);
+
+        } else {
+
+            setValue(0.0);
+        }
+    }
+
+    RideMetric *clone() const { return new AvgLPPE(*this); }
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgRPPE : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgRPPE)
+
+    public:
+
+    AvgRPPE()
+    {
+        setSymbol("average_rppe");
+        setInternalName("Average Right Power Phase End");
+    }
+    void initialize() {
+        setName(tr("Average Right Power Phase End"));
+        setMetricUnits(tr("°"));
+        setType(RideMetric::Average);
+        setPrecision(0);
+    }
+
+    void compute(const RideFile *ride, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        if (ride->areDataPresent()->rppe) {
+
+            double total = 0.0f;
+            double secs = 0.0f;
+
+            foreach (const RideFilePoint *point, ride->dataPoints()) {
+
+                if (point->rppe > 0) { // end has to be > 0
+                    secs += ride->recIntSecs();
+                    total += point->rppe;
+                }
+            }
+
+            if (secs > 0.0f) setValue(total / secs);
+            else setValue(0.0);
+
+        } else {
+
+            setValue(0.0);
+        }
+    }
+
+    RideMetric *clone() const { return new AvgRPPE(*this); }
+};
+
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgLPPPB : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgLPPPB)
+
+    public:
+
+    AvgLPPPB()
+    {
+        setSymbol("average_lpppb");
+        setInternalName("Average Left Peak Power Phase Start");
+    }
+    void initialize() {
+        setName(tr("Average Left Peak Power Phase Start"));
+        setMetricUnits(tr("°"));
+        setType(RideMetric::Average);
+        setPrecision(0);
+    }
+
+    void compute(const RideFile *ride, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        if (ride->areDataPresent()->lpppb) {
+
+            double total = 0.0f;
+            double secs = 0.0f;
+
+            foreach (const RideFilePoint *point, ride->dataPoints()) {
+
+                if (point->lpppe>0) { // use for average if we have an end
+                    secs += ride->recIntSecs();
+                    total += point->lpppb + (point->lpppb>180?-360:0);
+                }
+            }
+
+            if (secs > 0.0f) setValue(total / secs);
+            else setValue(0.0);
+
+        } else {
+
+            setValue(0.0);
+        }
+    }
+
+    RideMetric *clone() const { return new AvgLPPPB(*this); }
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgRPPPB : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgRPPPB)
+
+    public:
+
+    AvgRPPPB()
+    {
+        setSymbol("average_rpppb");
+        setInternalName("Average Right Peak Power Phase Start");
+    }
+    void initialize() {
+        setName(tr("Average Right Peak Power Phase Start"));
+        setMetricUnits(tr("°"));
+        setType(RideMetric::Average);
+        setPrecision(0);
+    }
+
+    void compute(const RideFile *ride, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        if (ride->areDataPresent()->rpppb) {
+
+            double total = 0.0f;
+            double secs = 0.0f;
+
+            foreach (const RideFilePoint *point, ride->dataPoints()) {
+
+                if (point->rpppe>0) { // use for average if we have an end
+                    secs += ride->recIntSecs();
+                    total += point->rpppb + (point->rpppb>180?-360:0);
+                }
+            }
+
+            if (secs > 0.0f) setValue(total / secs);
+            else setValue(0.0);
+
+        } else {
+
+            setValue(0.0);
+        }
+    }
+
+    RideMetric *clone() const { return new AvgRPPPB(*this); }
+};
+
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgLPPPE : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgLPPPE)
+
+    public:
+
+    AvgLPPPE()
+    {
+        setSymbol("average_lpppe");
+        setInternalName("Average Left Peak Power Phase End");
+    }
+    void initialize() {
+        setName(tr("Average Left Peak Power Phase End"));
+        setMetricUnits(tr("°"));
+        setType(RideMetric::Average);
+        setPrecision(0);
+    }
+
+    void compute(const RideFile *ride, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        if (ride->areDataPresent()->lpppe) {
+
+            double total = 0.0f;
+            double secs = 0.0f;
+
+            foreach (const RideFilePoint *point, ride->dataPoints()) {
+
+                if (point->lpppe > 0) { // end has to be > 0
+                    secs += ride->recIntSecs();
+                    total += point->lpppe;
+                }
+            }
+
+            if (secs > 0.0f) setValue(total / secs);
+            else setValue(0.0);
+
+        } else {
+
+            setValue(0.0);
+        }
+    }
+
+    RideMetric *clone() const { return new AvgLPPPE(*this); }
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgRPPPE : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgRPPPE)
+
+    public:
+
+    AvgRPPPE()
+    {
+        setSymbol("average_rpppe");
+        setInternalName("Average Right Peak Power Phase End");
+    }
+    void initialize() {
+        setName(tr("Average Right Peak Power Phase End"));
+        setMetricUnits(tr("°"));
+        setType(RideMetric::Average);
+        setPrecision(0);
+    }
+
+    void compute(const RideFile *ride, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &,
+                 const Context *) {
+
+        if (ride->areDataPresent()->rpppe) {
+
+            double total = 0.0f;
+            double secs = 0.0f;
+
+            foreach (const RideFilePoint *point, ride->dataPoints()) {
+
+                if (point->rpppe > 0) { // end has to be > 0
+                    secs += ride->recIntSecs();
+                    total += point->rpppe;
+                }
+            }
+
+            if (secs > 0.0f) setValue(total / secs);
+            else setValue(0.0);
+
+        } else {
+
+            setValue(0.0);
+        }
+    }
+
+    RideMetric *clone() const { return new AvgRPPPE(*this); }
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgLPP : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgLPP)
+    double average_lppb;
+    double average_lppe;
+
+    public:
+
+    AvgLPP()
+    {
+        setSymbol("average_lpp");
+        setInternalName("Average Left Power Phase Length");
+    }
+    void initialize() {
+        setName(tr("Average Left Power Phase Length"));
+        setMetricUnits(tr("°"));
+        setType(RideMetric::Average);
+        setPrecision(0);
+    }
+
+    void compute(const RideFile *, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &deps,
+                 const Context *) {
+
+        average_lppb = deps.value("average_lppb")->value(true);
+        average_lppe = deps.value("average_lppe")->value(true);
+
+        if (average_lppe>0)  {
+
+            setValue(average_lppe-average_lppb);
+        } else {
+
+            setValue(0.0);
+        }
+
+    }
+
+    RideMetric *clone() const { return new AvgLPP(*this); }
+};
+
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgRPP : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgRPP)
+    double average_rppb;
+    double average_rppe;
+
+    public:
+
+    AvgRPP()
+    {
+        setSymbol("average_rpp");
+        setInternalName("Average Right Power Phase Length");
+    }
+    void initialize() {
+        setName(tr("Average Right Power Phase Length"));
+        setMetricUnits(tr("°"));
+        setType(RideMetric::Average);
+        setPrecision(0);
+    }
+
+    void compute(const RideFile *, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &deps,
+                 const Context *) {
+
+        average_rppb = deps.value("average_rppb")->value(true);
+        average_rppe = deps.value("average_rppe")->value(true);
+
+        if (average_rppe>0)  {
+
+            setValue(average_rppe-average_rppb);
+        } else {
+
+            setValue(0.0);
+        }
+
+    }
+
+    RideMetric *clone() const { return new AvgRPP(*this); }
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgLPPP : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgLPPP)
+    double average_lpppb;
+    double average_lpppe;
+
+    public:
+
+    AvgLPPP()
+    {
+        setSymbol("average_lppp");
+        setInternalName("Average Peak Left Power Phase Length");
+    }
+    void initialize() {
+        setName(tr("Average Left Peak Power Phase Length"));
+        setMetricUnits(tr("°"));
+        setType(RideMetric::Average);
+        setPrecision(0);
+    }
+
+    void compute(const RideFile *, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &deps,
+                 const Context *) {
+
+        average_lpppb = deps.value("average_lpppb")->value(true);
+        average_lpppe = deps.value("average_lpppe")->value(true);
+
+        if (average_lpppe>0)  {
+
+            setValue(average_lpppe-average_lpppb);
+        } else {
+
+            setValue(0.0);
+        }
+
+    }
+
+    RideMetric *clone() const { return new AvgLPPP(*this); }
+};
+
+
+//////////////////////////////////////////////////////////////////////////////
+
+class AvgRPPP : public RideMetric {
+
+    Q_DECLARE_TR_FUNCTIONS(AvgRPPP)
+    double average_rpppb;
+    double average_rpppe;
+
+    public:
+
+    AvgRPPP()
+    {
+        setSymbol("average_rppp");
+        setInternalName("Average Right Peak Power Phase Length");
+    }
+    void initialize() {
+        setName(tr("Average Right Peak Power Phase Length"));
+        setMetricUnits(tr("°"));
+        setType(RideMetric::Average);
+        setPrecision(0);
+    }
+
+    void compute(const RideFile *, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &deps,
+                 const Context *) {
+
+        average_rpppb = deps.value("average_rpppb")->value(true);
+        average_rpppe = deps.value("average_rpppe")->value(true);
+
+        if (average_rpppe>0)  {
+
+            setValue(average_rpppe-average_rpppb);
+        } else {
+
+            setValue(0.0);
+        }
+
+    }
+
+    RideMetric *clone() const { return new AvgRPPP(*this); }
+};
+
 static bool addLeftRight()
 {
     QVector<QString> deps;
@@ -1768,6 +2470,30 @@ static bool addLeftRight()
     RideMetricFactory::instance().addMetric(AvgRTE(), &deps);
     RideMetricFactory::instance().addMetric(AvgLPS(), &deps);
     RideMetricFactory::instance().addMetric(AvgRPS(), &deps);
+    RideMetricFactory::instance().addMetric(AvgLPCO(), &deps);
+    RideMetricFactory::instance().addMetric(AvgRPCO(), &deps);
+    RideMetricFactory::instance().addMetric(AvgLPPB(), &deps);
+    RideMetricFactory::instance().addMetric(AvgRPPB(), &deps);
+    RideMetricFactory::instance().addMetric(AvgLPPE(), &deps);
+    RideMetricFactory::instance().addMetric(AvgRPPE(), &deps);
+    RideMetricFactory::instance().addMetric(AvgLPPPB(), &deps);
+    RideMetricFactory::instance().addMetric(AvgRPPPB(), &deps);
+    RideMetricFactory::instance().addMetric(AvgLPPPE(), &deps);
+    RideMetricFactory::instance().addMetric(AvgRPPPE(), &deps);
+
+    deps.append("average_lppb");
+    deps.append("average_lppe");
+    deps.append("average_rppb");
+    deps.append("average_rppe");
+    deps.append("average_lpppb");
+    deps.append("average_lpppe");
+    deps.append("average_rpppb");
+    deps.append("average_rpppe");
+
+    RideMetricFactory::instance().addMetric(AvgLPP(), &deps);
+    RideMetricFactory::instance().addMetric(AvgRPP(), &deps);
+    RideMetricFactory::instance().addMetric(AvgLPPP(), &deps);
+    RideMetricFactory::instance().addMetric(AvgRPPP(), &deps);
     return true;
 }
 static bool leftRightAdded = addLeftRight();

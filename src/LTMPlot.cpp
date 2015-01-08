@@ -40,6 +40,7 @@
 #include <qwt_series_data.h>
 #include <qwt_scale_widget.h>
 #include <qwt_legend.h>
+#include <qwt_legend_label.h>
 #include <qwt_plot_curve.h>
 #include <qwt_plot_canvas.h>
 #include <qwt_curve_fitter.h>
@@ -153,6 +154,10 @@ LTMPlot::configChanged(qint32)
     palette.setColor(QPalette::Text, GColor(CPLOTMARKER));
     setPalette(palette);
 
+    QPalette gray = palette; // same but with gray text for hidden curves
+    gray.setColor(QPalette::WindowText, Qt::darkGray);
+    gray.setColor(QPalette::Text, Qt::darkGray);
+
     axesObject.clear();
     axesId.clear();
     foreach (QwtAxisId x, supportedAxes) {
@@ -167,15 +172,25 @@ LTMPlot::configChanged(qint32)
 
     }
     axisWidget(QwtPlot::xBottom)->setPalette(palette);
+
     QwtLegend *l = static_cast<QwtLegend *>(this->legend());
-    l->setPalette(palette);
     foreach(QwtPlotCurve *p, curves) {
         foreach (QWidget *w, l->legendWidgets(itemToInfo(p))) {
-            w->setPalette(palette);
+            for(int m=0; m< settings->metrics.count(); m++) {
+                if (settings->metrics[m].curve == p)
+                    if (settings->metrics[m].hidden == false) 
+                        w->setPalette(palette);
+                    else
+                        w->setPalette(gray);
+            }
         }
     }
+
+    // now save state
     curveColors->saveState();
     updateLegend();
+
+    if (legend()) legend()->installEventFilter(this);
 }
 
 void
@@ -402,6 +417,8 @@ LTMPlot::setData(LTMSettings *set)
 
         // Create a curve
         QwtPlotCurve *current = new QwtPlotCurve(metricDetail.uname);
+        current->setVisible(!metricDetail.hidden);
+        settings->metrics[m].curve = current;
         if (metricDetail.type == METRIC_BEST)
             curves.insert(metricDetail.bestSymbol, current);
         else
@@ -532,7 +549,9 @@ LTMPlot::setData(LTMSettings *set)
     // are painted in reverse order in a
     // loop before this one.
     stackcounter= 0;
-    foreach (MetricDetail metricDetail, settings->metrics) {
+    for(int m=0; m<settings->metrics.count(); m++) { 
+
+        MetricDetail metricDetail = settings->metrics[m];
 
         //
         // *ONLY* PLOT NON-STACKS
@@ -551,6 +570,8 @@ LTMPlot::setData(LTMSettings *set)
 
         // Create a curve
         QwtPlotCurve *current = new QwtPlotCurve(metricDetail.uname);
+        current->setVisible(!metricDetail.hidden);
+        settings->metrics[m].curve = current;
         if (metricDetail.type == METRIC_BEST)
             curves.insert(metricDetail.bestSymbol, current);
         else
@@ -606,6 +627,7 @@ LTMPlot::setData(LTMSettings *set)
                                        metricDetail.bestSymbol : metricDetail.symbol);
 
                 QwtPlotCurve *trend = new QwtPlotCurve(trendName);
+                trend->setVisible(!metricDetail.hidden);
 
                 // cosmetics
                 QPen cpen = QPen(metricDetail.penColor.darker(200));
@@ -642,6 +664,7 @@ LTMPlot::setData(LTMSettings *set)
                                        metricDetail.bestSymbol : metricDetail.symbol);
 
                 QwtPlotCurve *trend = new QwtPlotCurve(trendName);
+                trend->setVisible(!metricDetail.hidden);
 
                 // cosmetics
                 QPen cpen = QPen(metricDetail.penColor.darker(200));
@@ -704,6 +727,7 @@ LTMPlot::setData(LTMSettings *set)
             QString outSymbol = QString("%1_outlier").arg(metricDetail.type == METRIC_BEST ?
                                                           metricDetail.bestSymbol : metricDetail.symbol);
             QwtPlotCurve *out = new QwtPlotCurve(outName);
+            out->setVisible(!metricDetail.hidden);
             curves.insert(outSymbol, out);
 
             out->setRenderHint(QwtPlotItem::RenderAntialiased);
@@ -789,6 +813,7 @@ LTMPlot::setData(LTMSettings *set)
                                 .arg(metricDetail.type == METRIC_BEST ? 
                                      metricDetail.bestSymbol : metricDetail.symbol);
             QwtPlotCurve *top = new QwtPlotCurve(topName);
+            top->setVisible(!metricDetail.hidden);
             curves.insert(topName, top);
 
             top->setRenderHint(QwtPlotItem::RenderAntialiased);
@@ -860,6 +885,7 @@ LTMPlot::setData(LTMSettings *set)
 
                         // make that mark -- always above with topN
                         QwtPlotMarker *label = new QwtPlotMarker();
+                        label->setVisible(!metricDetail.hidden);
                         label->setLabel(text);
                         label->setValue(hxdata[i], hydata[i]);
                         label->setYAxis(axisid);
@@ -1021,6 +1047,7 @@ LTMPlot::setData(LTMSettings *set)
 
                     // make that mark
                     QwtPlotMarker *label = new QwtPlotMarker();
+                    label->setVisible(!metricDetail.hidden);
                     label->setLabel(text);
                     label->setValue(xdata[i], ydata[i]);
                     label->setYAxis(axisid);
@@ -2816,6 +2843,33 @@ LTMPlot::chooseYAxis(QString units)
 bool
 LTMPlot::eventFilter(QObject *obj, QEvent *event)
 {
+
+    // when clicking on a legend item, toggle if the curve is visible
+    if (obj == legend() && event->type() == QEvent::MouseButtonPress) {
+
+        bool replotNeeded = false;
+        QwtLegend *l = static_cast<QwtLegend *>(this->legend());
+        QPoint pos = QCursor::pos();
+
+        foreach(QwtPlotCurve *p, curves) {
+            foreach (QWidget *w, l->legendWidgets(itemToInfo(p))) {
+                if (QRect(l->mapToGlobal(w->geometry().topLeft()),
+                    l->mapToGlobal(w->geometry().bottomRight())).contains(pos)) {
+
+                    //qDebug()<<"under mouse="<<static_cast<QwtLegendLabel*>(w)->text().text();
+                    for(int m=0; m< settings->metrics.count(); m++) {
+                        if (settings->metrics[m].curve == p) {
+                            settings->metrics[m].hidden = !settings->metrics[m].hidden;
+                            replotNeeded = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (replotNeeded) setData(settings);
+    }
+
     // is it for other objects ?
     if (axesObject.contains(obj)) {
 

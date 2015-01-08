@@ -149,29 +149,37 @@ RideFileTableModel::setHeadings(RideFile::SeriesType series)
             headings_ << tr("Right Platform Center Offset");
             headingsType << RideFile::rpco;
         }
-        if (series == RideFile::ltdc || ride->areDataPresent()->ltdc) {
-            headings_ << tr("Left Top Dead Center");
-            headingsType << RideFile::ltdc;
+        if (series == RideFile::lppb || ride->areDataPresent()->lppb) {
+            headings_ << tr("Left Power Phase Start");
+            headingsType << RideFile::lppb;
         }
-        if (series == RideFile::rtdc || ride->areDataPresent()->rtdc) {
-            headings_ << tr("Right Top Dead Center");
-            headingsType << RideFile::rtdc;
+        if (series == RideFile::lppe || ride->areDataPresent()->lppe) {
+            headings_ << tr("Left Power Phase End");
+            headingsType << RideFile::lppe;
         }
-        if (series == RideFile::lbdc || ride->areDataPresent()->lbdc) {
-            headings_ << tr("Left Bottom Dead Center");
-            headingsType << RideFile::lbdc;
+        if (series == RideFile::rppb || ride->areDataPresent()->rppb) {
+            headings_ << tr("Right Power Phase Start");
+            headingsType << RideFile::rppb;
         }
-        if (series == RideFile::rbdc || ride->areDataPresent()->rbdc) {
-            headings_ << tr("Right Bottom Dead Center");
-            headingsType << RideFile::rbdc;
+        if (series == RideFile::rppe || ride->areDataPresent()->rppe) {
+            headings_ << tr("Right Power Phase End");
+            headingsType << RideFile::rppe;
         }
-        if (series == RideFile::ltppp || ride->areDataPresent()->ltppp) {
+        if (series == RideFile::lpppb || ride->areDataPresent()->lpppb) {
             headings_ << tr("Left Peak Power Phase Start");
-            headingsType << RideFile::ltppp;
+            headingsType << RideFile::lpppb;
         }
-        if (series == RideFile::rtppp || ride->areDataPresent()->rtppp) {
+        if (series == RideFile::lpppe || ride->areDataPresent()->lpppe) {
+            headings_ << tr("Left Peak Power Phase End");
+            headingsType << RideFile::lpppe;
+        }
+        if (series == RideFile::lpppb || ride->areDataPresent()->rpppb) {
             headings_ << tr("Right Peak Power Phase Start");
-            headingsType << RideFile::rtppp;
+            headingsType << RideFile::lpppb;
+        }
+        if (series == RideFile::rpppe || ride->areDataPresent()->rpppe) {
+            headings_ << tr("Right Peak Power Phase End");
+            headingsType << RideFile::rpppe;
         }
         if (series == RideFile::smo2 || ride->areDataPresent()->smo2) {
             headings_ << tr("SmO2");
