@@ -528,8 +528,9 @@ class AvgSpeed : public RideMetric {
         if (ride->areDataPresent()->kph) {
 
             secsMoving = 0;
+            bool withz = ride->isSwim(); // average with zeros for swims
             foreach (const RideFilePoint *point, ride->dataPoints())
-                if (point->kph > 0.0) secsMoving += ride->recIntSecs();
+                if (withz || point->kph > 0.0) secsMoving += ride->recIntSecs();
 
             setValue(secsMoving ? km / secsMoving * 3600.0 : 0.0);
 
@@ -590,6 +591,9 @@ class Pace : public RideMetric {
         setValue(pace);
         setCount(as->count());
     }
+
+    bool isRelevantForRide(const RideItem *ride) const { return !ride->isSwim; }
+
     RideMetric *clone() const { return new Pace(*this); }
 };
 
@@ -601,6 +605,57 @@ static bool addPace()
     return true;
 }
 static bool paceAdded = addPace();
+
+//////////////////////////////////////////////////////////////////////////////
+class PaceSwim : public RideMetric {
+    Q_DECLARE_TR_FUNCTIONS(PaceSwim)
+    double pace;
+
+    public:
+
+    PaceSwim() : pace(0.0)
+    {
+        setSymbol("pace_swim");
+        setInternalName("Pace Swim");
+    }
+    bool isTime() const { return true; }
+    void initialize() {
+        setName(tr("Pace Swim"));
+        setType(RideMetric::Average);
+        setMetricUnits(tr("min/100m"));
+        setImperialUnits(tr("min/100yd"));
+        setPrecision(1);
+        setConversion(METERS_PER_YARD);
+   }
+
+    void compute(const RideFile *, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &deps,
+                 const Context *) {
+
+        AvgSpeed *as = dynamic_cast<AvgSpeed*>(deps.value("average_speed"));
+
+        // divide by zero or stupidly low pace
+        if (as->value(true) > 0.00f) pace = 6.0f / as->value(true);
+        else pace = 0;
+
+        setValue(pace);
+        setCount(as->count());
+    }
+
+    bool isRelevantForRide(const RideItem *ride) const { return ride->isSwim; }
+
+    RideMetric *clone() const { return new PaceSwim(*this); }
+};
+
+static bool addPaceSwim()
+{
+    QVector<QString> deps;
+    deps.append("average_speed");
+    RideMetricFactory::instance().addMetric(PaceSwim(), &deps);
+    return true;
+}
+static bool paceSwimAdded = addPaceSwim();
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -1606,17 +1661,17 @@ class AvgLTE : public RideMetric {
         if (ride->areDataPresent()->lte) {
 
             double total = 0.0f;
-            double secs = 0.0f;
+            double samples = 0.0f;
 
             foreach (const RideFilePoint *point, ride->dataPoints()) {
 
-                if (point->cad) {
-                    secs += ride->recIntSecs();
+                if (point->lte) {
+                    samples ++;
                     total += point->lte;
                 }
             }
 
-            if (total > 0.0f && secs > 0.0f) setValue(total / secs);
+            if (total > 0.0f && samples > 0.0f) setValue(total / samples);
             else setValue(0.0);
 
         } else {
@@ -1657,16 +1712,16 @@ class AvgRTE : public RideMetric {
         if (ride->areDataPresent()->rte) {
 
             double total = 0.0f;
-            double secs = 0.0f;
+            double samples = 0.0f;
 
             foreach (const RideFilePoint *point, ride->dataPoints()) {
-                if (point->cad) {
-                    secs += ride->recIntSecs();
+                if (point->rte) {
+                    samples ++;
                     total += point->rte;
                 }
             }
 
-            if (total > 0.0f && secs > 0.0f) setValue(total / secs);
+            if (total > 0.0f && samples > 0.0f) setValue(total / samples);
             else setValue(0.0);
 
         } else {
@@ -1707,17 +1762,17 @@ class AvgLPS : public RideMetric {
         if (ride->areDataPresent()->lps) {
 
             double total = 0.0f;
-            double secs = 0.0f;
+            double samples = 0.0f;
 
             foreach (const RideFilePoint *point, ride->dataPoints()) {
 
-                if (point->cad) {
-                    secs += ride->recIntSecs();
+                if (point->lps) {
+                    samples ++;
                     total += point->lps;
                 }
             }
 
-            if (total > 0.0f && secs > 0.0f) setValue(total / secs);
+            if (total > 0.0f && samples > 0.0f) setValue(total / samples);
             else setValue(0.0);
 
         } else {
@@ -1758,17 +1813,17 @@ class AvgRPS : public RideMetric {
         if (ride->areDataPresent()->rps) {
 
             double total = 0.0f;
-            double secs = 0.0f;
+            double samples = 0.0f;
 
             foreach (const RideFilePoint *point, ride->dataPoints()) {
 
-                if (point->cad) {
-                    secs += ride->recIntSecs();
+                if (point->rps) {
+                    samples ++;
                     total += point->rps;
                 }
             }
 
-            if (total > 0.0f && secs > 0.0f) setValue(total / secs);
+            if (total > 0.0f && samples > 0.0f) setValue(total / samples);
             else setValue(0.0);
 
         } else {
@@ -2498,3 +2553,69 @@ static bool addLeftRight()
 }
 static bool leftRightAdded = addLeftRight();
 //////////////////////////////////////////////////////////////////////////////
+
+struct TotalCalories : public RideMetric {
+    Q_DECLARE_TR_FUNCTIONS(TotalCalories)
+
+    private:
+    double average_hr, athlete_weight, duration, athlete_age;
+
+    public:
+
+    TotalCalories()
+    {
+        setSymbol("total_kcalories");
+        setInternalName("Calories");
+    }
+    void initialize() {
+        setName(tr("Calories (HR)"));
+        setMetricUnits(tr("kcal"));
+        setImperialUnits(tr("kcal"));
+        setType(RideMetric::Total);
+    }
+    void compute(const RideFile *ride, const Zones *, int,
+                 const HrZones *, int,
+                 const QHash<QString,RideMetric*> &deps,
+                 const Context *context) {
+
+        average_hr = deps.value("average_hr")->value(true);
+        athlete_weight = deps.value("athlete_weight")->value(true);
+        duration = deps.value("time_riding")->value(true); // time_riding or workout_time ?
+
+        athlete_age = ride->startTime().date().year() - appsettings->cvalue(context->athlete->cyclist, GC_DOB).toDate().year();
+        bool male = appsettings->cvalue(context->athlete->cyclist, GC_SEX).toInt() == 0;
+
+        double kcalories = 0.0;
+
+        if (duration>0 && average_hr>0 && athlete_weight>0 && athlete_age>0) {
+            //Male: ((-55.0969 + (0.6309 x HR) + (0.1988 x W) + (0.2017 x A))/4.184) x 60 x T
+            //Female: ((-20.4022 + (0.4472 x HR) - (0.1263 x W) + (0.074 x A))/4.184) x 60 x T
+            if (male)
+                kcalories = ((-55.0969 + (0.6309 * average_hr) + (0.1988 * athlete_weight) + (0.2017 * athlete_age))/4.184) * duration/60;
+            else
+                kcalories = ((-20.4022 + (0.4472 * average_hr) + (0.1263 * athlete_weight) + (0.074 * athlete_age))/4.184) * duration/60;
+
+        }
+        setValue(kcalories);
+    }
+
+    bool isRelevantForRide(const RideItem *ride) const { return ride->present.contains("H"); }
+
+    RideMetric *clone() const { return new TotalCalories(*this); }
+};
+
+static bool addTotalCalories() {
+    QVector<QString> deps;
+
+    deps.append("average_hr");
+    deps.append("time_riding");
+    deps.append("athlete_weight");
+
+    RideMetricFactory::instance().addMetric(TotalCalories(), &deps);
+    return true;
+}
+
+static bool totalCaloriesAdded = addTotalCalories();
+
+
+///////////////////////////////////////////////////////////////////////////////

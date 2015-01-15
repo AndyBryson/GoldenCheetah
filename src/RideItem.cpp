@@ -34,10 +34,6 @@
 #include <QMapIterator>
 #include <QByteArray>
 
-#ifdef GC_HAVE_LUCENE
-#include "Lucene.h"
-#endif
-
 // used to create a temporary ride item that is not in the cache and just
 // used to enable using the same calling semantics in things like the
 // merge wizard and interval navigator
@@ -368,20 +364,7 @@ RideItem::checkStale()
     // still reckon its clean? what about the cache ?
     if (isstale == false) isstale = RideFileCache::checkStale(context, this);
 
-#ifdef GC_HAVE_LUCENE
-    // lucene metadata value ?
-    if (isstale == false) {
-
-        if (context->athlete->emptyindex == true) {
-            metacrc = 0; // reset as index missing
-            isstale = true;
-        } 
-    }
-#endif
-
-    // we need to mark stale for 2 reasons
-    // 1) lucene index needs updating
-    // 2) "special" fields may have changed (e.g. CP)
+    // we need to mark stale in case "special" fields may have changed (e.g. CP)
     if (metacrc != metaCRC()) isstale = true;
 
     return isstale;
@@ -430,6 +413,11 @@ RideItem::refresh()
             metrics_[i.value()->index()] = i.value()->value(true);
         }
 
+        // clean any bad values
+        for(int j=0; j<factory.metricCount(); j++)
+            if (std::isinf(metrics_[j]) || std::isnan(metrics_[j]))
+                metrics_[j] = 0.00f;
+
         // update current state
         isstale = false;
 
@@ -444,15 +432,8 @@ RideItem::refresh()
         // RideFile cache needs refreshing possibly
         RideFileCache updater(context, context->athlete->home->activities().canonicalPath() + "/" + fileName, ride_, true);
 
-        // and Lucene search texts if they have changed since we
-        // last updated lucene for this ride item
-#ifdef GC_HAVE_LUCENE
-        unsigned long mc = metaCRC();
-        if (metacrc != mc) {
-            context->athlete->lucene->importRide(ride_);
-            metacrc = mc;
-        }
-#endif
+        // we now match
+        metacrc = metaCRC();
 
         // close if we opened it
         if (doclose) {

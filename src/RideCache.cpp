@@ -150,14 +150,18 @@ RideCache::itemChanged()
 
 // add a new ride
 void
-RideCache::addRide(QString name, bool dosignal)
+RideCache::addRide(QString name, bool dosignal, bool useTempActivities)
 {
     // ignore malformed names
     QDateTime dt;
     if (!RideFile::parseRideFileName(name, &dt)) return;
 
     // new ride item
-    RideItem *last = new RideItem(context->athlete->home->activities().canonicalPath(), name, dt, context);
+    RideItem *last;
+    if (useTempActivities)
+       last = new RideItem(context->athlete->home->tmpActivities().canonicalPath(), name, dt, context);
+    else
+       last = new RideItem(context->athlete->home->activities().canonicalPath(), name, dt, context);
 
     connect(last, SIGNAL(rideDataChanged()), this, SLOT(itemChanged()));
     connect(last, SIGNAL(rideMetadataChanged()), this, SLOT(itemChanged()));
@@ -386,11 +390,6 @@ RideCache::refresh()
         if (item->checkStale()) 
             staleCount++;
     }
-
-    // reset emptyindex, we will have spotted that now
-#ifdef GC_HAVE_LUCENE
-    context->athlete->emptyindex= false;
-#endif
 
     // start if there is work to do
     // and future watcher can notify of updates

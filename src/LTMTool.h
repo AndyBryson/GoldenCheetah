@@ -26,9 +26,7 @@
 #include "LTMSettings.h"
 #include "PDModel.h"
 
-#ifdef GC_HAVE_LUCENE
 #include "SearchFilterBox.h"
-#endif
 
 #include <QDir>
 #include <QFileDialog>
@@ -75,9 +73,7 @@ class LTMTool : public QWidget
 
         LTMSettings *settings;
 
-#ifdef GC_HAVE_LUCENE
         SearchFilterBox *searchBox;
-#endif
 
         // basic tab: accessed by LTMWindow hence public
         QComboBox *groupBy;
@@ -111,6 +107,8 @@ class LTMTool : public QWidget
         void doubleClicked( int row, int column );
         void addMetric();
         void deleteMetric();
+        void moveMetricUp();
+        void moveMetricDown();
 
         void clearFilter();
         void setFilter(QStringList);
@@ -152,7 +150,12 @@ class LTMTool : public QWidget
         // custom tab:
         QTableWidget *customTable;
         QPushButton *editCustomButton, *addCustomButton, *deleteCustomButton;
-        void refreshCustomTable(); // refreshes the table from LTMSettings
+#ifndef Q_OS_MAC
+        QToolButton *upCustomButton, *downCustomButton;
+#else
+        QPushButton *upCustomButton, *downCustomButton;
+#endif
+        void refreshCustomTable(int indexSelectedItem = -1); // refreshes the table from LTMSettings
 };
 
 class EditMetricDetailDialog : public QDialog

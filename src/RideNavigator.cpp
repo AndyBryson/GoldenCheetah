@@ -68,14 +68,12 @@ RideNavigator::RideNavigator(Context *context, bool mainwindow) : context(contex
     sortModel->setSourceModel(groupByModel);
     sortModel->setDynamicSortFilter(true);
 
-#ifdef GC_HAVE_LUCENE
     if (!mainwindow) {
         searchFilterBox = new SearchFilterBox(this, context, false);
         mainLayout->addWidget(searchFilterBox);
         HelpWhatsThis *searchHelp = new HelpWhatsThis(searchFilterBox);
         searchFilterBox->setWhatsThis(searchHelp->getWhatsThisText(HelpWhatsThis::SearchFilterBox));
     }
-#endif
 
     // get setup
     tableView = new RideTreeView;
@@ -145,12 +143,10 @@ RideNavigator::RideNavigator(Context *context, bool mainwindow) : context(contex
     connect(context, SIGNAL(refreshEnd()), this, SLOT(backgroundRefresh()));
     connect(context, SIGNAL(refreshUpdate(QDate)), this, SLOT(backgroundRefresh())); // we might miss 1st one
 
-#ifdef GC_HAVE_LUCENE
     if (!mainwindow) {
         connect(searchFilterBox, SIGNAL(searchResults(QStringList)), this, SLOT(searchStrings(QStringList)));
         connect(searchFilterBox, SIGNAL(searchClear()), this, SLOT(clearSearch()));
     }
-#endif
 
     // we accept drag and drop operations
     setAcceptDrops(true);
@@ -1066,6 +1062,7 @@ void NavigatorCellDelegate::commitAndCloseEditor() { }
 void NavigatorCellDelegate::setEditorData(QWidget *, const QModelIndex &) const { }
 void NavigatorCellDelegate::updateEditorGeometry(QWidget *, const QStyleOptionViewItem &, const QModelIndex &) const {}
 void NavigatorCellDelegate::setModelData(QWidget *, QAbstractItemModel *, const QModelIndex &) const { }
+bool NavigatorCellDelegate::helpEvent(QHelpEvent*, QAbstractItemView*, const QStyleOptionViewItem&, const QModelIndex&) { return true; }
 
 QSize NavigatorCellDelegate::sizeHint(const QStyleOptionViewItem & /*option*/, const QModelIndex &index) const 
 {
@@ -1090,7 +1087,7 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
     bool hover = option.state & QStyle::State_MouseOver;
     bool selected = option.state & QStyle::State_Selected;
     bool focus = option.state & QStyle::State_HasFocus;
-    bool isRun = rideNavigator->tableView->model()->data(index, Qt::UserRole+2).toBool();
+    //bool isRun = rideNavigator->tableView->model()->data(index, Qt::UserRole+2).toBool();
 
     // format the cell depending upon what it is...
     QString columnName = rideNavigator->tableView->model()->headerData(index.column(), Qt::Horizontal).toString();
@@ -1151,10 +1148,10 @@ void NavigatorCellDelegate::paint(QPainter *painter, const QStyleOptionViewItem 
     QBrush background = QBrush(GColor(CPLOTBACKGROUND));
 
     // runs are darker
-    if (isRun) {
-        background.setColor(background.color().darker(150));
-        userColor = userColor.darker(150);
-    }
+    //if (isRun) {
+        //background.setColor(background.color().darker(150));
+        //userColor = userColor.darker(150);
+    //}
 
     if (columnName != "*") {
 

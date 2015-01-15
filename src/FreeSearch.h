@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 Sean C. Rhea (srhea@srhea.net)
+ * Copyright (c) 2015 Mark Liversedge (liversedge@gmail.com)
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -16,20 +16,43 @@
  * Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#ifndef _CsvRideFile_h
-#define _CsvRideFile_h
-#include "GoldenCheetah.h"
+#ifndef _GC_FreeSearch_h
+#define _GC_FreeSearch_h
 
-#include "RideFile.h"
+#include <QObject>
+#include <QString>
+#include <QDir>
+#include <QMutex>
 
-enum csvtypes { generic, gc, powertap, joule, ergomo, motoactv, ibike, moxy, freemotion, peripedal, cpexport };
-typedef enum csvtypes CsvType;
+#include "Context.h"
+#include "RideMetadata.h"
+#include "RideCache.h"
+#include "RideItem.h"
 
-struct CsvFileReader : public RideFileReader {
-    virtual RideFile *openRideFile(QFile &file, QStringList &errors, QList<RideFile*>* = 0) const; 
-    bool writeRideFile(Context *context, const RideFile *ride, QFile &file) const;
-    bool hasWrite() const { return true; }
+class FreeSearch : public QObject
+{
+    Q_OBJECT
+
+public:
+    FreeSearch(QObject *parent, Context *context);
+    ~FreeSearch();
+
+protected:
+
+public slots:
+
+    // search metadata texts in ridecache
+    QList<QString> search(QString query);
+
+signals:
+    void results(QStringList);
+
+private:
+    Context *context;
+    QDir dir;
+
+    // Query results
+    QStringList filenames;
 };
 
-#endif // _CsvRideFile_h
-
+#endif

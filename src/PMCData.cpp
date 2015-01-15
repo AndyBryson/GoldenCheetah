@@ -28,6 +28,7 @@
 #include "Context.h"
 
 #include <stdio.h>
+#include <cmath>
 
 #include <QSharedPointer>
 #include <QProgressDialog>
@@ -174,8 +175,14 @@ void PMCData::refresh()
 
         // seed with score for this one
         int offset = start_.daysTo(item->dateTime.date());
-        if (offset > 0 && offset < stress_.count())
-        stress_[offset] += item->getForSymbol(metricName_);
+        if (offset > 0 && offset < stress_.count()) {
+
+            // although metrics are cleansed, we check here because development
+            // builds have a rideDB.json that has nan and inf values in it.
+            double value = item->getForSymbol(metricName_);
+            if (!std::isinf(value) && !std::isnan(value))
+                stress_[offset] += value;
+        }
     }
 
     //
@@ -289,4 +296,34 @@ PMCData::rr(QDate date)
     int index=indexOf(date);
     if (index == -1) return 0.0f;
     else return rr_[index];
+}
+
+// rag reporting according to wattage type groupthink
+QColor PMCData::ltsColor(double value, QColor defaultColor)
+{
+    //if (value < 30) return QColor(Qt::red);
+    //if (value < 80) return QColor(Qt::yellow);
+    if (value > 80) return QColor(Qt::green);
+    if (value > 100) return QColor(Qt::blue);
+    return defaultColor;
+}
+
+QColor PMCData::stsColor(double, QColor defaultColor)
+{
+    return defaultColor; // nowt is wrong, rest or peak who can tell ?
+}
+
+QColor PMCData::sbColor(double value, QColor defaultColor)
+{
+    if (value < -40) return QColor(Qt::red); // injury risk
+    //if (value < 25) return QColor(Qt::yellow); // injury risk
+    //if (value > -5 && value < 5) return QColor(Qt::blue); // ideal
+    return defaultColor;
+}
+
+QColor PMCData::rrColor(double value, QColor defaultColor)
+{
+    if (value < -4 || value > 8) return QColor(Qt::red); // too fast or detraining
+    //if (value < 0) return QColor(Qt::yellow); // risk of losing fitness
+    return defaultColor;
 }
