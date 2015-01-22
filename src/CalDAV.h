@@ -60,23 +60,26 @@ class CalDAV : public QObject
     enum action { Options, PropFind, Put, Get, Events, Report, None };
     typedef enum action ActionType;
 
+    enum type { Standard, Google };
+    typedef enum type CalDAVType;
+
 public:
     CalDAV(Context *context);
-
 
 public slots:
 
     // Query CalDAV server Options
-    bool options();
+    //bool options(); // not used
 
     // Query CalDAV server Options
-    bool propfind();
+    //bool propfind(); // not used
 
     // authentication (and refresh all events)
-    bool download();
+    // -- parameter ignoreErrors run the function in a "stealth" mode - ignoring any error message which might occur e.g. missing configuration
+    bool download(bool ignoreErrors=false);
 
     // Query CalDAV server for events ...
-    bool report();
+    //bool report(); // not used
 
     // Upload ride as a VEVENT
     bool upload(RideItem *rideItem);
@@ -84,11 +87,32 @@ public slots:
     // Catch NAM signals ...
     void requestReply(QNetworkReply *reply);
     void userpass(QNetworkReply*r,QAuthenticator*a);
-    void sslErrors(QNetworkReply*,QList<QSslError>&);
+    void sslErrors(QNetworkReply*,QList<QSslError>);
+
+    // Google Access Token
+    void googleNetworkRequestFinished(QNetworkReply*);
+
+    // enable aynchronous up/download for Google
+    // since access token is temporarily valid only, it needs refresh before access to Google CALDAV
+    bool doDownload();
+    bool doUpload(RideItem *rideItem);
+
+    void getConfig();
 
 private:
+
     Context *context;
     QNetworkAccessManager *nam;
     ActionType mode;
+    CalDAVType calDavType;
+    QString googleCalDAVurl;
+    bool ignoreDownloadErrors;
+
+    // specific part to get Google Access Token
+    QNetworkAccessManager *googleNetworkAccessManager;
+    void requestGoogleAccessTokenToExecute();
+    QByteArray googleCalendarAccessToken;
+    RideItem *itemForUpload;
+
 };
 #endif

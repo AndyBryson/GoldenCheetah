@@ -596,10 +596,19 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
     // CalDAV Calendar
 
     QLabel *dv = new QLabel(tr("CalDAV Calendar"));
+    dvCALDAVType = new QComboBox(this);
+    dvCALDAVType->addItem(tr("Generic CalDAV"));
+    dvCALDAVType->addItem(tr("Google Calendar"));
+
+    dvCALDAVType->setCurrentIndex(appsettings->cvalue(context->athlete->cyclist, GC_DVCALDAVTYPE, "0").toInt());
+
+    // setup and fill all fields
     dv->setFont(current);
     QLabel *dvurlLabel = new QLabel(tr("CalDAV URL"));
     QLabel *dvuserLabel = new QLabel(tr("CalDAV User Id"));
     QLabel *dvpassLabel = new QLabel(tr("CalDAV Password"));
+    QLabel *dvTypeLabel = new QLabel(tr("Calendar Type"));
+    QLabel *dvGoogleLabel = new QLabel(tr("Google CalID"));
 
     dvURL = new QLineEdit(this);
     QString url = appsettings->cvalue(context->athlete->cyclist, GC_DVURL, "").toString();
@@ -613,7 +622,24 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
     dvPass->setEchoMode(QLineEdit::Password);
     dvPass->setText(appsettings->cvalue(context->athlete->cyclist, GC_DVPASS, "").toString());
 
+    dvGoogleCalid = new QLineEdit(this);
+    dvGoogleCalid->setText(appsettings->cvalue(context->athlete->cyclist, GC_DVGOOGLE_CALID, "").toString());
+
+    QLabel *googleCalendarAuthLabel = new QLabel(tr("Google Calendar"));
+
+    googleCalendarAuthorise = new QPushButton(tr("Authorise"), this);
+
+    googleCalendarAuthorised = new QPushButton(this);
+    googleCalendarAuthorised->setContentsMargins(0,0,0,0);
+    googleCalendarAuthorised->setIcon(passwords.scaled(16,16));
+    googleCalendarAuthorised->setIconSize(QSize(16,16));
+    googleCalendarAuthorised->setFixedHeight(16);
+    googleCalendarAuthorised->setFixedWidth(16);
+
     grid->addWidget(dv, ++row, 0);
+
+    grid->addWidget(dvTypeLabel, ++row, 0);
+    grid->addWidget(dvCALDAVType, row, 1, 0);
 
     grid->addWidget(dvurlLabel, ++row, 0);
     grid->addWidget(dvURL, row, 1, 0);
@@ -623,6 +649,22 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
 
     grid->addWidget(dvpassLabel, ++row, 0);
     grid->addWidget(dvPass, row, 1, Qt::AlignLeft | Qt::AlignVCenter);
+
+    grid->addWidget(dvGoogleLabel, ++row, 0);
+    grid->addWidget(dvGoogleCalid, row, 1, Qt::AlignLeft | Qt::AlignVCenter);
+
+    grid->addWidget(googleCalendarAuthLabel, ++row, 0);
+    grid->addWidget(googleCalendarAuthorise, row, 1, Qt::AlignLeft | Qt::AlignVCenter);
+    if (appsettings->cvalue(context->athlete->cyclist, GC_GOOGLE_CALENDAR_REFRESH_TOKEN, "")!="")
+        grid->addWidget(googleCalendarAuthorised, row, 1, Qt::AlignLeft | Qt::AlignVCenter);
+    else
+        googleCalendarAuthorised->hide(); // if no token no show
+
+    connect(googleCalendarAuthorise, SIGNAL(clicked()), this, SLOT(authoriseGoogleCalendar()));
+    connect (dvCALDAVType, SIGNAL(currentIndexChanged(int)), this, SLOT(dvCALDAVTypeChanged(int)));
+
+    // activate/deactivate the input fields aocording the the type selected
+    dvCALDAVTypeChanged(dvCALDAVType->currentIndex());
 
     //////////////////////////////////////////////////
     // Trainingstagebuch
@@ -716,9 +758,12 @@ CredentialsPage::CredentialsPage(QWidget *parent, Context *context) : QScrollAre
 void CredentialsPage::authoriseTwitter()
 {
     OAuthDialog *oauthDialog = new OAuthDialog(context, OAuthDialog::TWITTER);
-    oauthDialog->setWindowModality(Qt::ApplicationModal);
-    oauthDialog->exec();
-
+    if (oauthDialog->sslLibMissing()) {
+        delete oauthDialog;
+    } else {
+        oauthDialog->setWindowModality(Qt::ApplicationModal);
+        oauthDialog->exec();
+    }
 }
 #endif
 
@@ -726,19 +771,59 @@ void CredentialsPage::authoriseTwitter()
 void CredentialsPage::authoriseStrava()
 {
     OAuthDialog *oauthDialog = new OAuthDialog(context, OAuthDialog::STRAVA);
-    oauthDialog->setWindowModality(Qt::ApplicationModal);
-    oauthDialog->exec();
+    if (oauthDialog->sslLibMissing()) {
+        delete oauthDialog;
+    } else {
+        oauthDialog->setWindowModality(Qt::ApplicationModal);
+        oauthDialog->exec();
+    }
 }
-
-
 
 void CredentialsPage::authoriseCyclingAnalytics()
 {
     OAuthDialog *oauthDialog = new OAuthDialog(context, OAuthDialog::CYCLING_ANALYTICS);
-    oauthDialog->setWindowModality(Qt::ApplicationModal);
-    oauthDialog->exec();
+    if (oauthDialog->sslLibMissing()) {
+        delete oauthDialog;
+    } else {
+        oauthDialog->setWindowModality(Qt::ApplicationModal);
+        oauthDialog->exec();
+    }
 }
 
+void CredentialsPage::authoriseGoogleCalendar()
+{
+    OAuthDialog *oauthDialog = new OAuthDialog(context, OAuthDialog::GOOGLE_CALENDAR);
+    if (oauthDialog->sslLibMissing()) {
+        delete oauthDialog;
+    } else {
+        oauthDialog->setWindowModality(Qt::ApplicationModal);
+        oauthDialog->exec();
+    }
+}
+
+void CredentialsPage::dvCALDAVTypeChanged(int type)
+{
+    if (type == 0) {
+        // normal CALDAV selected
+        googleCalendarAuthorise->setEnabled(false);
+        dvGoogleCalid->setEnabled(false);
+        dvURL->setEnabled(true);
+        dvUser->setEnabled(true);
+        dvPass->setEnabled(true);
+    } else {
+        // Google Selected
+        googleCalendarAuthorise->setEnabled(true);
+        dvGoogleCalid->setEnabled(true);
+        dvURL->setEnabled(false);
+        dvUser->setEnabled(false);
+        dvPass->setEnabled(false);
+    }
+    // set always inactive if authorization process not feasible
+#ifndef GC_GOOGLE_CALENDAR_CLIENT_SECRET
+        googleCalendarAuthorise->setEnabled(false);
+#endif
+
+}
 
 qint32
 CredentialsPage::saveClicked()
@@ -759,6 +844,7 @@ CredentialsPage::saveClicked()
     appsettings->setCValue(context->athlete->cyclist, GC_WIUSER, wiUser->text());
     appsettings->setCValue(context->athlete->cyclist, GC_WIKEY, wiPass->text());
     appsettings->setCValue(context->athlete->cyclist, GC_WEBCAL_URL, webcalURL->text());
+    appsettings->setCValue(context->athlete->cyclist, GC_WEBCAL_URL, webcalURL->text());
 
     // escape the at character
     QString url = dvURL->text();
@@ -766,6 +852,8 @@ CredentialsPage::saveClicked()
     appsettings->setCValue(context->athlete->cyclist, GC_DVURL, url);
     appsettings->setCValue(context->athlete->cyclist, GC_DVUSER, dvUser->text());
     appsettings->setCValue(context->athlete->cyclist, GC_DVPASS, dvPass->text());
+    appsettings->setCValue(context->athlete->cyclist, GC_DVGOOGLE_CALID, dvGoogleCalid->text());
+    appsettings->setCValue(context->athlete->cyclist, GC_DVCALDAVTYPE, dvCALDAVType->currentIndex());
 
     return 0;
 }
@@ -1011,6 +1099,7 @@ DevicePage::DevicePage(QWidget *parent, Context *context) : QWidget(parent), con
 
     connect(addButton, SIGNAL(clicked()), this, SLOT(devaddClicked()));
     connect(delButton, SIGNAL(clicked()), this, SLOT(devdelClicked()));
+    connect(context, SIGNAL(configChanged(qint32)), deviceListModel, SLOT(doReset()));
 }
 
 qint32
@@ -1089,6 +1178,15 @@ deviceModel::deviceModel(QObject *parent) : QAbstractTableModel(parent)
     // get current configuration
     DeviceConfigurations all;
     Configuration = all.getList();
+}
+
+void
+deviceModel::doReset()
+{
+    beginResetModel();
+    DeviceConfigurations all;
+    Configuration = all.getList();
+    endResetModel();
 }
 
 int

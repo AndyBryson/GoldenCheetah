@@ -2312,7 +2312,8 @@ AllPlot::refreshIntervalMarkers()
             if (interval.isClimb()) continue;
 
             // no label, but do add
-            if (interval.isPeak() || interval.isMatch()) nolabel = true;
+            if (interval.isBest() || interval.isPeak() || 
+                interval.isMatch()) nolabel = true;
 
             QwtPlotMarker *mrk = new QwtPlotMarker;
             standard->d_mrk.append(mrk);
@@ -6470,8 +6471,8 @@ AllPlot::pointHover(QwtPlotCurve *curve, int index)
         //replot();
     }
 
-    // we have intervals selected so no need to mouse over
-    if (context->athlete->intervalWidget->selectedItems().count()) return;
+    // we don't want hoveing or we have intervals selected so no need to mouse over
+    if (!window->showHover->isChecked() || context->athlete->intervalWidget->selectedItems().count()) return;
 
     if (!context->isCompareIntervals && rideItem && rideItem->ride()) {
 
@@ -6509,6 +6510,7 @@ AllPlot::pointHover(QwtPlotCurve *curve, int index)
                 if (chosen.isPeak()) hbrush = QColor(Qt::lightGray);
                 if (chosen.isMatch()) hbrush = QColor(Qt::red);
                 if (chosen.isClimb()) hbrush = QColor(Qt::darkGreen);
+                if (chosen.isBest()) hbrush = QColor(Qt::darkYellow);
                 hbrush.setAlpha(64);
                 standard->intervalHoverCurve->setBrush(hbrush);   // fill below the line
 
@@ -6570,6 +6572,7 @@ AllPlot::intervalHover(RideFileInterval chosen)
         if (chosen.isPeak()) hbrush = QColor(Qt::lightGray);
         if (chosen.isMatch()) hbrush = QColor(Qt::red);
         if (chosen.isClimb()) hbrush = QColor(Qt::darkGreen);
+        if (chosen.isBest()) hbrush = QColor(Qt::darkYellow);
         hbrush.setAlpha(64);
         standard->intervalHoverCurve->setBrush(hbrush);   // fill below the line
 
@@ -6769,18 +6772,40 @@ AllPlot::plotTmpReference(int axis, int x, int y)
 
         // now do the series plots
         foreach(AllPlot *plot, window->seriesPlots) {
+            plot->replot();
+            foreach(QwtPlotCurve *curve, plot->standard->tmpReferenceLines) {
+                if (curve) {
+                    plot->curveColors->remove(curve); // ignored if not already there
+                    curve->detach();
+                    delete curve;
+                }
+            }
+            plot->standard->tmpReferenceLines.clear();
+        }
+        foreach(AllPlot *plot, window->seriesPlots) {
             QwtPlotCurve *referenceLine = plot->plotReferenceLine(referencePoint);
             if (referenceLine) {
-                standard->tmpReferenceLines.append(referenceLine);
+                plot->standard->tmpReferenceLines.append(referenceLine);
                 plot->replot();
             }
         }
 
         // now the stack plots
         foreach(AllPlot *plot, window->allPlots) {
+            plot->replot();
+            foreach(QwtPlotCurve *curve, plot->standard->tmpReferenceLines) {
+                if (curve) {
+                    plot->curveColors->remove(curve); // ignored if not already there
+                    curve->detach();
+                    delete curve;
+                }
+            }
+            plot->standard->tmpReferenceLines.clear();
+        }
+        foreach(AllPlot *plot, window->allPlots) {
             QwtPlotCurve *referenceLine = plot->plotReferenceLine(referencePoint);
             if (referenceLine) {
-                standard->tmpReferenceLines.append(referenceLine);
+                plot->standard->tmpReferenceLines.append(referenceLine);
                 plot->replot();
             }
         }
@@ -6800,10 +6825,26 @@ AllPlot::plotTmpReference(int axis, int x, int y)
         window->allPlot->replot();
         foreach(AllPlot *plot, window->seriesPlots) {
             plot->replot();
+            foreach(QwtPlotCurve *curve, plot->standard->tmpReferenceLines) {
+                if (curve) {
+                    plot->curveColors->remove(curve); // ignored if not already there
+                    curve->detach();
+                    delete curve;
+                }
+                plot->standard->tmpReferenceLines.clear();
+            }
         }
         window->allPlot->replot();
         foreach(AllPlot *plot, window->allPlots) {
             plot->replot();
+            foreach(QwtPlotCurve *curve, plot->standard->tmpReferenceLines) {
+                if (curve) {
+                    plot->curveColors->remove(curve); // ignored if not already there
+                    curve->detach();
+                    delete curve;
+                }
+            }
+            plot->standard->tmpReferenceLines.clear();
         }
     }
 }

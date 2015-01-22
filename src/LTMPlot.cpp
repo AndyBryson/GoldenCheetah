@@ -214,6 +214,7 @@ LTMPlot::setData(LTMSettings *set)
     timer.start();
 
     curveColors->isolated = false;
+    isolation = false;
 
     //qDebug()<<"Starting.."<<timer.elapsed();
 
@@ -419,7 +420,7 @@ LTMPlot::setData(LTMSettings *set)
         QwtPlotCurve *current = new QwtPlotCurve(metricDetail.uname);
         current->setVisible(!metricDetail.hidden);
         settings->metrics[m].curve = current;
-        if (metricDetail.type == METRIC_BEST)
+        if (metricDetail.type == METRIC_BEST || metricDetail.type == METRIC_STRESS)
             curves.insert(metricDetail.bestSymbol, current);
         else
             curves.insert(metricDetail.symbol, current);
@@ -572,7 +573,7 @@ LTMPlot::setData(LTMSettings *set)
         QwtPlotCurve *current = new QwtPlotCurve(metricDetail.uname);
         current->setVisible(!metricDetail.hidden);
         settings->metrics[m].curve = current;
-        if (metricDetail.type == METRIC_BEST)
+        if (metricDetail.type == METRIC_BEST || metricDetail.type == METRIC_STRESS)
             curves.insert(metricDetail.bestSymbol, current);
         else
             curves.insert(metricDetail.symbol, current);
@@ -623,7 +624,7 @@ LTMPlot::setData(LTMSettings *set)
 
                 QString trendName = QString(tr("%1 trend")).arg(metricDetail.uname);
                 QString trendSymbol = QString("%1_trend")
-                                       .arg(metricDetail.type == METRIC_BEST ? 
+                                       .arg((metricDetail.type == METRIC_BEST || metricDetail.type == METRIC_STRESS) ? 
                                        metricDetail.bestSymbol : metricDetail.symbol);
 
                 QwtPlotCurve *trend = new QwtPlotCurve(trendName);
@@ -660,7 +661,7 @@ LTMPlot::setData(LTMSettings *set)
             if (metricDetail.trendtype == 2 && count > 3) {
                 QString trendName = QString(tr("%1 trend")).arg(metricDetail.uname);
                 QString trendSymbol = QString("%1_trend")
-                                       .arg(metricDetail.type == METRIC_BEST ? 
+                                       .arg((metricDetail.type == METRIC_BEST || metricDetail.type == METRIC_STRESS) ? 
                                        metricDetail.bestSymbol : metricDetail.symbol);
 
                 QwtPlotCurve *trend = new QwtPlotCurve(trendName);
@@ -724,7 +725,7 @@ LTMPlot::setData(LTMSettings *set)
             else
                 outName = QString(tr("%1 Outlier")).arg(metricDetail.uname);
 
-            QString outSymbol = QString("%1_outlier").arg(metricDetail.type == METRIC_BEST ?
+            QString outSymbol = QString("%1_outlier").arg((metricDetail.type == METRIC_BEST || metricDetail.type == METRIC_STRESS) ?
                                                           metricDetail.bestSymbol : metricDetail.symbol);
             QwtPlotCurve *out = new QwtPlotCurve(outName);
             out->setVisible(!metricDetail.hidden);
@@ -810,7 +811,7 @@ LTMPlot::setData(LTMSettings *set)
                 topName = QString(tr("Best %1")).arg(metricDetail.uname);
 
             QString topSymbol = QString("%1_topN")
-                                .arg(metricDetail.type == METRIC_BEST ? 
+                                .arg((metricDetail.type == METRIC_BEST || metricDetail.type == METRIC_STRESS) ? 
                                      metricDetail.bestSymbol : metricDetail.symbol);
             QwtPlotCurve *top = new QwtPlotCurve(topName);
             top->setVisible(!metricDetail.hidden);
@@ -1202,7 +1203,7 @@ LTMPlot::setData(LTMSettings *set)
 
     //qDebug()<<"Final tidy.."<<timer.elapsed();
 
-    // update colours etc for plot chrome
+    // update colours etc for plot chrome will also save state
     configChanged(CONFIG_APPEARANCE);
 
     // plot
@@ -1654,7 +1655,7 @@ LTMPlot::setCompareData(LTMSettings *set)
 
                     QString trendName = QString(tr("%1 %2 trend")).arg(cd.name).arg(metricDetail.uname);
                     QString trendSymbol = QString("%1_trend")
-                                        .arg(metricDetail.type == METRIC_BEST ? 
+                                        .arg((metricDetail.type == METRIC_BEST || metricDetail.type == METRIC_STRESS) ? 
                                         metricDetail.bestSymbol : metricDetail.symbol);
 
                     QwtPlotCurve *trend = new QwtPlotCurve(trendName);
@@ -1689,7 +1690,7 @@ LTMPlot::setCompareData(LTMSettings *set)
                 if (metricDetail.trendtype == 2 && count > 3) {
                     QString trendName = QString(tr("%1 %2 trend")).arg(cd.name).arg(metricDetail.uname);
                     QString trendSymbol = QString("%1_trend")
-                                        .arg(metricDetail.type == METRIC_BEST ? 
+                                        .arg((metricDetail.type == METRIC_BEST || metricDetail.type == METRIC_STRESS) ? 
                                         metricDetail.bestSymbol : metricDetail.symbol);
 
                     QwtPlotCurve *trend = new QwtPlotCurve(trendName);
@@ -1749,7 +1750,7 @@ LTMPlot::setCompareData(LTMSettings *set)
                           .arg(cd.name)
                           .arg(metricDetail.uname);
 
-                QString outSymbol = QString("%1_outlier").arg(metricDetail.type == METRIC_BEST ?
+                QString outSymbol = QString("%1_outlier").arg((metricDetail.type == METRIC_BEST || metricDetail.type == METRIC_STRESS) ?
                                                             metricDetail.bestSymbol : metricDetail.symbol);
                 QwtPlotCurve *out = new QwtPlotCurve(outName);
                 curves.insert(outName, out);
@@ -1828,7 +1829,7 @@ LTMPlot::setCompareData(LTMSettings *set)
                 // lets setup a curve with this data then!
                 QString topName = QString(tr("%1 %2 Best")).arg(cd.name).arg(metricDetail.uname);
                 QString topSymbol = QString("%1_topN")
-                                    .arg(metricDetail.type == METRIC_BEST ? 
+                                    .arg((metricDetail.type == METRIC_BEST || metricDetail.type == METRIC_STRESS) ? 
                                         metricDetail.bestSymbol : metricDetail.symbol);
                 QwtPlotCurve *top = new QwtPlotCurve(topName);
                 curves.insert(topName, top);

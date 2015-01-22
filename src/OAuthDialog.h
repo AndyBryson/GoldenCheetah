@@ -47,15 +47,19 @@ public:
     typedef enum {
         STRAVA,
         TWITTER,
-        CYCLING_ANALYTICS
+        CYCLING_ANALYTICS,
+        GOOGLE_CALENDAR,
     } OAuthSite;
 
     OAuthDialog(Context *context, OAuthSite site);
 
+    bool sslLibMissing() { return noSSLlib; }
+
 private slots:
 
-    // Strava/Cyclinganalytics
+    // Strava/Cyclinganalytics/Google
     void urlChanged(const QUrl& url);
+    void loadFinished(bool ok);
     void networkRequestFinished(QNetworkReply *reply);
 
 #ifdef GC_HAVE_KQOAUTH
@@ -71,6 +75,7 @@ private slots:
 
 private:
     Context *context;
+    bool noSSLlib;
     OAuthSite site;
 
     QVBoxLayout *layout;
