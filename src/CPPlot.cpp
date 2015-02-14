@@ -112,7 +112,8 @@ void
 CPPlot::configChanged(qint32)
 {
     QPalette palette;
-    palette.setBrush(QPalette::Window, QBrush(GColor(CPLOTBACKGROUND)));
+    if (rangemode) palette.setBrush(QPalette::Window, QBrush(GColor(CTRENDPLOTBACKGROUND)));
+    else palette.setBrush(QPalette::Window, QBrush(GColor(CPLOTBACKGROUND)));
     palette.setColor(QPalette::WindowText, GColor(CPLOTMARKER));
     palette.setColor(QPalette::Text, GColor(CPLOTMARKER));
     setPalette(palette);
@@ -121,7 +122,8 @@ CPPlot::configChanged(qint32)
     axisWidget(QwtPlot::yLeft)->setPalette(palette);
     axisWidget(QwtPlot::yRight)->setPalette(palette);
 
-    setCanvasBackground(GColor(CPLOTBACKGROUND));
+    if (rangemode) setCanvasBackground(GColor(CTRENDPLOTBACKGROUND));
+    else setCanvasBackground(GColor(CPLOTBACKGROUND));
 }
 
 // get the fonts and colors right for the axis scales
@@ -281,11 +283,13 @@ CPPlot::setSeries(CriticalPowerWindow::CriticalSeriesType criticalSeries)
     if (criticalSeries == CriticalPowerWindow::veloclinicplot) {
         sd = new QwtScaleDraw;
         sd->setTickLength(QwtScaleDiv::MajorTick, 3);
+        sd->enableComponent(QwtScaleDraw::Ticks, false);
         setAxisScaleDraw(xBottom, sd);
         setAxisTitle(xBottom, tr("Power (W)"));
     } else {
         ltsd = new LogTimeScaleDraw;
         ltsd->setTickLength(QwtScaleDiv::MajorTick, 3);
+        ltsd->enableComponent(QwtScaleDraw::Ticks, false);
         setAxisScaleDraw(xBottom, ltsd);
         setAxisTitle(xBottom, tr("Interval Length"));
     }
@@ -401,8 +405,8 @@ CPPlot::plotModel()
                 QVector<double> power(pdModel->size());
                 QVector<double> wprime(pdModel->size());
                 for (size_t t = 0; t < pdModel->size(); t++) {
-                    power[t] = pdModel->y(t);
-                    wprime[t] = (pdModel->y(t)-pdModel->CP()) * (pdModel->x(t)); // Joules
+                    power[t] = pdModel->y(t+1);
+                    wprime[t] = (pdModel->y(t+1)-veloCP) * (pdModel->x(t+1)); // Joules
                 }
                 modelCurve->setSamples(power.data(), wprime.data(), pdModel->size()-1);
             }
@@ -610,8 +614,8 @@ CPPlot::plotModel()
         heatCurve->setSamples(time, heat);
         heatCurve->setYAxis(yRight);
         setAxisScale(yRight, 0, 100);  // fine if only heat is shown and percentage Scale will be fixed if shown
-        if (showPercent) setAxisTitle(yRight, tr("Percent of Best / Heat Rides"));
-        else setAxisTitle(yRight, tr("Heat Rides"));
+        if (showPercent) setAxisTitle(yRight, tr("Percent of Best / Heat Activities"));
+        else setAxisTitle(yRight, tr("Heat Activities"));
         heatCurve->attach(this);
     }
 
@@ -842,6 +846,7 @@ CPPlot::plotBests()
             model = 1;
         initModel();
         model = selectedModel;
+        shadingCP = veloCP;
     }
 
 
@@ -854,11 +859,12 @@ CPPlot::plotBests()
         time[t] = (t+1.00f) / 60.00f;
         work[t] = values[t] * t / 1000; // kJ not Joules
         if (criticalSeries == CriticalPowerWindow::veloclinicplot) {
-            wprime[t] = (values[t]<pdModel->CP()?0:(values[t]-pdModel->CP()) * time[t] * 60.0); // Joules
+            wprime[t] = (values[t]<veloCP?0:(values[t]-veloCP) * time[t] * 60.0); // Joules
         }
     }
 
     if (showBest) {
+
         if (shadingCP == 0 && shadingCV == 0.0) {
 
             // PLAIN CURVE
@@ -1129,7 +1135,7 @@ CPPlot::plotBests()
                 ++zone;
             }
         }
-}
+    }
 
 
     // X-AXIS
@@ -1148,6 +1154,8 @@ CPPlot::plotBests()
     QwtScaleDiv div((double)xmin, (double)xmax);
     if (criticalSeries == CriticalPowerWindow::work)
         div.setTicks(QwtScaleDiv::MajorTick, LogTimeScaleDraw::ticksEnergy);
+    else if (criticalSeries == CriticalPowerWindow::veloclinicplot)
+        div.setTicks(QwtScaleDiv::MajorTick, LogTimeScaleDraw::ticksVeloclinic);
     else
         div.setTicks(QwtScaleDiv::MajorTick, LogTimeScaleDraw::ticks);
     setAxisScaleDiv(QwtPlot::xBottom, div);
@@ -1284,7 +1292,7 @@ CPPlot::plotRide(RideItem *rideItem)
 
         QVector<double> array(rideItem->fileCache()->meanMaxArray(RideFile::watts).size());
         for (int i = 0; i <= maxNonZero; ++i) {
-            array[i] =  (rideItem->fileCache()->meanMaxArray(rideSeries)[i]<pdModel->CP()?0:(rideItem->fileCache()->meanMaxArray(rideSeries)[i]-pdModel->CP()) * timeArray[i] * 60.0);
+            array[i] =  (rideItem->fileCache()->meanMaxArray(rideSeries)[i]<veloCP?0:(rideItem->fileCache()->meanMaxArray(rideSeries)[i]-veloCP) * timeArray[i] * 60.0);
         }
         rideCurve->setSamples(rideItem->fileCache()->meanMaxArray(rideSeries).constData()  + 1, array.constData() + 1,
                               maxNonZero > 0 ? maxNonZero-1 : 0);
@@ -1317,7 +1325,7 @@ CPPlot::plotRide(RideItem *rideItem)
             setAxisScale(yRight, 0, max); // always 100
 
             // set the right titles in case both Heat and Percent of best is show
-            if (showHeat) setAxisTitle(yRight, tr("Percent of Best / Heat Rides"));
+            if (showHeat) setAxisTitle(yRight, tr("Percent of Best / Heat Activities"));
             else setAxisTitle(yRight, tr("Percent of Best"));
 
         } else {
@@ -1328,7 +1336,7 @@ CPPlot::plotRide(RideItem *rideItem)
                                   maxNonZero > 0 ? maxNonZero-1 : 0);
 
             // Set the YAxis Title if Heat is active
-            if (showHeat) setAxisTitle(yRight, tr("Heat Rides"));
+            if (showHeat) setAxisTitle(yRight, tr("Heat Activities"));
         }
     }
 
@@ -1481,7 +1489,7 @@ CPPlot::pointHover(QwtPlotCurve *curve, int index)
 		}
 
         // no units for Heat Curve
-        if (curve == heatCurve) units2 = QString(tr("Rides"));
+        if (curve == heatCurve) units2 = QString(tr("Activities"));
 
         // for speed series add pace with units according to settings
         if (criticalSeries == CriticalPowerWindow::kph) {
@@ -2106,6 +2114,8 @@ CPPlot::calculateForDateRanges(QList<CompareDateRange> compareDateRanges)
     QwtScaleDiv div((double)xmin, (double)xmax);
     if (criticalSeries == CriticalPowerWindow::work)
         div.setTicks(QwtScaleDiv::MajorTick, LogTimeScaleDraw::ticksEnergy);
+    else if (criticalSeries == CriticalPowerWindow::veloclinicplot)
+        div.setTicks(QwtScaleDiv::MajorTick, LogTimeScaleDraw::ticksVeloclinic);
     else
         div.setTicks(QwtScaleDiv::MajorTick, LogTimeScaleDraw::ticks);
     setAxisScaleDiv(QwtPlot::xBottom, div);
@@ -2246,6 +2256,8 @@ CPPlot::calculateForIntervals(QList<CompareInterval> compareIntervals)
     QwtScaleDiv div((double)xmin, (double)xmax);
     if (criticalSeries == CriticalPowerWindow::work)
         div.setTicks(QwtScaleDiv::MajorTick, LogTimeScaleDraw::ticksEnergy);
+    else if (criticalSeries == CriticalPowerWindow::veloclinicplot)
+        div.setTicks(QwtScaleDiv::MajorTick, LogTimeScaleDraw::ticksVeloclinic);
     else
         div.setTicks(QwtScaleDiv::MajorTick, LogTimeScaleDraw::ticks);
     setAxisScaleDiv(QwtPlot::xBottom, div);

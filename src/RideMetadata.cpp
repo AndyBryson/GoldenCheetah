@@ -121,7 +121,7 @@ RideMetadata::warnDateTime(QDateTime datetime)
 
         QString conflict = context->athlete->home->activities().canonicalPath() + "/" + targetnosuffix + "." + suffix;
         if (QFile(conflict).exists() && QFileInfo(conflict).fileName() != rideItem()->fileName) {
-            QMessageBox::warning(this, "Date/Time Entry", "A ride already exists with that date/time, if you do not change it then you will overwrite and lose existing data");
+            QMessageBox::warning(this, "Date/Time Entry", "An activity already exists with that date/time, if you do not change it then you will overwrite and lose existing data");
             return; // only warn on the first conflict!
         }
     }
@@ -479,25 +479,7 @@ FormField::FormField(FieldDefinition field, RideMetadata *meta) : definition(fie
     case FIELD_TEXT : // text
     case FIELD_SHORTTEXT : // shorttext
 
-        if (field.values.count()) {
-            if (field.values.count() == 1 && field.values.at(0) == "*") {
-
-                // get the metdata values from the metric db ....
-                QStringList values;
-
-                // set values from whatever we have done in the past
-                completer = new QCompleter(values, this);
-                completer->setCaseSensitivity(Qt::CaseInsensitive);
-                completer->setCompletionMode(QCompleter::InlineCompletion);
-
-            } else {
-
-                // user specified restricted values
-                completer = new QCompleter(field.values, this);
-                completer->setCaseSensitivity(Qt::CaseInsensitive);
-                completer->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
-            }
-        }
+        completer = field.getCompleter(this);
         widget = new QLineEdit(this);
         dynamic_cast<QLineEdit*>(widget)->setCompleter(completer);
 
@@ -588,7 +570,11 @@ FormField::FormField(FieldDefinition field, RideMetadata *meta) : definition(fie
     //connect(main, SIGNAL(rideSelected()), this, SLOT(rideSelected()));
 
     // if save is being called flush all the values out ready to save as they are
-    connect(meta->context, SIGNAL(metadataFlush()), this, SLOT(editFinished()));
+    if (definition.type == FIELD_TEXTBOX && definition.name != "Change History") 
+        connect(meta->context, SIGNAL(metadataFlush()), this, SLOT(focusOut()));
+    else {
+        connect(meta->context, SIGNAL(metadataFlush()), this, SLOT(editFinished()));
+    }
 
     active = false;
 }
@@ -631,14 +617,17 @@ FormField::dataChanged()
 void
 FormField::focusOut(QFocusEvent *)
 {
-    // watch to see if we actually have changed ?
-    if (definition.type == FIELD_TEXTBOX && definition.name != "Change History") {
+    if (ourRideItem && ourRideItem->ride()) {
 
-        // what did we used to be ?
-        QString value = ourRideItem->ride()->getTag(definition.name, "");
-        if (value != dynamic_cast<GTextEdit*>(widget)->document()->toPlainText()) {
-            edited = true;
-            editFinished(); // we made a change so reflect it !
+        // watch to see if we actually have changed ?
+        if (definition.type == FIELD_TEXTBOX && definition.name != "Change History") {
+
+            // what did we used to be ?
+            QString value = ourRideItem->ride()->getTag(definition.name, "");
+            if (value != dynamic_cast<GTextEdit*>(widget)->document()->toPlainText()) {
+                edited = true;
+                editFinished(); // we made a change so reflect it !
+            }
         }
     }
 }
@@ -975,6 +964,32 @@ FieldDefinition::fingerprint(QList<FieldDefinition> list)
     }
 
     return qChecksum(ba, ba.length());
+}
+
+QCompleter *
+FieldDefinition::getCompleter(QObject *parent)
+{
+    QCompleter *completer = NULL;
+    if (values.count()) {
+        if (values.count() == 1 && values.at(0) == "*") {
+
+            // get the metdata values from the metric db ....
+            QStringList past_values;
+
+            // set values from whatever we have done in the past
+            completer = new QCompleter(past_values, parent);
+            completer->setCaseSensitivity(Qt::CaseInsensitive);
+            completer->setCompletionMode(QCompleter::InlineCompletion);
+
+        } else {
+
+            // user specified restricted values
+            completer = new QCompleter(values, parent);
+            completer->setCaseSensitivity(Qt::CaseInsensitive);
+            completer->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
+        }
+    }
+    return completer;
 }
 
 unsigned long

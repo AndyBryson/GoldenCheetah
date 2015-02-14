@@ -1015,8 +1015,7 @@ RideNavigator::cursorRide()
 
         QModelIndex group = tableView->model()->index(i,0,QModelIndex());
         for (int j=0; j<tableView->model()->rowCount(group); j++) {
-
-            QString fileName = tableView->model()->data(tableView->model()->index(j,2, group), Qt::DisplayRole).toString();
+            QString fileName = tableView->model()->data(tableView->model()->index(j,2, group), Qt::UserRole+1).toString();
             if (fileName == currentItem->fileName) {
                 // we set current index to column 2 (date/time) since we can be guaranteed it is always show (all others are removable)
                 tableView->scrollTo(tableView->model()->index(j,3,group));
@@ -1276,7 +1275,15 @@ ColumnChooser::ColumnChooser(QList<QString>&logicalHeadings)
     clicked = new QSignalMapper(this); // maps each button click event
     connect(clicked, SIGNAL(mapped(const QString &)), this, SLOT(buttonClicked(const QString &)));
 
-    buttons = new QGridLayout(this);
+    QVBoxLayout *us = new QVBoxLayout(this);
+    us->setSpacing(0);
+    us->setContentsMargins(0,0,0,0);
+    
+    scrollarea = new QScrollArea(this);
+    us->addWidget(scrollarea);
+
+    QWidget *but = new QWidget(this);
+    buttons = new QVBoxLayout(but);
     buttons->setSpacing(0);
     buttons->setContentsMargins(0,0,0,0);
 
@@ -1286,8 +1293,6 @@ ColumnChooser::ColumnChooser(QList<QString>&logicalHeadings)
     QList<QString> buttonNames = logicalHeadings;
     qSort(buttonNames);
 
-    int x = 0;
-    int y = 0;
     foreach (QString column, buttonNames) {
 
         if (column == "*") continue;
@@ -1296,18 +1301,16 @@ ColumnChooser::ColumnChooser(QList<QString>&logicalHeadings)
         QPushButton *add = new QPushButton(column, this);
         add->setFont(small);
         add->setContentsMargins(0,0,0,0);
-        buttons->addWidget(add, y, x);
+        buttons->addWidget(add);
 
         connect(add, SIGNAL(pressed()), clicked, SLOT(map()));
         clicked->setMapping(add, column);
-
-        // update layout
-        x++;
-        if (x > 5) {
-            y++;
-            x = 0;
-        }
     }
+    scrollarea->setWidget(but);
+
+    but->setFixedWidth(230);
+    scrollarea->setFixedWidth(250);
+    setFixedWidth(250);
 }
 
 void

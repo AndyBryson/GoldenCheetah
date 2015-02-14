@@ -71,6 +71,9 @@ RideCache::RideCache(Context *context) : context(context)
     // load the store - will unstale once cache restored
     load();
 
+    // now sort it
+    qSort(rides_.begin(), rides_.end(), rideCacheLessThan);
+
     // set model once we have the basics
     model_ = new RideCacheModel(context, this);
 
@@ -171,6 +174,7 @@ RideCache::addRide(QString name, bool dosignal, bool useTempActivities)
     for (int index=0; index < rides_.count(); index++) {
         if (rides_[index]->fileName == last->fileName) {
             rides_[index] = last;
+            added = true;
             break;
         }
     }
@@ -473,14 +477,15 @@ RideCache::getAggregate(QString name, Specification spec, bool useMetricUnits, b
         if (rcount) rvalue = rvalue / rcount;
     }
 
+    const_cast<RideMetric*>(metric)->setValue(rvalue);
     // Format appropriately
     QString result;
     if (metric->units(useMetricUnits) == "seconds" ||
         metric->units(useMetricUnits) == tr("seconds")) {
         if (nofmt) result = QString("%1").arg(rvalue);
-        else result = time_to_string(rvalue);
+        else result = metric->toString(useMetricUnits);
 
-    } else result = QString("%1").arg(rvalue, 0, 'f', metric->precision(useMetricUnits));
+    } else result = metric->toString(useMetricUnits);
 
     // 0 temp from aggregate means no values 
     if ((metric->symbol() == "average_temp" || metric->symbol() == "max_temp") && result == "0.0") result = "-";
@@ -490,6 +495,11 @@ RideCache::getAggregate(QString name, Specification spec, bool useMetricUnits, b
 bool rideCachesummaryBestGreaterThan(const AthleteBest &s1, const AthleteBest &s2)
 {
      return s1.nvalue > s2.nvalue;
+}
+
+bool rideCachesummaryBestLowerThan(const AthleteBest &s1, const AthleteBest &s2)
+{
+     return s1.nvalue < s2.nvalue;
 }
 
 QList<AthleteBest> 
@@ -520,7 +530,9 @@ RideCache::getBests(QString symbol, int n, Specification specification, bool use
     }
 
     // now sort
-    qStableSort(results.begin(), results.end(), rideCachesummaryBestGreaterThan);
+    qStableSort(results.begin(), results.end(), metric->isLowerBetter() ?
+                                                rideCachesummaryBestLowerThan :
+                                                rideCachesummaryBestGreaterThan);
 
     // truncate
     if (results.count() > n) results.erase(results.begin()+n,results.end());

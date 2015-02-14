@@ -20,6 +20,7 @@
 #include "RideMetric.h"
 #include "PaceZones.h"
 #include "Units.h"
+#include "Settings.h"
 #include "RideItem.h"
 #include <cmath>
 #include <algorithm>
@@ -77,10 +78,12 @@ class LNP : public RideMetric {
                  const QHash<QString,RideMetric*> &,
                  const Context *) {
 
-        if(ride->recIntSecs() == 0) return;
-
-        // LNP only makes sense for running
-        if (!ride->isRun()) return;
+        // LNP only makes sense for running and it needs recIntSecs > 0
+        if (!ride->isRun() || ride->recIntSecs() == 0) {
+            setValue(0.0);
+            setCount(0);
+            return;
+        }
 
         // unconst naughty boy, get athlete's data
         RideFile *uride = const_cast<RideFile*>(ride);
@@ -166,6 +169,20 @@ class XPace : public RideMetric {
         setSymbol("xPace");
         setInternalName("xPace");
     }
+    // xPace ordering is reversed
+    bool isLowerBetter() const { return true; }
+    // Overrides to use Pace units setting
+    QString units(bool) const {
+        bool metricRunPace = appsettings->value(NULL, GC_PACE, true).toBool();
+        return RideMetric::units(metricRunPace);
+    }
+    double value(bool) const {
+        bool metricRunPace = appsettings->value(NULL, GC_PACE, true).toBool();
+        return RideMetric::value(metricRunPace);
+    }
+    QString toString(bool metric) const {
+        return time_to_string(value(metric)*60);
+    }
     void initialize() {
         setName(tr("xPace"));
         setType(RideMetric::Average);
@@ -179,7 +196,11 @@ class XPace : public RideMetric {
                  const QHash<QString,RideMetric*> &deps,
                  const Context *) {
         // xPace only makes sense for running
-        if (!ride->isRun()) return;
+        if (!ride->isRun()) {
+            setValue(0.0);
+            setCount(0);
+            return;
+        }
 
         // unconst naughty boy, get athlete's data
         RideFile *uride = const_cast<RideFile*>(ride);
@@ -210,6 +231,7 @@ class XPace : public RideMetric {
         else xPace = 0.0;
 
         setValue(xPace);
+        setCount(lnp->count());
     }
     bool isRelevantForRide(const RideItem *ride) const { return ride->isRun; }
     RideMetric *clone() const { return new XPace(*this); }
@@ -238,7 +260,10 @@ class RTP : public RideMetric {
                  const QHash<QString,RideMetric*> &,
                  const Context *context) {
         // LNP only makes sense for running
-        if (!ride->isRun()) return;
+        if (!ride->isRun()) {
+            setValue(0.0);
+            return;
+        }
 
         // unconst naughty boy, get athlete's data
         RideFile *uride = const_cast<RideFile*>(ride);
@@ -290,7 +315,11 @@ class IWF : public RideMetric {
                  const QHash<QString,RideMetric*> &deps,
                  const Context *) {
         // IWF only makes sense for running
-        if (!ride->isRun()) return;
+        if (!ride->isRun()) {
+            setValue(0.0);
+            setCount(0);
+            return;
+        }
 
         assert(deps.contains("govss_lnp"));
         LNP *lnp = dynamic_cast<LNP*>(deps.value("govss_lnp"));
@@ -329,7 +358,10 @@ class GOVSS : public RideMetric {
 	    const QHash<QString,RideMetric*> &deps,
                  const Context *) {
         // GOVSS only makes sense for running
-        if (!ride->isRun()) return;
+        if (!ride->isRun()) {
+            setValue(0.0);
+            return;
+        }
 
         assert(deps.contains("govss_lnp"));
         assert(deps.contains("govss_rtp"));
@@ -342,6 +374,19 @@ class GOVSS : public RideMetric {
         assert(rtp);
         double normWork = lnp->value(true) * lnp->count();
         double rawGOVSS = normWork * iwf->value(true);
+        // No samples in manual workouts, use power at average speed and duration
+        if (rawGOVSS == 0.0) {
+            // unconst naughty boy, get athlete's data
+            RideFile *uride = const_cast<RideFile*>(ride);
+            double weight = uride->getWeight();
+            double height = uride->getHeight();
+            assert(deps.contains("average_speed"));
+            assert(deps.contains("workout_time"));
+            double watts = running_power(weight, height, deps.value("average_speed")->value(true) / 3.6);
+            double secs = deps.value("workout_time")->value(true);
+            double iwf = rtp->value(true) ? watts / rtp->value(true) : 0.0;
+            rawGOVSS = watts * secs * iwf;
+        }
         double workInAnHourAtRTP = rtp->value(true) * 3600;
         score = workInAnHourAtRTP ? rawGOVSS / workInAnHourAtRTP * 100.0 : 0;
 
@@ -360,6 +405,8 @@ static bool addAllGOVSS() {
     deps.append("govss_rtp");
     RideMetricFactory::instance().addMetric(IWF(), &deps);
     deps.append("govss_iwf");
+    deps.append("average_speed");
+    deps.append("workout_time");
     RideMetricFactory::instance().addMetric(GOVSS(), &deps);
     return true;
 }

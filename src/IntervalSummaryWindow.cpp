@@ -255,15 +255,7 @@ void IntervalSummaryWindow::summary(RideFile &f, QString name, QString &html)
 
         // right column (values)
         QString s("<td align=\"center\">%1</td>");
-        if (m->units(metricUnits) == "seconds" ||
-            m->units(metricUnits) == tr("seconds"))
-            html += s.arg(time_to_string(m->value(metricUnits)));
-        else if (m->internalName() == "Pace" || m->internalName() == "xPace") {
-            bool metricPace = appsettings->value(this, GC_PACE, true).toBool();
-            html += s.arg(QTime(0,0,0,0).addSecs(m->value(metricPace)*60).toString("mm:ss"));
-        } else
-            html += s.arg(m->value(metricUnits), 0, 'f', m->precision(metricUnits));
-
+        html += s.arg(m->toString(metricUnits));
         html += "<td align=\"left\" valign=\"bottom\">";
         if (m->units(metricUnits) == "seconds" ||
             m->units(metricUnits) == tr("seconds"))
@@ -339,15 +331,7 @@ void IntervalSummaryWindow::calcInterval(RideFileInterval interval, QString& htm
 
         // right column (values)
         QString s("<td align=\"center\">%1</td>");
-        if (m->units(metricUnits) == "seconds" ||
-            m->units(metricUnits) == tr("seconds"))
-            html += s.arg(time_to_string(m->value(metricUnits)));
-        else if (m->internalName() == "Pace" || m->internalName() == "xPace") {
-            bool metricPace = appsettings->value(this, GC_PACE, true).toBool();
-            html += s.arg(QTime(0,0,0,0).addSecs(m->value(metricPace)*60).toString("mm:ss"));
-        } else
-            html += s.arg(m->value(metricUnits), 0, 'f', m->precision(metricUnits));
-
+        html += s.arg(m->toString(metricUnits));
         html += "<td align=\"left\" valign=\"bottom\">";
         if (m->units(metricUnits) == "seconds" ||
             m->units(metricUnits) == tr("seconds"))

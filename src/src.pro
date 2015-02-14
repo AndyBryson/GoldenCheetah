@@ -343,6 +343,7 @@ HEADERS += \
         IntervalTreeView.h \
         JouleDevice.h \
         JsonRideFile.h \
+        LapsEditor.h \
         Library.h \
         LibraryParser.h \
         LogTimeScaleDraw.h \
@@ -489,6 +490,7 @@ SOURCES += \
         BatchExportDialog.cpp \
         BestIntervalDialog.cpp \
         BikeScore.cpp \
+        aBikeScore.cpp \
         BinRideFile.cpp \
         Bin2RideFile.cpp \
         BingMap.cpp \
@@ -498,6 +500,7 @@ SOURCES += \
         ChartSettings.cpp \
         ChooseCyclistDialog.cpp \
         Coggan.cpp \
+        aCoggan.cpp \
         Colors.cpp \
         ColorButton.cpp \
         CommPort.cpp \
@@ -569,6 +572,7 @@ SOURCES += \
         IntervalSummaryWindow.cpp \
         IntervalTreeView.cpp \
         JouleDevice.cpp \
+        LapsEditor.cpp \
         LeftRightBalance.cpp \
         Library.cpp \
         LibraryParser.cpp \

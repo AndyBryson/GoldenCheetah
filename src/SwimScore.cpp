@@ -21,6 +21,7 @@
 #include "RideMetric.h"
 #include "PaceZones.h"
 #include "Units.h"
+#include "Settings.h"
 #include "RideItem.h"
 #include <cmath>
 #include <algorithm>
@@ -72,8 +73,12 @@ class XPowerSwim : public RideMetric {
                  const QHash<QString,RideMetric*> &,
                  const Context *) {
 
-        // xPowerSwim only makes sense for running
-        if (!ride->isSwim()) return;
+        // xPowerSwim only makes sense for running and it needs recIntSecs > 0
+        if (!ride->isSwim() || ride->recIntSecs() == 0) {
+            setValue(0.0);
+            setCount(0);
+            return;
+        }
 
         // unconst naughty boy, get athlete's data
         RideFile *uride = const_cast<RideFile*>(ride);
@@ -129,6 +134,20 @@ class XPaceSwim : public RideMetric {
         setSymbol("swimscore_xpace");
         setInternalName("xPace Swim");
     }
+    // Swim Pace ordering is reversed
+    bool isLowerBetter() const { return true; }
+    // Overrides to use Swim Pace units setting
+    QString units(bool) const {
+        bool metricRunPace = appsettings->value(NULL, GC_SWIMPACE, true).toBool();
+        return RideMetric::units(metricRunPace);
+    }
+    double value(bool) const {
+        bool metricRunPace = appsettings->value(NULL, GC_SWIMPACE, true).toBool();
+        return RideMetric::value(metricRunPace);
+    }
+    QString toString(bool metric) const {
+        return time_to_string(value(metric)*60);
+    }
     void initialize() {
         setName(tr("xPace Swim"));
         setType(RideMetric::Average);
@@ -142,7 +161,11 @@ class XPaceSwim : public RideMetric {
                  const QHash<QString,RideMetric*> &deps,
                  const Context *) {
         // xPaceSwim only makes sense for swimming
-        if (!ride->isSwim()) return;
+        if (!ride->isSwim()) {
+            setValue(0.0);
+            setCount(0);
+            return;
+        }
 
         // unconst naughty boy, get athlete's data
         RideFile *uride = const_cast<RideFile*>(ride);
@@ -158,6 +181,7 @@ class XPaceSwim : public RideMetric {
         xPaceSwim = speed ? (100.0/60.0) / speed : 0.0;
 
         setValue(xPaceSwim);
+        setCount(xPowerSwim->count());
     }
     bool isRelevantForRide(const RideItem *ride) const { return ride->isSwim; }
     RideMetric *clone() const { return new XPaceSwim(*this); }
@@ -186,7 +210,10 @@ class STP : public RideMetric {
                  const QHash<QString,RideMetric*> &,
                  const Context *context) {
         // STP only makes sense for running
-        if (!ride->isSwim()) return;
+        if (!ride->isSwim()) {
+            setValue(0.0);
+            return;
+        }
 
         // unconst naughty boy, get athlete's data
         RideFile *uride = const_cast<RideFile*>(ride);
@@ -237,7 +264,11 @@ class SRI : public RideMetric {
                  const QHash<QString,RideMetric*> &deps,
                  const Context *) {
         // SRI only makes sense for swimming
-        if (!ride->isSwim()) return;
+        if (!ride->isSwim()) {
+            setValue(0.0);
+            setCount(0);
+            return;
+        }
 
         assert(deps.contains("swimscore_xpower"));
         XPowerSwim *xPowerSwim = dynamic_cast<XPowerSwim*>(deps.value("swimscore_xpower"));
@@ -276,7 +307,10 @@ class SwimScore : public RideMetric {
 	    const QHash<QString,RideMetric*> &deps,
                  const Context *) {
         // SwimScore only makes sense for swimming
-        if (!ride->isSwim()) return;
+        if (!ride->isSwim()) {
+            setValue(0.0);
+            return;
+        }
 
         assert(deps.contains("swimscore_xpower"));
         assert(deps.contains("swimscore_ri"));
@@ -289,6 +323,18 @@ class SwimScore : public RideMetric {
         assert(stp);
         double normWork = xPowerSwim->value(true) * xPowerSwim->count();
         double rawGOVSS = normWork * sri->value(true);
+        // No samples in manual workouts, use power at average speed and duration
+        if (rawGOVSS == 0.0) {
+            // unconst naughty boy, get athlete's data
+            RideFile *uride = const_cast<RideFile*>(ride);
+            double weight = uride->getWeight();
+            assert(deps.contains("average_speed"));
+            assert(deps.contains("workout_time"));
+            double watts = swimming_power(weight, deps.value("average_speed")->value(true) / 3.6);
+            double secs = deps.value("workout_time")->value(true);
+            double sri = stp->value(true) ? watts / stp->value(true) : 0.0;
+            rawGOVSS = watts * secs * sri;
+        }
         double workInAnHourAtSTP = stp->value(true) * 3600;
         score = workInAnHourAtSTP ? rawGOVSS / workInAnHourAtSTP * 100.0 : 0;
 
@@ -307,6 +353,8 @@ static bool addAllSwimScore() {
     deps.append("swimscore_tp");
     RideMetricFactory::instance().addMetric(SRI(), &deps);
     deps.append("swimscore_ri");
+    deps.append("average_speed");
+    deps.append("workout_time");
     RideMetricFactory::instance().addMetric(SwimScore(), &deps);
     return true;
 }

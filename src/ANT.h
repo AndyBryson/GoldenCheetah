@@ -389,8 +389,15 @@ public:
         telemetry.setHr(x);
     }
     void setCadence(float x) {
+        lastCadenceMessage = QDateTime(QDateTime::currentDateTime());
         telemetry.setCadence(x);
     }
+    void setSecondaryCadence(float x) {
+        if (lastCadenceMessage.toTime_t() == 0 || (QDateTime::currentDateTime().toTime_t() - lastCadenceMessage.toTime_t())>10)  {
+            telemetry.setCadence(x);
+        }
+    }
+
     void setWheelRpm(float x);
     void setWatts(float x) {
         telemetry.setWatts(x);
@@ -415,6 +422,7 @@ public:
     }
 
     void setVortexData(int channel, int id);
+    void refreshVortexLoad();
 
 private:
 
@@ -459,6 +467,7 @@ private:
     int bytes;
     int checksum;
     int powerchannels; // how many power channels do we have?
+    QDateTime lastCadenceMessage;
 
     QQueue<setChannelAtom> channelQueue; // messages for configuring channels from controller
 

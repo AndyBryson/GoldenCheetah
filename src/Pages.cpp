@@ -1386,10 +1386,10 @@ ColorsPage::ColorsPage(QWidget *parent) : QWidget(parent)
     antiAliased = new QCheckBox;
     antiAliased->setChecked(appsettings->value(this, GC_ANTIALIAS, true).toBool());
 #ifndef Q_OS_MAC
-    QLabel *rideScrollLabel = new QLabel(tr("Ride Scrollbar"));
+    QLabel *rideScrollLabel = new QLabel(tr("Activity Scrollbar"));
     rideScroll = new QCheckBox;
     rideScroll->setChecked(appsettings->value(this, GC_RIDESCROLL, true).toBool());
-    QLabel *rideHeadLabel = new QLabel(tr("Ride Headings"));
+    QLabel *rideHeadLabel = new QLabel(tr("Activity Headings"));
     rideHead = new QCheckBox;
     rideHead->setChecked(appsettings->value(this, GC_RIDEHEAD, true).toBool());
 #endif
@@ -1586,6 +1586,7 @@ ColorsPage::applyThemeClicked()
 
             case CPLOTBACKGROUND:
             case CRIDEPLOTBACKGROUND:
+            case CTRENDPLOTBACKGROUND:
             case CTRAINPLOTBACKGROUND:
                 color = theme.colors[0]; // background color
                 break;
@@ -2343,6 +2344,7 @@ MetadataPage::MetadataPage(Context *context) : context(context)
 
     // save initial values
     b4.keywordFingerprint = KeywordDefinition::fingerprint(keywordDefinitions);
+    b4.colorfield = colorfield;
     b4.fieldFingerprint = FieldDefinition::fingerprint(fieldDefinitions);
 }
 
@@ -2365,7 +2367,7 @@ MetadataPage::saveClicked()
 
     qint32 state = 0;
 
-    if (b4.keywordFingerprint != KeywordDefinition::fingerprint(keywordDefinitions))
+    if (b4.keywordFingerprint != KeywordDefinition::fingerprint(keywordDefinitions) || b4.colorfield != colorfield)
         state += CONFIG_NOTECOLOR;
 
     if (b4.fieldFingerprint != FieldDefinition::fingerprint(fieldDefinitions))
@@ -4763,14 +4765,12 @@ CVPage::rangeSelectionChanged()
             add->setText(1, current.zones[i].desc);
 
             // low
-            QDoubleSpinBox *loedit = new QDoubleSpinBox(this);
-            loedit->setMinimum(0);
-            loedit->setMaximum(1000);
-            loedit->setSingleStep(0.1);
-            loedit->setDecimals(1);
-            loedit->setValue(current.zones[i].lo);
+            QTimeEdit *loedit = new QTimeEdit(QTime::fromString(zonePage->zones->kphToPaceString(current.zones[i].lo, metric->isChecked()), "mm:ss"), this);
+            loedit->setMinimumTime(QTime::fromString("00:00", "mm:ss"));
+            loedit->setMaximumTime(QTime::fromString("20:00", "mm:ss"));
+            loedit->setDisplayFormat("mm:ss");
             zones->setItemWidget(add, 2, loedit);
-            connect(loedit, SIGNAL(valueChanged(double)), this, SLOT(zonesChanged()));
+            connect(loedit, SIGNAL(editingFinished()), this, SLOT(zonesChanged()));
         }
     }
 
@@ -4799,12 +4799,10 @@ CVPage::addZoneClicked()
     QTreeWidgetItem *add = new QTreeWidgetItem;
     add->setFlags(add->flags() | Qt::ItemIsEditable);
 
-    QDoubleSpinBox *loedit = new QDoubleSpinBox(this);
-    loedit->setMinimum(0);
-    loedit->setMaximum(1000);
-    loedit->setSingleStep(1.0);
-    loedit->setDecimals(0);
-    loedit->setValue(100);
+    QTimeEdit *loedit = new QTimeEdit(QTime::fromString("00:00", "mm:ss"), this);
+    loedit->setMinimumTime(QTime::fromString("00:00", "mm:ss"));
+    loedit->setMaximumTime(QTime::fromString("20:00", "mm:ss"));
+    loedit->setDisplayFormat("mm:ss");
 
     zones->invisibleRootItem()->insertChild(index, add);
     zones->setItemWidget(add, 2, loedit);
@@ -4875,9 +4873,11 @@ CVPage::zonesChanged()
             QList<PaceZoneInfo> zoneinfos;
             for (int i=0; i< zones->invisibleRootItem()->childCount(); i++) {
                 QTreeWidgetItem *item = zones->invisibleRootItem()->child(i);
+                QTimeEdit *loTimeEdit = (QTimeEdit*)zones->itemWidget(item, 2);
+                double kph = loTimeEdit->time() == QTime(0,0,0) ? 0.0 : zonePage->zones->kphFromTime(loTimeEdit, metric->isChecked());
                 zoneinfos << PaceZoneInfo(item->text(0),
                                       item->text(1),
-                                      ((QDoubleSpinBox*)zones->itemWidget(item, 2))->value(),
+                                      kph,
                                       0);
             }
 

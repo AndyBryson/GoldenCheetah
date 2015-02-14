@@ -36,10 +36,10 @@
 
 #define mark() \
 { \
-    addInterval(start, previous->secs + recIntSecs_, \
+    addInterval(start, previous->secs - recIntSecs_, \
                 QString("%1").arg(interval)); \
     interval = point->interval; \
-    start = point->secs; \
+    start = point->secs - recIntSecs_; \
 }
 
 const QChar deltaChar(0x0394);
@@ -1524,7 +1524,7 @@ RideFile::parseRideFileName(const QString &name, QDateTime *dt)
     QTime time(rx.cap(5).toInt(), rx.cap(6).toInt(),rx.cap(7).toInt());
     if ((! date.isValid()) || (! time.isValid())) {
 	QMessageBox::warning(NULL,
-			     tr("Invalid Ride File Name"),
+			     tr("Invalid File Name"),
 			     tr("Invalid date/time in filename:\n%1\nSkipping file...").arg(name)
 			     );
 	return false;

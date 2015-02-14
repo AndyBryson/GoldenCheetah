@@ -23,6 +23,7 @@
 #include "RideCache.h"
 #include "RideItem.h"
 #include "Settings.h"
+#include "RideMetadata.h"
 #include <string.h>
 #include <errno.h>
 #include <QtGui>
@@ -116,7 +117,7 @@ ManualRideDialog::deriveFactors()
 ManualRideDialog::ManualRideDialog(Context *context) : context(context)
 {
     setAttribute(Qt::WA_DeleteOnClose);
-    setWindowTitle(tr("Manual Ride Entry"));
+    setWindowTitle(tr("Manual Entry"));
     HelpWhatsThis *help = new HelpWhatsThis(this);
     this->setWhatsThis(help->getWhatsThisText(HelpWhatsThis::MenuBar_Activity_Manual));
 #ifdef Q_OS_MAC
@@ -128,6 +129,9 @@ ManualRideDialog::ManualRideDialog(Context *context) : context(context)
     // we haven't derived factors yet
     daysago = -1;
 
+    // we haven't lapsEditor yet
+    lapsEditor = NULL;
+
     //
     // Create the GUI widgets
     //
@@ -135,7 +139,7 @@ ManualRideDialog::ManualRideDialog(Context *context) : context(context)
     // BASIC DATA
 
     // ride start date and start time
-    QLabel *dateLabel = new QLabel(tr("Ride date:"), this);
+    QLabel *dateLabel = new QLabel(tr("Date:"), this);
     dateEdit = new QDateEdit(this);
     dateEdit->setDate(QDate::currentDate());
 
@@ -143,6 +147,11 @@ ManualRideDialog::ManualRideDialog(Context *context) : context(context)
     timeEdit = new QTimeEdit(this);
     timeEdit->setDisplayFormat("hh:mm:ss");
     timeEdit->setTime(QTime::currentTime().addSecs(-4 * 3600)); // 4 hours ago by default
+
+    // Lap information
+    QLabel *lapsLabel = new QLabel(tr("Pace intervals:"), this);
+    lapsButton = new QPushButton(tr("&Laps Editor"), this);
+    lapsButton->setEnabled(false); // it is enables when sport is selected
 
     // ride duration
     QLabel *durationLabel = new QLabel(tr("Duration:"), this);
@@ -164,6 +173,17 @@ ManualRideDialog::ManualRideDialog(Context *context) : context(context)
     wcode = new QLineEdit(this);
     QLabel *notesLabel = new QLabel(tr("Notes:"), this);
     notes = new QTextEdit(this);
+
+    // Set completer for Sport and Workout Code fields
+    RideMetadata *rideMetadata = context->athlete->rideMetadata();
+    if (rideMetadata) {
+        foreach (FieldDefinition field, rideMetadata->getFields()) {
+            if (field.name == "Sport")
+                sport->setCompleter(field.getCompleter(this));
+            else if (field.name == "Workout Code")
+                wcode->setCompleter(field.getCompleter(this));
+        }
+    }
 
     // METRICS
 
@@ -216,7 +236,8 @@ ManualRideDialog::ManualRideDialog(Context *context) : context(context)
     // Restore from last time
     QVariant BSmode = appsettings->value(this, GC_BIKESCOREMODE); // remember from before
     if (BSmode.toString() == "time") byDuration->setChecked(true);
-    else byDistance->setChecked(true);
+    else if (BSmode.toString() == "dist") byDistance->setChecked(true);
+    else byManual->setChecked(true);
 
     // Derived metrics
     QLabel *BSLabel = new QLabel("BikeScore (TM): ", this);
@@ -255,6 +276,7 @@ ManualRideDialog::ManualRideDialog(Context *context) : context(context)
     // the user will expect enter to save file
     okButton->setDefault(true);
     cancelButton->setDefault(false);
+    lapsButton->setDefault(false);
 
     //
     // LAY OUT THE GUI
@@ -278,10 +300,12 @@ ManualRideDialog::ManualRideDialog(Context *context) : context(context)
     basicLayout->addWidget(dateEdit, 0,1,Qt::AlignLeft);
     basicLayout->addWidget(timeLabel, 1,0,Qt::AlignLeft);
     basicLayout->addWidget(timeEdit, 1,1,Qt::AlignLeft);
-    basicLayout->addWidget(durationLabel, 2,0,Qt::AlignLeft);
-    basicLayout->addWidget(duration, 2,1, Qt::AlignLeft);
-    basicLayout->addWidget(distanceLabel, 3,0, Qt::AlignLeft);
-    basicLayout->addWidget(distance, 3,1, Qt::AlignLeft);
+    basicLayout->addWidget(lapsLabel, 2,0,Qt::AlignLeft);
+    basicLayout->addWidget(lapsButton, 2,1, Qt::AlignLeft);
+    basicLayout->addWidget(durationLabel, 3,0,Qt::AlignLeft);
+    basicLayout->addWidget(duration, 3,1, Qt::AlignLeft);
+    basicLayout->addWidget(distanceLabel, 4,0, Qt::AlignLeft);
+    basicLayout->addWidget(distance, 4,1, Qt::AlignLeft);
 
     QGroupBox *metricBox = new QGroupBox(tr("Metrics"),this);
     QGridLayout *metricLayout = new QGridLayout;
@@ -325,6 +349,9 @@ ManualRideDialog::ManualRideDialog(Context *context) : context(context)
     buttons->addWidget(okButton);
     buttons->addWidget(cancelButton);
 
+    // sport is used to enable/disable and to configure LapsEditor
+    connect(sport, SIGNAL(textChanged(QString)), this, SLOT(sportChanged(QString)));
+
     // if any of the fields used to determine estimation are changed then
     // lets re-calculate and apply
     connect(distance, SIGNAL(valueChanged(double)), this, SLOT(estimate()));
@@ -337,14 +364,27 @@ ManualRideDialog::ManualRideDialog(Context *context) : context(context)
     // dialog buttons
     connect(okButton, SIGNAL(clicked()), this, SLOT(okClicked()));
     connect(cancelButton, SIGNAL(clicked()), this, SLOT(cancelClicked()));
+    connect(lapsButton, SIGNAL(clicked()), this, SLOT(lapsClicked()));
 
     // initialise estimates / widgets enabled
     estimate();
 }
 
+ManualRideDialog::~ManualRideDialog() {
+    delete lapsEditor;
+}
+
 void
 ManualRideDialog::estimate()
 {
+    QTime time = duration->time();
+    double hours = (time.hour()) + (time.minute() / 60.00) + (time.second() / 3600.00);
+    double dist = distance->value();
+
+    // Estimate average speed
+    if (hours && dist) avgKPH->setValue(dist / hours);
+    else avgKPH->setValue(0.0);
+
     if (byManual->isChecked()) {
         BS->setEnabled(true);
         DP->setEnabled(true);
@@ -364,9 +404,6 @@ ManualRideDialog::estimate()
 
     if (byDuration->isChecked()) {
         // by time
-        QTime time = duration->time();
-        double hours = (time.hour()) + (time.minute() / 60.00) + (time.second() / 3600.00);
-
         BS->setValue(hours * timeBS);
         DP->setValue(hours * timeDP);
         TSS->setValue(hours * timeTSS);
@@ -374,8 +411,6 @@ ManualRideDialog::estimate()
 
     } else {
         // by distance
-        double dist = distance->value();
-
         BS->setValue(dist * distanceBS);
         DP->setValue(dist * distanceDP);
         TSS->setValue(dist * distanceTSS);
@@ -408,6 +443,14 @@ ManualRideDialog::okClicked()
     rideFile->setDeviceType("Manual");
     rideFile->setFileFormat("GoldenCheetah Json");
 
+    // get samples from Laps Editor, if available
+    if (lapsEditor && lapsEditor->dataPoints().count() > 0) {
+        rideFile->setRecIntSecs(1.00);
+        foreach(RideFilePoint *point, lapsEditor->dataPoints())
+            rideFile->appendPoint(*point);
+        rideFile->fillInIntervals();
+    }
+
     // basic data
     if (distance->value()) {
         QMap<QString,QString> override;
@@ -425,7 +468,10 @@ ManualRideDialog::okClicked()
         QMap<QString,QString> override;
         override.insert("value", QString("%1").arg(seconds));
         rideFile->metricOverrides.insert("workout_time", override);
-        rideFile->metricOverrides.insert("time_riding", override);
+        // Override time_riding to duration
+        // only if we don't have better information
+        if (!lapsEditor || lapsEditor->dataPoints().count() == 0)
+            rideFile->metricOverrides.insert("time_riding", override);
     }
 
     // basic metadata
@@ -446,7 +492,9 @@ ManualRideDialog::okClicked()
     }
     if (avgKPH->value()) {
         QMap<QString,QString> override;
-        override.insert("value", QString("%1").arg(avgKPH->value()));
+        // Avg Speed is shown according to units preferences
+        double kph = (context->athlete->useMetricUnits ? 1.0 : KM_PER_MILE) * avgKPH->value();
+        override.insert("value", QString("%1").arg(kph));
         rideFile->metricOverrides.insert("average_speed", override);
     }
     if (avgWatts->value()) {
@@ -505,7 +553,35 @@ ManualRideDialog::okClicked()
         // work it out -- they may actually want to keep an existing ride, so we shouldn't
         // rename it silently.
         QMessageBox oops(QMessageBox::Critical, tr("Unable to save"),
-                         tr("There is already an ride with the same start time or you do not have permissions to save a file."));
+                         tr("There is already an activity with the same start time or you do not have permissions to save a file."));
         oops.exec();
+    }
+}
+
+void
+ManualRideDialog::sportChanged(const QString& text)
+{
+    // remove previous Laps Editor and create a new one according to sport
+    // only for swimming and running.
+    delete lapsEditor;
+    if (text == "Swim" || text == tr("Swim")) {
+        lapsEditor = new LapsEditor(true);
+        lapsButton->setEnabled(true);
+    } else if (text == "Run" || text == tr("Run")) {
+        lapsEditor = new LapsEditor(false);
+        lapsButton->setEnabled(true);
+    } else {
+        lapsEditor = NULL;
+        lapsButton->setEnabled(false);
+    }
+}
+
+void
+ManualRideDialog::lapsClicked()
+{
+    if (lapsEditor && lapsEditor->exec() && lapsEditor->dataPoints().count() > 0) {
+        // update duration and distance
+        duration->setTime(QTime(0, 0, 0).addSecs(lapsEditor->dataPoints().count()));
+        distance->setValue(lapsEditor->dataPoints()[lapsEditor->dataPoints().count()-1]->km);
     }
 }

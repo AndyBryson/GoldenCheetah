@@ -103,8 +103,11 @@
 // 97  07  Jan 2015 Mark Liversedge    Added isSwim first class variable
 // 98  10  Jan 2015 Ale Martinez       Added Triscore and SwimScore metrics
 // 99  14  Jan 2015 Damien Grauser     Added TotalCalories
+// 100 05  Feb 2015 Ale Martinez       Use duration not time moving when its 0 (rpe metrics)
+// 101 05  Feb 2015 Mark Liversedge    aPower versions of Coggan metrics aNP et al
+// 102 05  Feb 2015 Mark Liversedge    aPower versions of Skiba metrics aBikeScore et al
 
-int DBSchemaVersion = 99;
+int DBSchemaVersion = 102;
 
 RideMetricFactory *RideMetricFactory::_instance;
 QVector<QString> RideMetricFactory::noDeps;
@@ -133,8 +136,9 @@ RideMetric::computeMetrics(const Context *context, const RideFile *ride, const Z
         }
         if (ready) {
             RideMetric *m = factory.newMetric(symbol);
-            //if (!ride->dataPoints().isEmpty())
-                m->compute(ride, zones, zoneRange, hrZones, hrZoneRange, done, context);
+            m->setValue(0.0);
+            m->setCount(0);
+            m->compute(ride, zones, zoneRange, hrZones, hrZoneRange, done, context);
             if (ride->metricOverrides.contains(symbol))
                 m->override(ride->metricOverrides.value(symbol));
             done.insert(symbol, m);
@@ -158,5 +162,5 @@ QString
 RideMetric::toString(bool useMetricUnits) const
 {
     if (isTime()) return time_to_string(value(useMetricUnits));
-    return QString("%1").arg(value(useMetricUnits), 0, 'f', precision(useMetricUnits));
+    return QString("%1").arg(value(useMetricUnits), 0, 'f', precision());
 }

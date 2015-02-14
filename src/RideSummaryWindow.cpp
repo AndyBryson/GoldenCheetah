@@ -139,7 +139,8 @@ RideSummaryWindow::~RideSummaryWindow()
 void
 RideSummaryWindow::configChanged(qint32)
 {
-    setProperty("color", GColor(CPLOTBACKGROUND)); // called on config change
+    if (ridesummary) setProperty("color", GColor(CPLOTBACKGROUND)); // called on config change
+    else setProperty("color", GColor(CTRENDPLOTBACKGROUND)); // called on config change
 
     QFont defaultFont;
     defaultFont.fromString(appsettings->value(NULL, GC_FONT_DEFAULT, QFont().toString()).toString());
@@ -328,7 +329,7 @@ RideSummaryWindow::refresh()
         // if we're summarising a ride but have no ride to summarise
         if (ridesummary && !myRideItem) {
             setSubTitle(tr("Summary"));
-	        rideSummary->page()->mainFrame()->setHtml(GCColor::css());
+	        rideSummary->page()->mainFrame()->setHtml(GCColor::css(ridesummary));
             return;
         }
 
@@ -390,7 +391,7 @@ QString
 RideSummaryWindow::htmlSummary()
 {
     QString summary("");
-    QColor bgColor = GColor(CPLOTBACKGROUND);
+    QColor bgColor = ridesummary ? GColor(CPLOTBACKGROUND) : GColor(CTRENDPLOTBACKGROUND);
     //QColor fgColor = GCColor::invertColor(bgColor);
     QColor altColor = GCColor::alternateColor(bgColor);
 
@@ -415,7 +416,7 @@ RideSummaryWindow::htmlSummary()
     }
 
     // set those colors
-    summary = GCColor::css();
+    summary = GCColor::css(ridesummary);
     summary += "<center>";
 
     // device summary for ride summary, otherwise how many activities?
@@ -546,7 +547,8 @@ RideSummaryWindow::htmlSummary()
             if (ridesummary) {
 
                 // for rag reporting
-                QColor defaultColor = GCColor::invertColor(GColor(CPLOTBACKGROUND));
+                QColor defaultColor = ridesummary ? GCColor::invertColor(GColor(CPLOTBACKGROUND)) :
+                                                    GCColor::invertColor(GColor(CTRENDPLOTBACKGROUND));
 
                 // get the Coggan PMC and add values for date of ride
                 summary += QString(tr("<tr><td>CTL:</td><td align=\"right\"><font color=\"%2\">%1</font></td></tr>")
@@ -677,22 +679,11 @@ RideSummaryWindow::htmlSummary()
 
                     s = s.arg(ride->getTag("Temperature", "-"));
 
-                 } else if (m->internalName().startsWith("Pace") || m->internalName().startsWith("xPace")) { // pace is mm:ss
-
-                    double pace;
-                    bool metricPace = appsettings->value(this, GC_PACE, true).toBool();
-
-                    if (ridesummary) pace  = rideItem->getForSymbol(symbol) * (metricPace ? 1 : m->conversion()) + (metricPace ? 0 : m->conversionSum());
-                    else  pace = context->athlete->rideCache->getAggregate(symbol, specification, metricPace).toDouble();
-                    s = s.arg(QTime(0,0,0,0).addSecs(pace*60).toString("mm:ss"));
-
                  } else {
 
                     // get the value - from metrics or from data array
                     if (ridesummary) {
-                            QString v = QString("%1").arg(rideItem->getForSymbol(symbol) * (useMetricUnits ? 1 : m->conversion())
-                                + (useMetricUnits ? 0 : m->conversionSum()), 0, 'f', m->precision(useMetricUnits));
-
+                            QString v = rideItem->getStringForSymbol(symbol, useMetricUnits);
                             // W' over 100% is not a good thing!
                             if (symbol == "skiba_wprime_max" && rideItem->getForSymbol(symbol) > 100) {
                                 v = QString("<font color=\"red\">%1<font color=\"black\">").arg(v);
@@ -977,7 +968,6 @@ RideSummaryWindow::htmlSummary()
 
                 QHash<QString,RideMetricPtr> metrics =
                     RideMetric::computeMetrics(context, &f, context->athlete->zones(), context->athlete->hrZones(), intervalMetrics);
-                bool metricPace = appsettings->value(this, GC_PACE, true).toBool();
 
                 if (firstRow) {
                     summary += "<tr>";
@@ -989,11 +979,7 @@ RideSummaryWindow::htmlSummary()
                         RideMetricPtr m = metrics.value(symbol);
                         if (!m || !m->isRelevantForRide(rideItem)) continue;
                         summary += "<td align=\"center\" valign=\"bottom\">" + m->name();
-                        if (m->internalName().startsWith("Pace") || m->internalName().startsWith("xPace")) { // pace is mm:ss
-
-                            summary += " (" + m->units(metricPace) + ")";
-                        
-                        } else if (m->units(useMetricUnits) == "seconds" || m->units(useMetricUnits) == tr("seconds")) {
+                        if (m->units(useMetricUnits) == "seconds" || m->units(useMetricUnits) == tr("seconds")) {
                             ; // don't do anything
 
                         } else if (m->units(useMetricUnits).size() > 0) {
@@ -1052,16 +1038,7 @@ RideSummaryWindow::htmlSummary()
                     RideMetricPtr m = metrics.value(symbol);
                     if (!m || !m->isRelevantForRide(rideItem)) continue;
                     QString s("<td align=\"center\">%1</td>");
-                    if (m->units(useMetricUnits) == "seconds" || m->units(useMetricUnits) == tr("seconds"))
-                        summary += s.arg(time_to_string(m->value(useMetricUnits)));
-                    else if (m->internalName().startsWith("Pace") || m->internalName().startsWith("xPace")) { // pace is mm:ss
-
-                        double pace  = m->value(metricPace);
-                        summary += s.arg(QTime(0,0,0,0).addSecs(pace*60).toString("mm:ss"));
-
-                    } else {
-                        summary += s.arg(m->value(useMetricUnits), 0, 'f', m->precision(useMetricUnits));
-                    }
+                    summary += s.arg(m->toString(useMetricUnits));
                 }
 
 
@@ -1539,7 +1516,7 @@ RideSummaryWindow::htmlCompareSummary() const
 {
     QString summary;
 
-    QColor bgColor = GColor(CPLOTBACKGROUND);
+    QColor bgColor = ridesummary ? GColor(CPLOTBACKGROUND) : GColor(CTRENDPLOTBACKGROUND);
     //QColor fgColor = GCColor::invertColor(bgColor);
     QColor altColor = GCColor::alternateColor(bgColor);
 
@@ -1651,7 +1628,7 @@ RideSummaryWindow::htmlCompareSummary() const
         }
 
         // LETS FORMAT THE HTML
-        summary = GCColor::css();
+        summary = GCColor::css(ridesummary);
         summary += "<center>";
 
         //
@@ -1731,7 +1708,7 @@ RideSummaryWindow::htmlCompareSummary() const
                                 + (context->athlete->useMetricUnits ? 0 : m->conversionSum());
 
                     // use right precision
-                    QString strValue = QString("%1").arg(value, 0, 'f', m->precision(context->athlete->useMetricUnits));
+                    QString strValue = QString("%1").arg(value, 0, 'f', m->precision());
 
                     // or maybe its a duration (worry about local lang or translated)
                     if (m->units(true) == "seconds" || m->units(true) == tr("seconds"))
@@ -1751,7 +1728,7 @@ RideSummaryWindow::htmlCompareSummary() const
 
                         // use right precision
                         QString strValue = QString("%1%2").arg(value >= 0 ? "+" : "") // - sign added anyway
-                                                        .arg(value, 0, 'f', m->precision(context->athlete->useMetricUnits));
+                                                        .arg(value, 0, 'f', m->precision());
 
                         // or maybe its a duration (worry about local lang or translated)
                         if (m->units(true) == "seconds" || m->units(true) == tr("seconds"))
@@ -1919,7 +1896,7 @@ RideSummaryWindow::htmlCompareSummary() const
     } else { // DATE RANGE COMPARE
 
         // LETS FORMAT THE HTML
-        summary = GCColor::css();
+        summary = GCColor::css(ridesummary);
         summary += "<center>";
 
         // get metric details here ...
@@ -1999,7 +1976,7 @@ RideSummaryWindow::htmlCompareSummary() const
                                                                                  context->athlete->useMetricUnits, true).toDouble();
 
                     // use right precision
-                    QString strValue = QString("%1").arg(value, 0, 'f', m->precision(context->athlete->useMetricUnits));
+                    QString strValue = QString("%1").arg(value, 0, 'f', m->precision());
 
                     // or maybe its a duration (worry about local lang or translated)
                     if (m->units(true) == "seconds" || m->units(true) == tr("seconds"))
@@ -2019,7 +1996,7 @@ RideSummaryWindow::htmlCompareSummary() const
 
                         // use right precision
                         QString strValue = QString("%1%2").arg(value >= 0 ? "+" : "") // - sign added anyway
-                                                        .arg(value, 0, 'f', m->precision(context->athlete->useMetricUnits));
+                                                        .arg(value, 0, 'f', m->precision());
 
                         // or maybe its a duration (worry about local lang or translated)
                         if (m->units(true) == "seconds" || m->units(true) == tr("seconds"))

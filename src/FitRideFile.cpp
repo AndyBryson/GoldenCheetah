@@ -17,6 +17,7 @@
  */
 
 #include "FitRideFile.h"
+#include "Settings.h"
 #include <QSharedPointer>
 #include <QMap>
 #include <QSet>
@@ -87,6 +88,9 @@ struct FitFileReaderState
     int last_event_type;
     int last_event;
     int last_msg_type;
+    QVariant isGarminSmartRecording;
+    QVariant GarminHWM;
+
 
     FitFileReaderState(QFile &file, QStringList &errors) :
         file(file), errors(errors), rideFile(NULL), start_time(0),
@@ -271,14 +275,19 @@ struct FitFileReaderState
                 case 65534: rideFile->setDeviceType("Garmin Connect Website"); break;
                 default: rideFile->setDeviceType(QString("Garmin %1").arg(prod));
             }
-        }
-        else  if (manu == 38) {
+
+        } else  if (manu == 38) {
             switch (prod) {
                 case 1: rideFile->setDeviceType("o_synce navi2coach"); break;
                 default: rideFile->setDeviceType(QString("o_synce %1").arg(prod));
             }
-        }
-        else {
+        } else if (manu == 70) {
+
+            // does not set product at this point
+           rideFile->setDeviceType("Sigmasport ROX");
+        
+        } else {
+
             rideFile->setDeviceType(QString("Unknown FIT Device %1:%2").arg(manu).arg(prod));
         }
         rideFile->setFileFormat("FIT (*.fit)");
@@ -291,6 +300,23 @@ struct FitFileReaderState
 
             if( value == NA_VALUE )
                 continue;
+
+            switch (field.num) {
+                case 5: // sport field
+                    switch (value) {
+                        case 1: // running:
+                            rideFile->setTag("Sport","Run");
+                            break;
+                        case 2: // cycling
+                            rideFile->setTag("Sport","Bike");
+                            break;
+                        case 5: // swimming
+                            rideFile->setTag("Sport","Swim");
+                            break;
+                    }
+                    break;
+                default: ; // do nothing
+            }
 
             if (FIT_DEBUG) {
                 printf("decodeSession  field %d: %d bytes, num %d, type %d\n", i, field.size, field.num, field.type );
@@ -441,7 +467,7 @@ struct FitFileReaderState
 
         double rvert = 0, rcad = 0, rcontact = 0;
         double smO2 = 0, tHb = 0;
-        bool run=false;
+        //bool run=false;
 
         fit_value_t lati = NA_VALUE, lngi = NA_VALUE;
         int i = 0;
@@ -473,7 +499,7 @@ struct FitFileReaderState
                         hr = value;
                         break;
                 case 4: // CADENCE
-                        if (run)
+                        if (rideFile->getTag("Sport", "Bike") == "Run")
                             rcad = value;
                         else
                             cad = value;
@@ -512,10 +538,10 @@ struct FitFileReaderState
                          rvert = value / 100.0f;
                          break;
 
-                case 40: // ACTIVITY_TYPE
-                         // TODO We should know/test value for run
-                         run = true;
-                         break;
+                //case 40: // ACTIVITY_TYPE
+                //         // TODO We should know/test value for run
+                //         run = true;
+                //         break;
 
                 case 41: // GROUND CONTACT TIME
                          rcontact = value / 10.0f;
@@ -616,10 +642,12 @@ struct FitFileReaderState
         double nm = 0;
         double headwind = 0.0;
         int interval = 0;
-        if ((last_msg_type == RECORD_TYPE) && (last_time != 0) && (time > last_time + 1)) {
-            // Evil smart recording.  Linearly interpolate missing points.
+        // if there are data points && a time difference > 1sec && smartRecording processing is requested at all
+        if ((!rideFile->dataPoints().empty()) && (last_time != 0) &&
+             (time > last_time + 1) && (isGarminSmartRecording.toInt() != 0)) {
+            // Handle smart recording if configured in preferences.  Linearly interpolate missing points.
             RideFilePoint *prevPoint = rideFile->dataPoints().back();
-            int deltaSecs = (int) (secs - prevPoint->secs);
+            double deltaSecs = (secs - prevPoint->secs);
             //assert(deltaSecs == secs - prevPoint->secs); // no fractional part -- don't CRASH FFS, be graceful
             // This is only true if the previous record was of type record:
             //assert(deltaSecs == time - last_time); -- don't CRASH FFS, be graceful
@@ -660,13 +688,12 @@ struct FitFileReaderState
             double deltarcad = rcad - prevPoint->rcad;
             double deltarcontact = rcontact - prevPoint->rcontact;
 
-            // only smooth for less than 30 minutes
-            // we don't want to crash / stall on bad
+            // only smooth the maximal smart recording gap defined in preferences - we don't want to crash / stall on bad
             // or corrupt files
-            if (deltaSecs > 0 && deltaSecs < (60*30)) {
+            if (deltaSecs > 0 && deltaSecs < GarminHWM.toInt()) {
 
                 for (int i = 1; i < deltaSecs; i++) {
-                    double weight = 1.0 * i / deltaSecs;
+                    double weight = i /deltaSecs;
                     rideFile->appendPoint(
                         prevPoint->secs + (deltaSecs * weight),
                         prevPoint->cad + (deltaCad * weight),
@@ -703,7 +730,6 @@ struct FitFileReaderState
                         prevPoint->rcontact + (deltarcontact * weight),
                         interval);
                 }
-                prevPoint = rideFile->dataPoints().back();
             }
         }
 
@@ -860,7 +886,7 @@ struct FitFileReaderState
                 case 21: decodeEvent(def, time_offset, values); break;
 
                 case 23: //decodeDeviceInfo(def, time_offset, values); break; /* device info */
-                case 18: //decodeSession(def, time_offset, values); break; /* session */
+                case 18: decodeSession(def, time_offset, values); break; /* session */
 
                 case 2: /* DEVICE_SETTINGS */
                 case 3: /* USER_PROFILE */
@@ -888,6 +914,13 @@ struct FitFileReaderState
     }
 
     RideFile * run() {
+
+        // get the Smart Recording paramaters
+        isGarminSmartRecording = appsettings->value(NULL, GC_GARMIN_SMARTRECORD,Qt::Checked);
+        GarminHWM = appsettings->value(NULL, GC_GARMIN_HWMARK);
+        if (GarminHWM.isNull() || GarminHWM.toInt() == 0) GarminHWM.setValue(25); // default to 25 seconds.
+
+        // start
         rideFile = new RideFile;
         rideFile->setDeviceType("Garmin FIT");
         rideFile->setRecIntSecs(1.0); // this is a terrible assumption!

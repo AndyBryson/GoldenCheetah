@@ -79,7 +79,8 @@ HomeWindow::HomeWindow(Context *context, QString name, QString /* windowtitle */
     layout->addWidget(style);
 
     QPalette palette;
-    palette.setBrush(backgroundRole(), QColor("#B3B4B6"));
+    //palette.setBrush(backgroundRole(), QColor("#B3B4B6"));
+    palette.setBrush(backgroundRole(), GColor(CPLOTBACKGROUND));
     setAutoFillBackground(false);
 
     // each style has its own container widget
@@ -193,6 +194,13 @@ HomeWindow::configChanged(qint32)
 //#ifndef Q_OS_MAC
     tileArea->verticalScrollBar()->setStyleSheet(TabView::ourStyleSheet());
 //#endif
+    QPalette palette;
+    palette.setBrush(backgroundRole(), GColor(CPLOTBACKGROUND));
+    setPalette(palette);
+    tileWidget->setPalette(palette);
+    tileArea->setPalette(palette);
+    winWidget->setPalette(palette);
+    winArea->setPalette(palette);
 }
 
 void
@@ -397,6 +405,7 @@ HomeWindow::styleChanged(int id)
         default:
             break;
         }
+        charts[i]->setProperty("style", id);
 
     }
 
@@ -516,6 +525,7 @@ HomeWindow::addChart(GcWindow* newone)
         RideItem *notconst = (RideItem*)context->currentRideItem();
         newone->setProperty("ride", QVariant::fromValue<RideItem*>(notconst));
         newone->setProperty("dateRange", property("dateRange"));
+        newone->setProperty("style", currentStyle);
 
         // add to tabs
         switch (currentStyle) {

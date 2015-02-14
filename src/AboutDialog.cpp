@@ -70,7 +70,7 @@ AboutPage::AboutPage(Context *context) : context(context)
                 "<p>Source code can be obtained from<br>"
                 "<a href=\"http://goldencheetah.org/\">"
                 "http://goldencheetah.org/</a>."
-                "<p>Ride files and other data are stored in<br>"
+                "<p>Activity files and other data are stored in<br>"
                 "<a href=\"%1\">%2</a>"
                 "<p>Trademarks used with permission<br>"
                 "TSS, NP, IF courtesy of <a href=\"http://www.peaksware.com\">"
@@ -137,6 +137,7 @@ ContributorsPage::ContributorsPage(Context *context) : context(context)
     contributors.append("Ilja Booij");
     contributors.append("Jaime Jofre");
     contributors.append("Jamie Kimberley");
+    contributors.append("Jan de Visser");
     contributors.append("Jim Ley");
     contributors.append("J&#246;rn Rischm&#252;ller");
     contributors.append("John Ehrlinger");

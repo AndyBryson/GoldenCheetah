@@ -31,13 +31,13 @@ TwitterDialog::TwitterDialog(Context *context, RideItem *item) :
 {
     ride = item;
     setAttribute(Qt::WA_DeleteOnClose);
-    setWindowTitle(tr("Tweet Your Ride"));
+    setWindowTitle(tr("Tweet Activity"));
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
     QGroupBox *groupBox = new QGroupBox(tr("Choose which metrics you wish to tweet: "));
 
     workoutTimeChk = new QCheckBox(tr("Workout Time"));
-    timeRidingChk = new QCheckBox(tr("Time Riding"));
+    timeRidingChk = new QCheckBox(tr("Time Moving"));
     totalDistanceChk = new QCheckBox(tr("Total Distance"));
     elevationGainChk = new QCheckBox(tr("Elevation Gain"));
     totalWorkChk = new QCheckBox(tr("Total Work (kJ)"));
@@ -72,7 +72,7 @@ TwitterDialog::TwitterDialog(Context *context, RideItem *item) :
     twitterMetricLayout->addWidget(twitterLengthLabel);
 
     QHBoxLayout *buttonLayout = new QHBoxLayout;
-    tweetButton = new QPushButton(tr("&Tweet Ride"), this);
+    tweetButton = new QPushButton(tr("&Tweet Activity"), this);
     buttonLayout->addWidget(tweetButton);
     cancelButton = new QPushButton(tr("&Cancel"), this);
     buttonLayout->addWidget(cancelButton);
@@ -204,7 +204,7 @@ QString TwitterDialog::getTwitterMessage()
         QString words;
     } worklist[] = {
         { "workout_time", workoutTimeChk, tr("Duration: %1 ") },
-        { "time_riding", timeRidingChk, tr("Time Riding: %1 ") },
+        { "time_riding", timeRidingChk, tr("Time Moving: %1 ") },
         { "total_distance", totalDistanceChk, tr("Distance: %1 ") },
         { "elevation_gain", elevationGainChk, tr("Climbing: %1 ") },
         { "total_work", totalWorkChk, tr("Work: %1 ") },

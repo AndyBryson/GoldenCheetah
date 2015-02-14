@@ -65,6 +65,7 @@ class FieldDefinition
         QStringList values; // autocomplete 'defaults'
 
         static unsigned long fingerprint(QList<FieldDefinition>);
+        QCompleter *getCompleter(QObject *parent);
 
         FieldDefinition() : tab(""), name(""), type(0), diary(false), values() {}
         FieldDefinition(QString tab, QString name, int type, bool diary, QStringList values)
@@ -93,7 +94,7 @@ class FormField : public QWidget
         void editFinished();        // from the widget - we finished editing this field
         void metadataChanged();     // from GC - a new ride got picked / changed elsewhere
         void stateChanged(int);     // should we enable/disable the widget?
-        void focusOut(QFocusEvent *event);
+        void focusOut(QFocusEvent *event=NULL);
 
     private:
         RideMetadata *meta;

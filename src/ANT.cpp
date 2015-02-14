@@ -266,6 +266,15 @@ ANT::setLoad(double load)
         sendMessage(ANTMessage::tacxVortexSetPower(vortexChannel, vortexID, (int)load));
     }
 }
+
+void ANT::refreshVortexLoad()
+{
+    if (vortexChannel == -1)
+        return;
+
+    sendMessage(ANTMessage::tacxVortexSetPower(vortexChannel, vortexID, (int)load));
+}
+
 void
 ANT::setGradient(double gradient)
 {
@@ -795,7 +804,7 @@ ANT::processMessage(void) {
 
     ANTMessage m(this, rxMessage); // for debug!
 
-//fprintf(stderr, "<< receive: ");
+//fprintf(stderr, "<< receive %i: ", rxMessage[ANT_OFFSET_CHANNEL_NUMBER]);
 //for(int i=0; i<m.length+3; i++) fprintf(stderr, "%02x ", m.data[i]);
 //fprintf(stderr, "\n");
 

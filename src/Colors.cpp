@@ -62,11 +62,12 @@ void GCColor::setupColors()
     // (c++0x not supported by Qt currently and not planned for 4.8 or 5.0)
     Colors init[CNUMOFCFGCOLORS+1] = {
         { tr("Plot Background"), "COLORPLOTBACKGROUND", QColor(52,52,52) },
-        { tr("Ride Plot Background"), "COLORRIDEPLOTBACKGROUND", QColor(52,52,52) },
+        { tr("Performance Plot Background"), "COLORRIDEPLOTBACKGROUND", QColor(52,52,52) },
+        { tr("Trend Plot Background"), "COLORTRENDPLOTBACKGROUND", Qt::black },
         { tr("Train Plot Background"), "COLORTRAINPLOTBACKGROUND", Qt::black },
         { tr("Plot Symbols"), "COLORRIDEPLOTSYMBOLS", Qt::cyan },
-        { tr("Ride Plot X Axis"), "COLORRIDEPLOTXAXIS", Qt::blue },
-        { tr("Ride Plot Y Axis"), "COLORRIDEPLOTYAXIS", Qt::red },
+        { tr("Performance Plot X Axis"), "COLORRIDEPLOTXAXIS", Qt::blue },
+        { tr("Performance Plot Y Axis"), "COLORRIDEPLOTYAXIS", Qt::red },
         { tr("Plot Thumbnail Background"), "COLORPLOTTHUMBNAIL", Qt::gray },
         { tr("Plot Title"), "COLORPLOTTITLE", Qt::black },
         { tr("Plot Selection Pen"), "COLORPLOTSELECT", Qt::blue },
@@ -137,7 +138,7 @@ void GCColor::setupColors()
         { tr("Chart Bar Unselected"), "CTILEBAR", Qt::gray },
         { tr("Chart Bar Selected"), "CTILEBARSELECT", Qt::yellow },
         { tr("ToolBar Background"), "CTOOLBAR", Qt::white },
-        { tr("Ride History Group"), "CRIDEGROUP", QColor(236,246,255) },
+        { tr("Activity History Group"), "CRIDEGROUP", QColor(236,246,255) },
         { tr("SpinScan Left"), "CSPINSCANLEFT", Qt::gray },
         { tr("SpinScan Right"), "CSPINSCANRIGHT", Qt::cyan },
         { tr("Temperature"), "COLORTEMPERATURE", Qt::yellow },
@@ -146,7 +147,7 @@ void GCColor::setupColors()
         { tr("Left Balance"), "CBALANCELEFT", QColor(178,0,0) },
         { tr("Right Balance"), "CBALANCERIGHT", QColor(128,0,50) },
         { tr("W' Balance"), "CWBAL", Qt::red },
-        { tr("Ride CP Curve"), "CRIDECP", Qt::red },
+        { tr("CP Curve"), "CRIDECP", Qt::red },
         { tr("Aerobic TISS"), "CATISS", Qt::magenta },
         { tr("Anaerobic TISS"), "CANTISS", Qt::cyan },
         { tr("Left Torque Effectiveness"), "CLTE", Qt::cyan },
@@ -337,9 +338,9 @@ ColorEngine::colorFor(QString text)
 }
 
 QString
-GCColor::css()
+GCColor::css(bool ridesummary)
 {
-    QColor bgColor = GColor(CPLOTBACKGROUND);
+    QColor bgColor = ridesummary ? GColor(CPLOTBACKGROUND) : GColor(CTRENDPLOTBACKGROUND);
     QColor fgColor = GCColor::invertColor(bgColor);
     //QColor altColor = GCColor::alternateColor(bgColor); // not yet ?
 
@@ -583,8 +584,10 @@ Themes::Themes()
 
 }
 
+// NOTE: this is duplicated in Pages.cpp:1565:ColorsPage::applyThemeClicked()
+//       you need to change there too. Sorry.
 void
-GCColor::applyTheme(int index)
+GCColor::applyTheme(int index) 
 {
     // now get the theme selected
     ColorTheme theme = GCColor::themes().themes[index];
@@ -598,6 +601,7 @@ GCColor::applyTheme(int index)
 
         case CPLOTBACKGROUND:
         case CRIDEPLOTBACKGROUND:
+        case CTRENDPLOTBACKGROUND:
         case CTRAINPLOTBACKGROUND:
             color = theme.colors[0]; // background color
             break;

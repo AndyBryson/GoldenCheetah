@@ -45,7 +45,7 @@ ScatterWindow::addStandardChannels(QComboBox *box)
     box->addItem(tr("Temperature"), MODEL_TEMP);
     box->addItem(tr("L/R Balance"), MODEL_LRBALANCE);
     box->addItem(tr("L/R Torque Effectiveness"), MODEL_TE);
-    box->addItem(tr("L/R Pedal Smoothness"), MODEL_TE);
+    box->addItem(tr("L/R Pedal Smoothness"), MODEL_PS);
     box->addItem(tr("Running Vertical Oscillation"), MODEL_RV);
     box->addItem(tr("Running Cadence"), MODEL_RCAD);
     box->addItem(tr("Running GCT"), MODEL_RGCT);
@@ -189,9 +189,9 @@ ScatterWindow::ScatterWindow(Context *context) :
     cl->addRow(frame);
 
     compareMode = new QComboBox(this);
-    compareMode->addItem(tr("All intervals/rides"));
-    compareMode->addItem(tr("First intervals/rides on X-axis"));
-    compareMode->addItem(tr("First intervals/rides on Y-axis"));
+    compareMode->addItem(tr("All intervals/activities"));
+    compareMode->addItem(tr("First intervals/activities on X-axis"));
+    compareMode->addItem(tr("First intervals/activities on Y-axis"));
     cl->addRow(new QLabel(tr("Compare mode")), compareMode);
     compareMode->setCurrentIndex(0);
 

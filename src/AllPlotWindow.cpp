@@ -101,6 +101,9 @@ AllPlotWindow::AllPlotWindow(Context *context) :
     QHBoxLayout *seriesControls = new QHBoxLayout(series);
     QFormLayout *seriesLeft = new QFormLayout(); // ride side series
     QFormLayout *seriesRight = new QFormLayout(); // ride side series
+    seriesControls->setSpacing(2);
+    seriesLeft->setSpacing(2);
+    seriesRight->setSpacing(2);
     seriesControls->addLayout(seriesLeft);
     seriesControls->addLayout(seriesRight); // ack I swapped them around !
     st->addTab(series, tr("Curves"));
@@ -2057,8 +2060,9 @@ AllPlotWindow::setEndSelection(AllPlot* plot, double xValue, bool newInterval, Q
                 if (bottom->text(0).startsWith(name)) delete allIntervals->takeChild(count-1);
             }
 
-            // add average power to the end of the selection name
-            name += QString("(%1 watts)").arg(round((wattsTotal && arrayLength) ? wattsTotal/arrayLength : 0));
+            // add average power to the end of the selection name, if available
+            if (wattsTotal && arrayLength)
+                name += tr("(%1 watts)").arg(round(wattsTotal/arrayLength));
 
             QTreeWidgetItem *last = new IntervalItem(ride->ride(), name, duration1, duration2, distance1, distance2,
                                         allIntervals->childCount()+1);
