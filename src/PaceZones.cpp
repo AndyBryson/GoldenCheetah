@@ -813,10 +813,16 @@ void PaceZones::write(QDir home)
 
     QFile file(home.canonicalPath() + "/" + fileName_);
     if (file.open(QFile::WriteOnly)) {
-
         QTextStream stream(&file);
         stream << strzones;
         file.close();
+    } else {
+        QMessageBox msgBox;
+        msgBox.setIcon(QMessageBox::Critical);
+        msgBox.setText(tr("Problem Saving Pace Zones"));
+        msgBox.setInformativeText(tr("File: %1 cannot be opened for 'Writing'. Please check file properties.").arg(home.canonicalPath() + "/" + fileName_));
+        msgBox.exec();
+        return;
     }
 }
 
@@ -993,10 +999,7 @@ PaceZones::kphFromTime(QTimeEdit *cvedit, bool metric) const
 QString
 PaceZones::kphToPaceString(double kph, bool metric) const
 {
-    if (swim)
-        return kphToPace(kph * 10.00f * (metric ? 1.00f : METERS_PER_YARD), true);
-    else
-        return kphToPace(kph, metric);
+    return kphToPace(kph, metric, swim);
 }
 
 QString

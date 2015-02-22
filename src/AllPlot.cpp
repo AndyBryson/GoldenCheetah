@@ -1420,6 +1420,7 @@ AllPlot::setRightPalette()
     sd->setTickLength(QwtScaleDiv::MajorTick, 3);
     sd->enableComponent(ScaleScaleDraw::Ticks, false);
     sd->enableComponent(ScaleScaleDraw::Backbone, false);
+    sd->setDecimals(2);
     setAxisScaleDraw(QwtAxisId(QwtAxis::yRight, 0), sd);
 
     QPalette pal = palette();
@@ -2667,6 +2668,9 @@ AllPlot::setYMax()
 
         QStringList labels;
 
+        // axis scale draw precision
+        static_cast<ScaleScaleDraw*>(axisScaleDraw(QwtAxisId(QwtAxis::yRight, 0)))->setDecimals(2);
+
         if (standard->speedCurve->isVisible()) {
             labels << (context->athlete->useMetricUnits ? tr("KPH") : tr("MPH"));
 
@@ -2720,7 +2724,29 @@ AllPlot::setYMax()
             xytick[QwtScaleDiv::MajorTick]<<i;
 
         setAxisTitle(QwtAxisId(QwtAxis::yRight, 0), labels.join(" / "));
-        setAxisScaleDiv(QwtAxisId(QwtAxis::yRight, 0),QwtScaleDiv(0, ymax, xytick));
+
+        // we just have Hb ?
+        if (labels.count() == 1 && labels[0] == tr("Hb")) {
+
+            double ymin=100;
+            ymax /= 1.05;
+            ymax += .10f;
+
+            if (standard->thbCurve->isVisible() && standard->thbCurve->minYValue() < ymin)
+                ymin = standard->thbCurve->minYValue();
+            if (standard->o2hbCurve->isVisible() && standard->o2hbCurve->minYValue() < ymin)
+                ymin = standard->o2hbCurve->minYValue();
+            if (standard->hhbCurve->isVisible() && standard->hhbCurve->minYValue() < ymin)
+                ymin = standard->hhbCurve->minYValue();
+
+            double step = 0.00f;
+            if (ymin < 100.00f) step = (ymax - ymin) / 5;
+
+            // we just have Hb ...
+            setAxisScale(QwtAxisId(QwtAxis::yRight, 0),ymin<100.0f?ymin:0, ymax, step);
+
+        } else 
+            setAxisScaleDiv(QwtAxisId(QwtAxis::yRight, 0),QwtScaleDiv(0, ymax, xytick));
     }
 
     // QwtAxis::yRight, 1
@@ -3103,13 +3129,6 @@ AllPlot::setDataFromPlot(AllPlot *plot, int startidx, int stopidx)
     setSymbol(standard->lpcoCurve, points);
     setSymbol(standard->rpcoCurve, points);
 
-    setAltSlopePlotStyle(standard->altSlopeCurve);
-    setYMax();
-
-    setAxisScale(xBottom, xaxis[0], xaxis[stopidx-startidx]);
-    enableAxis(xBottom, true);
-    setAxisVisible(xBottom, true);
-
     if (!plot->standard->smoothAltitude.empty()) {
         standard->altCurve->attach(this);
         standard->altSlopeCurve->attach(this);
@@ -3221,13 +3240,17 @@ AllPlot::setDataFromPlot(AllPlot *plot, int startidx, int stopidx)
         standard->rpppCurve->attach(this);
     }
 
+    setAltSlopePlotStyle(standard->altSlopeCurve);
+    setYMax();
+
+    setAxisScale(xBottom, xaxis[0], xaxis[stopidx-startidx]);
+    enableAxis(xBottom, true);
+    setAxisVisible(xBottom, true);
+
     refreshReferenceLines();
     refreshIntervalMarkers();
     refreshCalibrationMarkers();
     refreshZoneLabels();
-
-    //if (this->legend()) this->legend()->show();
-    //replot();
 
     // set all the colors ?
     configChanged(CONFIG_APPEARANCE);
@@ -3235,6 +3258,8 @@ AllPlot::setDataFromPlot(AllPlot *plot, int startidx, int stopidx)
     // remember the curves and colors
     isolation = false;
     curveColors->saveState();
+
+    replot();
 }
 
 void
@@ -3785,7 +3810,17 @@ AllPlot::setDataFromPlot(AllPlot *plot)
 
         // y-axis yLeft
         setAxisVisible(yLeft, true);
-        if (scope != RideFile::lrbalance) {
+        if (scope == RideFile::thb && thereCurve) {
+
+            // minimum non-zero value... worst case its zero !
+            double minNZ = 0.00f;
+            for (size_t i=0; i<thereCurve->data()->size(); i++) {
+                if (!minNZ) minNZ = thereCurve->data()->sample(i).y();
+                else if (thereCurve->data()->sample(i).y()<minNZ) minNZ = thereCurve->data()->sample(i).y();
+            }
+            setAxisScale(QwtPlot::yLeft, minNZ, thereCurve->maxYValue() + 0.10f);
+
+        } else if (scope != RideFile::lrbalance) {
             if (thereCurve)
                 setAxisScale(QwtPlot::yLeft, thereCurve->minYValue(), 1.1f * thereCurve->maxYValue());
             if (thereICurve)
@@ -6428,13 +6463,12 @@ AllPlot::pointHover(QwtPlotCurve *curve, int index)
         if (curve->title() == tr("Speed") && rideItem && rideItem->isRun) {
             bool metricPace = appsettings->value(this, GC_PACE, true).toBool();
             QString paceunit = metricPace ? tr("min/km") : tr("min/mile");
-            paceStr = tr("\n%1 %2").arg(context->athlete->useMetricUnits ? kphToPace(yvalue, metricPace) : mphToPace(yvalue, metricPace)).arg(paceunit);
+            paceStr = tr("\n%1 %2").arg(context->athlete->useMetricUnits ? kphToPace(yvalue, metricPace, false) : mphToPace(yvalue, metricPace, false)).arg(paceunit);
         }
         if (curve->title() == tr("Speed") && rideItem && rideItem->isSwim) {
             bool metricPace = appsettings->value(this, GC_SWIMPACE, true).toBool();
             QString paceunit = metricPace ? tr("min/100m") : tr("min/100yd");
-            double swimSpeed = yvalue * 10.00f * (metricPace ? 1.00f : METERS_PER_YARD);
-            paceStr = tr("\n%1 %2").arg(context->athlete->useMetricUnits ? kphToPace(swimSpeed, true) : mphToPace(swimSpeed, true)).arg(paceunit);
+            paceStr = tr("\n%1 %2").arg(context->athlete->useMetricUnits ? kphToPace(yvalue, metricPace, true) : mphToPace(yvalue, metricPace, true)).arg(paceunit);
         }
 
         bool isHB= curve->title().text().contains("Hb");
