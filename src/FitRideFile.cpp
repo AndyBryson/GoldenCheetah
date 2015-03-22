@@ -276,6 +276,17 @@ struct FitFileReaderState
                 default: rideFile->setDeviceType(QString("Garmin %1").arg(prod));
             }
 
+        } else if (manu == 6 ) {
+
+            // SRM powercontrol now uses FIT files from PC8
+            switch (prod) {
+
+            case 6: rideFile->setDeviceType("SRM PC6");break;
+            case 7: rideFile->setDeviceType("SRM PC7");break;
+            case 8: rideFile->setDeviceType("SRM PC8");break;
+            default: rideFile->setDeviceType("SRM Powercontrol");break;
+            }
+
         } else  if (manu == 38) {
             switch (prod) {
                 case 1: rideFile->setDeviceType("o_synce navi2coach"); break;
@@ -286,6 +297,9 @@ struct FitFileReaderState
             // does not set product at this point
            rideFile->setDeviceType("Sigmasport ROX");
         
+        } else if (manu == 260) {
+            // Zwift!
+            rideFile->setDeviceType("Zwift");
         } else {
 
             rideFile->setDeviceType(QString("Unknown FIT Device %1:%2").arg(manu).arg(prod));
