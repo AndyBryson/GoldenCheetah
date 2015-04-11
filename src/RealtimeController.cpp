@@ -399,9 +399,6 @@ RealtimeController::processRealtimeData(RealtimeData &rtData)
         }
         break;
 
-    default : // unknown - do nothing
-        break;
-
     case 41 : // ELITE SUPERCRONO POWER MAG LEVEL 1
         {
         double V = rtData.getSpeed() * MILES_PER_KM;
@@ -465,13 +462,52 @@ RealtimeController::processRealtimeData(RealtimeData &rtData)
         rtData.setWatts(-0.0255078477814972*pow(V, 3) + 1.42902141301828*pow(V,2) + (10.2050166192824*V) - 6.48951048951042);
         }
         break;
-    case 49:
+
+    case 49: //ELITE TURBO MUIN 2013
+        {
+        double V = rtData.getSpeed();
+        // Power curve fit from data collected by Ray Maker at dcrainmaker.com
+        rtData.setWatts(2.30615942 * V -0.28395558 * pow(V,2) + 0.02099661 * pow(V,3));
+        }
+        break;
+    case 50: // ELITE QUBO POWER FLUID
         {
         double V = rtData.getSpeed();
         // Power curve fit from powercurvesensor
         //     f(x) = 4.31746 * x -2.59259e-002 * x^2 +  9.41799e-003 * x^3
         rtData.setWatts(4.31746 * V - 2.59259e-002 * pow(V, 2) + 9.41799e-003 * pow(V, 3));
         }
+        break;
+    case 51: // CYCLOPS MAGNETO PRO (ROAD)
+        {
+        double V = rtData.getSpeed();
+        //     Watts = 6.0f + (-0.93 * speed) + (0.275 * speed^2) + (-0.00175 * speed^3)
+        rtData.setWatts(6.0f + (-0.93f * V) + (0.275f * pow(V, 2)) + (-0.00175f * pow(V, 3)));
+        }
+        break;
+
+    case 52: // ELITE ARION MAG LEVEL 0
+        {
+        double v = rtData.getSpeed();
+        rtData.setWatts(pow(v, 1.217110021) * 3.335794377);
+        }
+        break;
+
+    case 53: // ELITE ARION MAG LEVEL 1
+        {
+        double v = rtData.getSpeed();
+        rtData.setWatts(pow(v, 1.206592577) * 4.362485081);
+        }
+        break;
+
+    case 54: // ELITE ARION MAG LEVEL 2
+        {
+        double v = rtData.getSpeed();
+        rtData.setWatts(pow(v, 1.206984321) * 6.374459698);
+        }
+        break;
+
+    default : // unknown - do nothing
         break;
     }
 }
