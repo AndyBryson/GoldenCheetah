@@ -31,6 +31,7 @@ class RideFile;
 class RideFileCache;
 class RideCache;
 class RideCacheModel;
+class IntervalCacheModel;
 class Context;
 
 Q_DECLARE_METATYPE(RideItem*)
@@ -149,6 +150,9 @@ class RideItem : public QObject
         // sorting
         bool operator<(RideItem right) const { return dateTime < right.dateTime; }
         bool operator>(RideItem right) const { return dateTime < right.dateTime; }
+
+    private:
+        void updateAutoInterval();
 };
 
 #endif // _GC_RideItem_h

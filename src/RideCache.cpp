@@ -192,11 +192,6 @@ RideCache::addRide(QString name, bool dosignal, bool useTempActivities)
 
     if (dosignal) context->notifyRideAdded(last); // here so emitted BEFORE rideSelected is emitted!
 
-#ifdef GC_HAVE_INTERVALS
-    //Search routes
-    context->athlete->routes->searchRoutesInRide(last->ride());
-#endif
-
     // notify everyone to select it
     context->ride = last;
     context->notifyRideSelected(last);

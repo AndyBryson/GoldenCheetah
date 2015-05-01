@@ -51,8 +51,9 @@ class RideCache : public QObject
         RideCache(Context *context);
         ~RideCache();
 
-        // table model
+        // table models
         RideCacheModel *model() { return model_; }
+
 
         // query the cache
         int count() const { return rides_.count(); }
@@ -140,9 +141,6 @@ class AthleteBest
     double nvalue;
     QString value; // formatted value
     QDate date;
-#ifdef GC_HAVE_INTERVALS
-    QString fileName;
-#endif
 
     // for qsort
     bool operator< (AthleteBest right) const { return (nvalue < right.nvalue); }

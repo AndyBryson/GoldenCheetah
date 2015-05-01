@@ -46,6 +46,7 @@
 #include "LTMSettings.h"
 #include "RideImportWizard.h"
 #include "RideAutoImportConfig.h"
+
 #include "Route.h"
 #include "RouteWindow.h"
 
@@ -144,11 +145,6 @@ Athlete::Athlete(Context *context, const QDir &homeDir)
     // seconds step of the upgrade - now everything of configuration needed should be in place in Context
     v3.upgradeLate(context);
 
-#ifdef GC_HAVE_INTERVALS
-    // Routes
-    routes = new Routes(context, home->config());
-#endif
-
     // get withings in if there is a cache
     QFile withingsJSON(QString("%1/withings.json").arg(context->athlete->home->cache().canonicalPath()));
     if (withingsJSON.exists() && withingsJSON.open(QFile::ReadOnly)) {
@@ -166,18 +162,6 @@ Athlete::Athlete(Context *context, const QDir &homeDir)
 
     // now most dependencies are in get cache
     rideCache = new RideCache(context);
-
-#ifdef GC_HAVE_INTERVALS
-    sqlRouteIntervalsModel = new QSqlTableModel(this, metricDB->db()->connection());
-    sqlRouteIntervalsModel->setTable("interval_metrics");
-    sqlRouteIntervalsModel->setFilter("type='Route'");
-    sqlRouteIntervalsModel->setEditStrategy(QSqlTableModel::OnManualSubmit);
-
-    sqlBestIntervalsModel = new QSqlTableModel(this, metricDB->db()->connection());
-    sqlBestIntervalsModel->setTable("interval_metrics");
-    sqlBestIntervalsModel->setFilter("type='Best'");
-    sqlBestIntervalsModel->setEditStrategy(QSqlTableModel::OnManualSubmit);
-#endif
 
     // Downloaders
     withingsDownload = new WithingsDownload(context);
@@ -241,12 +225,6 @@ Athlete::~Athlete()
     delete davCalendar;
 #endif
 
-#ifdef GC_HAVE_INTERVALS
-    // close the db connection (but clear models first!)
-    delete sqlRouteIntervalsModel;
-    delete sqlBestIntervalsModel;
-#endif
-
     delete namedSearches;
     delete seasons;
 
@@ -292,7 +270,7 @@ Athlete::updateRideFileIntervals()
         for (int i=0; i < allIntervals->childCount(); i++) {
             // add the intervals as updated
             IntervalItem *it = (IntervalItem *)allIntervals->child(i);
-            current->addInterval(it->start, it->stop, it->text(0));
+            current->addInterval(it->type, it->start, it->stop, it->text(0));
         }
 
         // emit signal for interval data changed
