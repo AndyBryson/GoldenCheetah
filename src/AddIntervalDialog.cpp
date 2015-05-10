@@ -852,6 +852,8 @@ AddIntervalDialog::findBests(bool typeTime, const RideFile *ride, double windowS
 void
 AddIntervalDialog::addClicked()
 {
+//XXX REFACTOR NEED TO DECIDE HOW TO DO THIS!!
+#if 0
     // run through the table row by row
     // and when the checkbox is shown
     // get name from column 2
@@ -866,7 +868,6 @@ AddIntervalDialog::addClicked()
             double stop = resultsTable->item(i,4)->text().toDouble();
             QString name = resultsTable->item(i,2)->text();
             const RideFile *ride = context->ride ? context->ride->ride() : NULL;
-
             QTreeWidgetItem *allIntervals = context->athlete->mutableIntervalItems();
             QTreeWidgetItem *last =
                 new IntervalItem(ride, name, start, stop,
@@ -880,5 +881,6 @@ AddIntervalDialog::addClicked()
         }
     }
     context->athlete->updateRideFileIntervals();
+#endif
     done(0);
 }

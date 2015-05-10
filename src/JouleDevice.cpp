@@ -40,12 +40,12 @@
 #define ERASE_RIDE_DETAIL  0x2024
 
 static bool jouleRegistered =
-    Devices::addType("Joule 1.0 or GPS", DevicesPtr(new JouleDevices()) );
+    Devices::addType("Joule 1.0, GPS or GPS+", DevicesPtr(new JouleDevices()) );
 
 QString
 JouleDevices::downloadInstructions() const
 {
-    return (tr("Make sure the Joule (1.0 or GPS) unit is turned ON"));
+    return (tr("Make sure the Joule (1.0, GPS or GPS+) unit is turned ON"));
 }
 
 DevicePtr
@@ -115,7 +115,7 @@ JouleDevice::download( const QDir &tmpdir,
                          QList<DeviceDownloadFile> &files,
                          QString &err)
 {
-    if (JOULE_DEBUG) printf("download Joule 1.0 or GPS");
+    if (JOULE_DEBUG) printf("download Joule 1.0, GPS or GPS+");
 
     if (!dev->open(err)) {
         err = tr("ERROR: open failed: ") + err;
@@ -134,8 +134,10 @@ JouleDevice::download( const QDir &tmpdir,
         return false;
     }
 
-    bool isJouleGPS = getJouleGPS(versionResponse);
-    emit updateStatus(QString(tr("Joule %1 identified")).arg(isJouleGPS?"GPS":"1.0"));
+    bool isJouleGPS = getJouleType(versionResponse) == JOULE_GPS;
+    bool isJouleGPSPLUS = getJouleType(versionResponse) == JOULE_GPS_PLUS;
+
+    emit updateStatus(QString(tr("Joule %1 identified")).arg(isJouleGPS?"GPS":(isJouleGPSPLUS?"GPS+":"1.0")));
 
     QList<DeviceStoredRideItem> trainings;
     if (!getDownloadableRides(trainings, isJouleGPS, err))
@@ -402,7 +404,7 @@ JouleDevice::cleanup( QString &err ) {
 
     JoulePacket versionResponse;
     getUnitVersion(versionResponse, err);
-    bool isJouleGPS = getJouleGPS(versionResponse);
+    bool isJouleGPS = getJouleType(versionResponse) == JOULE_GPS || getJouleType(versionResponse) == JOULE_GPS_PLUS;
 
     QList<DeviceStoredRideItem> trainings;
     if (!getDownloadableRides(trainings, isJouleGPS, err))
@@ -430,14 +432,15 @@ JouleDevice::cleanup( QString &err ) {
     return true;
 }
 
-bool
-JouleDevice::getJouleGPS(JoulePacket &versionResponse) {
+JouleDevice::JouleType
+JouleDevice::getJouleType(JoulePacket &versionResponse) {
     int major_version = qByteArray2Int(versionResponse.payload.left(1));
 
-    bool isJouleGPS = true;
     if (major_version == 18)
-        isJouleGPS = false;
-    return isJouleGPS;
+        return JOULE_GPS;
+    else if (major_version == 22)
+        return JOULE_GPS_PLUS;
+    return JOULE_1_0;
 }
 
 

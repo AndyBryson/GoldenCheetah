@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010 Mark Liversedge (liversedge@gmail.com)
+ * Copyright (c) 2014 Damien Grauser (Damien.Grauser@pev-geneve.ch)
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -16,33 +16,30 @@
  * Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#ifndef _GC_AnalysisSidebar_h
-#define _GC_AnalysisSidebar_h 1
+#ifndef _GC_IntervalSidebar_h
+#define _GC_IntervalSidebar_h 1
 #include "GoldenCheetah.h"
 
 #include "Context.h"
 #include "GcSideBarItem.h"
-#include "RideNavigator.h"
+#include "IntervalNavigator.h"
 #include "DiarySidebar.h" // for GcMultiCalendar
 #include "RideItem.h"
 #include "IntervalTreeView.h"
 #include "IntervalSummaryWindow.h"
 
-#include <QTreeWidgetItem>
-#include <QTreeWidget>
-#include <QWidget>
-
-class AnalysisSidebar : public QWidget
+class IntervalSidebar : public QWidget
 {
     Q_OBJECT
     G_OBJECT
 
     public:
 
-        AnalysisSidebar(Context *context);
+        IntervalSidebar(Context *context);
         void close();
-        void setWidth(int x) { rideNavigator->setWidth(x); }
-        RideNavigator *rideNavigator;
+        void setWidth(int x) { routeNavigator->setWidth(x); }
+        IntervalNavigator *routeNavigator;
+        IntervalNavigator *bestNavigator;
 
     signals:
 
@@ -50,25 +47,23 @@ class AnalysisSidebar : public QWidget
 
         // config etc
         void configChanged(qint32);
-        void setRide(RideItem*);
 
         void filterChanged();
         void setFilter(QStringList);
         void clearFilter();
 
         // analysis menu
-        void analysisPopup();
-        void showActivityMenu(const QPoint &pos);
-
-        // interval selection
-        void itemSelectionChanged();
+        void routePopup();
+        void showRouteMenu(const QPoint &pos);
+        void bestPopup();
+        void showBestMenu(const QPoint &pos);
 
         // interval menu
-        void intervalPopup();
-        void showIntervalMenu(const QPoint &pos);
+        /*void intervalPopup();
+        void showIntervalMenu(const QPoint &pos);*/
 
         // interval functions
-        void addIntervals();
+        /*void addIntervals();
         void addIntervalForPowerPeaksForSecs(RideFile *ride, int windowSizeSecs, QString name);
         void findPowerPeaks();
         void editInterval(); // from right click
@@ -80,31 +75,25 @@ class AnalysisSidebar : public QWidget
         void renameIntervalsSelected(void); // from menu popup -- rename a series
         void editIntervalSelected(); // from menu popup
         void deleteIntervalSelected(void); // from menu popup
-        void clickZoomInterval(QTreeWidgetItem*); // from treeview
         void zoomIntervalSelected(void); // from menu popup
         void zoomOut();
         void createRouteIntervalSelected(void); // from menu popup
         void frontInterval();
-        void backInterval();
+        void backInterval();*/
 
     private:
 
         Context *context;
         GcSplitter *splitter;
 
-        GcSplitterItem *activityItem;
         QSignalMapper *groupByMapper;
 
-        GcSplitterItem *calendarItem;
-        GcMultiCalendar *calendarWidget;
+        GcSplitterItem *routeItem;
+        GcSplitterItem *bestItem;
 
-        GcSplitterItem *intervalItem;
         QSplitter *intervalSplitter;
         IntervalSummaryWindow *intervalSummaryWindow;
         IntervalItem *activeInterval; // currently active for context menu popup
-
-        IntervalTreeView *intervalTree; // the interval tree
-        QMap<RideFileInterval::intervaltype, QTreeWidgetItem*> trees;
 };
 
-#endif // _GC_AnalysisSidebar_h
+#endif // _GC_IntervalSidebar_h

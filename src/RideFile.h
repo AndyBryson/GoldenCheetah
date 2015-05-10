@@ -30,7 +30,7 @@
 
 class RideItem;
 class RideCache;
-class IntervalCache;
+class IntervalItem;
 class WPrime;
 class RideFile;
 struct RideFilePoint;
@@ -88,10 +88,21 @@ class RideFileInterval
     Q_DECLARE_TR_FUNCTIONS(RideFileInterval);
 
     public:
-        enum intervaltype { DEVICE, USER, PEAK, ROUTE, LAP } types;
-        typedef enum intervaltype IntervalType;
-        QString typeString;
+        enum intervaltype { ALL,                    // Entire workout 
+                            DEVICE,                 // Came from Device (Calibration?)
+                            USER,                   // User defined
+                            PEAKPOWER,              // Peak Power incl. ranking 1-10 in ride
+                            ROUTE,                  // GPS Route
+                            PEAKHR,                 // PEAK HR
+                            CLIMB,                  // Hills and Cols
+                            EFFORT,                 // Sustained effort
+                            MATCH                   // W'bal based "match from a matchbook"
+                           } types;                 // ALWAYS ADD TO END (RideDB.json uses int values)
 
+        typedef enum intervaltype IntervalType;
+        static QString typeDescription(IntervalType);                  // return a string to represent the type
+
+        QString typeString;
         IntervalType type;
         double start, stop;
         QString name;
@@ -135,10 +146,29 @@ class RideFile : public QObject // QObject to emit signals
 
         friend class RideFileCommand; // tells us we were modified
         friend class RideCache; // tells us if wbal is stale
-        friend class IntervalCache; // tells us if wbal is stale
         friend class RideItem; // derived/wbal stale
+        friend class IntervalItem; // access intervals 
         friend class MainWindow; // tells us we were modified
         friend class Context; // tells us we were saved
+        friend class Athlete; // tells us we were saved
+
+        // file format writers have more access
+        friend class RideFileFactory;
+        friend class FitlogFileReader;
+        friend class GcFileReader;
+        friend class TcxFileReader;
+        friend class PwxFileReader;
+        friend class JsonFileReader;
+
+        // split and mergers
+        friend class MergeActivityWizard;
+        friend class SplitActivityWizard;
+        friend class SplitConfirm;
+        friend class SplitSelect;
+
+        // TEMPORARY WHILST REFACTORING!
+        friend class IntervalTreeView;
+        friend class ManualRideDialog;
 
         // utility
         static unsigned int computeFileCRC(QString); 
@@ -230,7 +260,6 @@ class RideFile : public QObject // QObject to emit signals
         void setId(const QString &value) { id_ = value; }
 
         // Working with INTERVALS
-        const QList<RideFileInterval> &intervals() const { return intervals_; }
         void addInterval(RideFileInterval::IntervalType type, double start, double stop, const QString &name) {
             intervals_.append(RideFileInterval(type, start, stop, name));
         }
@@ -246,9 +275,8 @@ class RideFile : public QObject // QObject to emit signals
             }
             intervals_.append(RideFileInterval(type, start, stop, name));
         }
-        void clearIntervals();
-        void fillInIntervals();
         int intervalBegin(const RideFileInterval &interval) const;
+        int intervalBeginSecs(const double secs) const;
 
         // Working with CAIBRATIONS
         const QList<RideFileCalibration> &calibrations() const { return calibrations_; }
@@ -308,6 +336,11 @@ class RideFile : public QObject // QObject to emit signals
         void deleted();
 
     protected:
+
+        //  should access via IntervalItem
+        const QList<RideFileInterval> &intervals() const { return intervals_; }
+        void clearIntervals();
+        void fillInIntervals();
 
         void emitSaved();
         void emitReverted();
@@ -440,7 +473,6 @@ class RideFileFactory {
 
         friend class ::MetricAggregator;
         friend class ::RideCache;
-        friend class ::IntervalCache;
 
         // will become private as code should work with
         // in memory representation not on disk .. but as we

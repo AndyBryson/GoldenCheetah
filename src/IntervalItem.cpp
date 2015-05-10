@@ -18,49 +18,132 @@
 
 #include "IntervalItem.h"
 #include "RideFile.h"
+#include "Context.h"
+#include "Athlete.h"
 
-IntervalItem::IntervalItem(const RideFile *ride, QString name,
-                           double start, double stop, double startKM, double stopKM, int displaySequence, RideFileInterval::IntervalType type) :
-    ride(ride), start(start), stop(stop), startKM(startKM), stopKM(stopKM), displaySequence(displaySequence),
-    rideSegment_(NULL), type(type)
+IntervalItem::IntervalItem(const RideFile *ride, QString name, double start, double stop, 
+                           double startKM, double stopKM, int displaySequence, QColor color,
+                           RideFileInterval::IntervalType type)
 {
-    setText(0, name);
+    this->name = name;
+    this->ride = ride;
+    this->start = start;
+    this->stop = stop;
+    this->startKM = startKM;
+    this->stopKM = stopKM;
+    this->displaySequence = displaySequence;
+    this->rideItem_ = NULL;
+    this->type = type;
+    this->color = color;
+    this->selected = false;
+    metrics_.fill(0, RideMetricFactory::instance().metricCount());
 }
 
-RideItem*
-IntervalItem::rideSegment()
+IntervalItem::IntervalItem() : rideItem_(NULL), name(""), type(RideFileInterval::USER), start(0), stop(0),
+                               startKM(0), stopKM(0), displaySequence(0), color(Qt::black)
 {
-    if (rideSegment_ == NULL) {
-        RideFile* f = new RideFile(const_cast<RideFile*>(ride));
+    metrics_.fill(0, RideMetricFactory::instance().metricCount());
+}
 
-        int start = ride->timeIndex(start);
-        int end = ride->timeIndex(stop);
+void
+IntervalItem::setFrom(IntervalItem &other)
+{
+    *this = other;
+    selected = false;
+}
 
-        for (int i = start; i <= end; ++i) {
-            const RideFilePoint *p = ride->dataPoints()[i];
-            f->appendPoint(p->secs, p->cad, p->hr, p->km, p->kph, p->nm,
-                          p->watts, p->alt, p->lon, p->lat, p->headwind, p->slope, p->temp, p->lrbalance,
-                          p->lte, p->rte, p->lps, p->rps,
-                          p->lpco, p->rpco, p->lppb, p->rppb, p->lppe, p->rppe, p->lpppb, p->rpppb, p->lpppe, p->rpppe,
-                          p->smo2, p->thb,
-                          p->rvert, p->rcad, p->rcontact, 0);
+void
+IntervalItem::refresh()
+{
+    // don't open on our account - we should be called with a ride available
+    RideFile *f = rideItem_->ride_;
+    if (!f) return;
 
-            // derived data
-            RideFilePoint *l = f->dataPoints().last();
-            l->np = p->np;
-            l->xp = p->xp;
-            l->apower = p->apower;
-        }
+    // create a temporary ride
+    RideFile intervalRide(f);
+    for (int i = f->intervalBeginSecs(start); i>= 0 &&i < f->dataPoints().size(); ++i) {
 
-        //f->clearIntervals();
-        //f->addInterval(RideFileInterval::Route, start, end, "1");
+        // iterate
+        const RideFilePoint *p = f->dataPoints()[i];
+        if (p->secs+f->recIntSecs() > stop) break;
 
-        QDateTime date = ride->startTime().addSecs(start);
-        rideSegment_ = new RideItem(f, date, ride->context );
+        // append all values
+        intervalRide.appendPoint(p->secs, p->cad, p->hr, p->km, p->kph, p->nm,
+                    p->watts, p->alt, p->lon, p->lat, p->headwind,
+                    p->slope, p->temp, p->lrbalance,
+                    p->lte, p->rte, p->lps, p->rps,
+                    p->lpco, p->rpco, p->lppb, p->rppb, p->lppe, p->rppe, p->lpppb, p->rpppb, p->lpppe, p->rpppe,
+                    p->smo2, p->thb, p->rvert, p->rcad, p->rcontact, 0);
 
-        rideSegment_->refresh();
+        // copy derived data
+        RideFilePoint *l = intervalRide.dataPoints().last();
+        l->np = p->np;
+        l->xp = p->xp;
+        l->apower = p->apower;
     }
-    return rideSegment_;
+
+    // we created a blank ride (?)
+    if (intervalRide.dataPoints().size() == 0) return;
+
+    // ok, lets collect the metrics
+    const RideMetricFactory &factory = RideMetricFactory::instance();
+    QHash<QString,RideMetricPtr> computed= RideMetric::computeMetrics(rideItem_->context, &intervalRide, rideItem_->context->athlete->zones(), 
+                                           rideItem_->context->athlete->hrZones(), factory.allMetrics());
+
+    // pack the metrics away and clean up if needed
+    metrics_.fill(0, factory.metricCount());
+
+    // snaffle away all the computed values into the array
+    QHashIterator<QString, RideMetricPtr> i(computed);
+    while (i.hasNext()) {
+        i.next();
+        metrics_[i.value()->index()] = i.value()->value();
+    }
+
+    // clean any bad values
+    for(int j=0; j<factory.metricCount(); j++)
+        if (std::isinf(metrics_[j]) || std::isnan(metrics_[j]))
+            metrics_[j] = 0.00f;
+}
+
+
+double
+IntervalItem::getForSymbol(QString name, bool useMetricUnits)
+{
+    if (metrics_.size()) {
+        // return the precomputed metric value
+        const RideMetricFactory &factory = RideMetricFactory::instance();
+        const RideMetric *m = factory.rideMetric(name);
+        if (m) {
+            if (useMetricUnits) return metrics_[m->index()];
+            else {
+                // little hack to set/get for conversion
+                const_cast<RideMetric*>(m)->setValue(metrics_[m->index()]);
+                return m->value(useMetricUnits);
+            }
+        }
+    }
+    return 0.0f;
+}
+
+QString
+IntervalItem::getStringForSymbol(QString name, bool useMetricUnits)
+{
+    QString returning("-");
+
+    if (metrics_.size()) {
+        // return the precomputed metric value
+        const RideMetricFactory &factory = RideMetricFactory::instance();
+        const RideMetric *m = factory.rideMetric(name);
+        if (m) {
+
+            double value = metrics_[m->index()];
+            if (std::isinf(value) || std::isnan(value)) value=0;
+            const_cast<RideMetric*>(m)->setValue(value);
+            returning = m->toString(useMetricUnits);
+        }
+    }
+    return returning;
 }
 
 /*----------------------------------------------------------------------
@@ -79,7 +162,7 @@ EditIntervalDialog::EditIntervalDialog(QWidget *parent, IntervalItem &interval) 
     QLabel *to = new QLabel("To");
 
     nameEdit = new QLineEdit(this);
-    nameEdit->setText(interval.text(0));
+    //nameEdit->setText(interval.text(0));
 
     fromEdit = new QTimeEdit(this);
     fromEdit->setDisplayFormat("hh:mm:ss");
@@ -116,7 +199,7 @@ void
 EditIntervalDialog::applyClicked()
 {
     // get the values back
-    interval.setText(0, nameEdit->text());
+    //interval.setText(0, nameEdit->text());
     interval.start = QTime(0,0,0).secsTo(fromEdit->time());
     interval.stop = QTime(0,0,0).secsTo(toEdit->time());
     accept();

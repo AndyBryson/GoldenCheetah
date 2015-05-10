@@ -289,8 +289,8 @@ MainWindow::MainWindow(const QDir &home)
     sidebar = new QtMacButton(this, QtMacButton::TexturedRounded);
     QPixmap *sidebarImg = new QPixmap(":images/mac/sidebar.png");
     sidebar->setImage(sidebarImg);
-    sidebar->setMinimumSize(25, 25);
-    sidebar->setMaximumSize(25, 25);
+    sidebar->setMinimumSize(24, 24);
+    sidebar->setMaximumSize(24, 24);
     sidebar->setToolTip("Sidebar");
     sidebar->setSelected(true); // assume always start up with sidebar selected
     HelpWhatsThis *helpSideBar = new HelpWhatsThis(sidebar);
@@ -394,7 +394,7 @@ MainWindow::MainWindow(const QDir &home)
     import = new QPushButton(this);
     import->setIcon(importIcon);
     import->setIconSize(isize);
-    import->setFixedHeight(25);
+    import->setFixedHeight(24);
     import->setStyle(toolStyle);
     import->setToolTip(tr("Download from Device"));
     import->setPalette(metal);
@@ -405,7 +405,7 @@ MainWindow::MainWindow(const QDir &home)
     compose = new QPushButton(this);
     compose->setIcon(composeIcon);
     compose->setIconSize(isize);
-    compose->setFixedHeight(25);
+    compose->setFixedHeight(24);
     compose->setStyle(toolStyle);
     compose->setToolTip(tr("Create Manual Activity"));
     compose->setPalette(metal);
@@ -416,7 +416,7 @@ MainWindow::MainWindow(const QDir &home)
     lowbar = new QPushButton(this);
     lowbar->setIcon(lowbarIcon);
     lowbar->setIconSize(isize);
-    lowbar->setFixedHeight(25);
+    lowbar->setFixedHeight(24);
     lowbar->setStyle(toolStyle);
     lowbar->setToolTip(tr("Toggle Compare Pane"));
     lowbar->setPalette(metal);
@@ -427,7 +427,7 @@ MainWindow::MainWindow(const QDir &home)
     sidebar = new QPushButton(this);
     sidebar->setIcon(sidebarIcon);
     sidebar->setIconSize(isize);
-    sidebar->setFixedHeight(25);
+    sidebar->setFixedHeight(24);
     sidebar->setStyle(toolStyle);
     sidebar->setToolTip(tr("Toggle Sidebar"));
     sidebar->setPalette(metal);
@@ -443,7 +443,7 @@ MainWindow::MainWindow(const QDir &home)
     actbuttons->setSegmentIcon(1, splitIcon);
     actbuttons->setSegmentIcon(2, deleteIcon);
     actbuttons->setSelectionBehavior(QtSegmentControl::SelectNone); //wince. spelling. ugh
-    actbuttons->setFixedHeight(25);
+    actbuttons->setFixedHeight(24);
     actbuttons->setSegmentToolTip(0, tr("Find Intervals..."));
     actbuttons->setSegmentToolTip(1, tr("Split Activity..."));
     actbuttons->setSegmentToolTip(2, tr("Delete Activity"));
@@ -459,7 +459,7 @@ MainWindow::MainWindow(const QDir &home)
     styleSelector->setSegmentToolTip(0, tr("Tabbed View"));
     styleSelector->setSegmentToolTip(1, tr("Tiled View"));
     styleSelector->setSelectionBehavior(QtSegmentControl::SelectOne); //wince. spelling. ugh
-    styleSelector->setFixedHeight(25);
+    styleSelector->setFixedHeight(24);
     styleSelector->setPalette(metal);
     connect(styleSelector, SIGNAL(segmentSelected(int)), this, SLOT(setStyleFromSegment(int))); //avoid toggle infinitely
 
@@ -670,6 +670,8 @@ MainWindow::MainWindow(const QDir &home)
     QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
 #ifndef Q_OS_MAC
     viewMenu->addAction(tr("Toggle Full Screen"), this, SLOT(toggleFullScreen()), QKeySequence("F11"));
+#else
+    viewMenu->addAction(tr("Toggle Full Screen"), this, SLOT(toggleFullScreen()));
 #endif
     showhideSidebar = viewMenu->addAction(tr("Show Left Sidebar"), this, SLOT(showSidebar(bool)));
     showhideSidebar->setCheckable(true);
@@ -911,14 +913,21 @@ MainWindow::toggleStyle()
     setToolButtons();
 }
 
-#ifndef Q_OS_MAC
 void
 MainWindow::toggleFullScreen()
 {
+#ifdef Q_OS_MAC
+    QRect screenSize = desktop->availableGeometry();
+    if (screenSize.width() > frameGeometry().width() ||
+        screenSize.height() > frameGeometry().height()) 
+        showFullScreen();
+    else
+        showNormal();
+#else
     if (fullScreen) fullScreen->toggle();
     else qDebug()<<"no fullscreen support compiled in.";
-}
 #endif
+}
 
 bool
 MainWindow::eventFilter(QObject *o, QEvent *e)
@@ -934,6 +943,15 @@ MainWindow::resizeEvent(QResizeEvent*)
 {
 #ifdef Q_OS_MAC
     if (head) {
+        QRect screenSize = desktop->availableGeometry();
+        if ((screenSize.width() > frameGeometry().width() || screenSize.height() > frameGeometry().height()) && // not fullscreen
+           (!head->isVisible() && showhideToolbar->isChecked())) // not visible and we want it
+            head->show();
+        else if ((screenSize.width() == frameGeometry().width() || screenSize.height() == frameGeometry().height()) && // fullscreen
+           (head->isVisible())) // and it is visible
+            head->hide();
+
+        // painting 
         head->updateGeometry();
         repaint();
     }
@@ -1681,9 +1699,7 @@ MainWindow::saveGCState(Context *context)
     context->showSidebar = showhideSidebar->isChecked();
     //context->showTabbar = showhideTabbar->isChecked();
     context->showLowbar = showhideLowbar->isChecked();
-#ifndef Q_OS_MAC // not on a Mac
     context->showToolbar = showhideToolbar->isChecked();
-#endif
     context->searchText = searchBox->text();
     context->viewIndex = scopebar->selected();
     context->style = styleAction->isChecked();
@@ -1695,9 +1711,7 @@ MainWindow::restoreGCState(Context *context)
 {
     // restore window state from the supplied context
     showSidebar(context->showSidebar);
-#ifndef Q_OS_MAC // not on a Mac
     showToolbar(context->showToolbar);
-#endif
     //showTabbar(context->showTabbar);
     showLowbar(context->showLowbar);
     scopebar->setSelected(context->viewIndex);

@@ -311,6 +311,8 @@ BestIntervalDialog::doneClicked()
 void
 BestIntervalDialog::addClicked()
 {
+//XXX REFACTOR UPDATE WHEN DECIDE HOW TO ADD AN INTERVAL
+#if 0
     // run through the table row by row
     // and when the checkbox is shown
     // get name from column 2
@@ -332,11 +334,12 @@ BestIntervalDialog::addClicked()
                                  ride->timeToDistance(start),
                                  ride->timeToDistance(stop),
                                  allIntervals->childCount()+1,
-                                 RideFileInterval::PEAK); // TODO not always PEAK...
+                                 RideFileInterval::PEAKPOWER); // TODO not always PEAK...
             last->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsDragEnabled);
             // add
             allIntervals->addChild(last);
         }
     }
     context->athlete->updateRideFileIntervals();
+#endif
 }

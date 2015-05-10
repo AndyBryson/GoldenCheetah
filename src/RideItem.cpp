@@ -29,6 +29,7 @@
 #include "PaceZones.h"
 #include "Settings.h"
 #include "Colors.h" // for ColorEngine
+#include "BestIntervalDialog.h" // till we fixup ridefilecache to have offsets
 
 #include <cmath>
 #include <QtAlgorithms>
@@ -42,14 +43,14 @@
 RideItem::RideItem() 
     : 
     ride_(NULL), fileCache_(NULL), context(NULL), isdirty(false), isstale(true), isedit(false), skipsave(false), path(""), fileName(""),
-    color(QColor(1,1,1)), isRun(false), isSwim(false), fingerprint(0), metacrc(0), crc(0), timestamp(0), dbversion(0), weight(0) {
+    color(QColor(1,1,1)), isRun(false), isSwim(false), samples(false), fingerprint(0), metacrc(0), crc(0), timestamp(0), dbversion(0), weight(0) {
     metrics_.fill(0, RideMetricFactory::instance().metricCount());
 }
 
 RideItem::RideItem(RideFile *ride, Context *context) 
     : 
     ride_(ride), fileCache_(NULL), context(context), isdirty(false), isstale(true), isedit(false), skipsave(false), path(""), fileName(""),
-    color(QColor(1,1,1)), isRun(false), isSwim(false), fingerprint(0), metacrc(0), crc(0), timestamp(0), dbversion(0), weight(0) 
+    color(QColor(1,1,1)), isRun(false), isSwim(false), samples(false), fingerprint(0), metacrc(0), crc(0), timestamp(0), dbversion(0), weight(0) 
 {
     metrics_.fill(0, RideMetricFactory::instance().metricCount());
 }
@@ -57,7 +58,7 @@ RideItem::RideItem(RideFile *ride, Context *context)
 RideItem::RideItem(QString path, QString fileName, QDateTime &dateTime, Context *context) 
     :
     ride_(NULL), fileCache_(NULL), context(context), isdirty(false), isstale(true), isedit(false), skipsave(false), path(path), 
-    fileName(fileName), dateTime(dateTime), color(QColor(1,1,1)), isRun(false), isSwim(false), fingerprint(0), 
+    fileName(fileName), dateTime(dateTime), color(QColor(1,1,1)), isRun(false), isSwim(false), samples(false), fingerprint(0), 
     metacrc(0), crc(0), timestamp(0), dbversion(0), weight(0) 
 {
     metrics_.fill(0, RideMetricFactory::instance().metricCount());
@@ -82,6 +83,8 @@ RideItem::setFrom(RideItem&here) // used when loading cache/rideDB.json
     metrics_ = here.metrics_;
 	metadata_ = here.metadata_;
 	errors_ = here.errors_;
+    intervals_ = here.intervals_;
+    foreach(IntervalItem *p, intervals_) p->rideItem_ = this;
 	context = here.context;
 	isdirty = here.isdirty;
 	isstale = here.isstale;
@@ -100,6 +103,7 @@ RideItem::setFrom(RideItem&here) // used when loading cache/rideDB.json
     isRun = here.isRun;
     isSwim = here.isSwim;
 	weight = here.weight;
+    samples = here.samples;
 }
 
 // set the metric array
@@ -159,6 +163,10 @@ RideItem::~RideItem()
     //qDebug()<<"deleting:"<<fileName;
     if (isOpen()) close();
     if (fileCache_) delete fileCache_;
+    //XXX need to consider what to do here for the intervalitem
+    //XXX used by the RideDB parser - we don't want to wipe away
+    //XXX the intervals we just passed into setFrom()
+    //XXX foreach(IntervalItem*x, intervals_) delete x;
 }
 
 RideFileCache *
@@ -166,7 +174,7 @@ RideItem::fileCache()
 {
     if (!fileCache_) {
         fileCache_ = new RideFileCache(context, fileName, getWeight(), ride());
-        if (isDirty()) fileCache_->refresh(ride()); // refresh from what we have now !
+        if (isDirty()) fileCache_->refresh(ride_); // refresh from what we have now !
     }
     return fileCache_;
 }
@@ -197,6 +205,15 @@ RideItem::setRide(RideFile *overwrite)
 }
 
 void
+RideItem::addInterval(IntervalItem item)
+{
+    IntervalItem *add = new IntervalItem();
+    add->setFrom(item);
+    add->rideItem_ = this;
+    intervals_ << add;
+}
+
+void
 RideItem::notifyRideDataChanged()
 {
     // refresh the metrics
@@ -209,8 +226,7 @@ RideItem::notifyRideDataChanged()
     }
 
     // refresh the cache
-    if (fileCache_) fileCache_->refresh(ride());
-
+    if (fileCache_) fileCache_->refresh(ride_);
 
     // refresh the data
     refresh();
@@ -359,6 +375,12 @@ RideItem::checkStale()
                         isstale = true;
                     }
                 }
+
+
+                // no intervals ?
+                if (samples && intervals_.count() == 0)
+                    isstale = true;
+
             }
         }
     }
@@ -397,6 +419,7 @@ RideItem::refresh()
         isSwim = f->isSwim();
         color = context->athlete->colorEngine->colorFor(f->getTag(context->athlete->rideMetadata()->getColorField(), ""));
         present = f->getTag("Data", "");
+        samples = f->dataPoints().count() > 0;
 
         // refresh metrics etc
         const RideMetricFactory &factory = RideMetricFactory::instance();
@@ -420,8 +443,8 @@ RideItem::refresh()
             if (std::isinf(metrics_[j]) || std::isnan(metrics_[j]))
                 metrics_[j] = 0.00f;
 
-        // Update auto intervals
-        updateAutoInterval();
+        // Update auto intervals AFTER ridefilecache as used for bests
+        updateIntervals();
 
         // update current state
         isstale = false;
@@ -453,6 +476,7 @@ RideItem::refresh()
     } else {
         qDebug()<<"** FILE READ ERROR: "<<fileName;
         isstale = false;
+        samples = false;
     }
 }
 
@@ -514,11 +538,164 @@ RideItem::getStringForSymbol(QString name, bool useMetricUnits)
 }
 
 void
-RideItem::updateAutoInterval()
+RideItem::updateIntervals()
 {
+    // DO NOT USE ride() since it will call a refresh !
+    RideFile *f = ride_;
+
+    // clear what is there
+    foreach(IntervalItem *x, intervals_) delete x;
+    intervals_.clear();
+
+    // no ride data available ?
+    if (!samples) return;
+
+    // USER / DEVICE INTERVALS
+    // first we create interval items for all intervals
+    // that are in the ridefile, but ignore Peaks since we
+    // add those automatically for HR and Power where those
+    // data series are present
+
+    // ride start and end
+    RideFilePoint *begin = f->dataPoints().first();
+    RideFilePoint *end = f->dataPoints().last();
+
+    // add entire ride using ride metrics
+    IntervalItem *entire = new IntervalItem(f, tr("Entire Activity"), 
+                                            begin->secs, end->secs, 
+                                            f->timeToDistance(begin->secs),
+                                            f->timeToDistance(end->secs),
+                                            0,
+                                            QColor(Qt::darkBlue),
+                                            RideFileInterval::ALL);
+
+    // same as the whole ride, not need to compute
+    entire->metrics() = metrics();
+    entire->rideItem_ = this;
+    intervals_ << entire;
+
+    int count = 1;
+    foreach(RideFileInterval interval, f->intervals()) {
+
+        // skip peaks, they're autodiscovered now
+        if (interval.isPeak()) continue;
+
+        // skip climbs, they're autodiscovered now
+        if (interval.isClimb()) continue;
+
+        // skip entire ride, they're autodiscovered too
+        if (interval.start <= begin->secs && interval.stop >= end->secs) continue;
+
+        // same as ride but offset by recintsecs
+        if (((interval.start - f->recIntSecs()) <= begin->secs && (interval.stop-f->recIntSecs()) >= end->secs) ||
+           (interval.start <= begin->secs && (interval.stop+f->recIntSecs()) >= end->secs))
+             continue;
+
+        // skip empty backward intervals
+        if (interval.start >= interval.stop) continue;
+
+        // create a new interval item
+        IntervalItem *intervalItem = new IntervalItem(f, interval.name, 
+                                                      interval.start, interval.stop, 
+                                                      f->timeToDistance(interval.start),
+                                                      f->timeToDistance(interval.stop),
+                                                      count,
+                                                      standardColor(count++),
+                                                      RideFileInterval::USER);
+        intervalItem->rideItem_ = this; // XXX will go when we refactor and be passed instead of ridefile
+        intervalItem->refresh();        // XXX will get called in constructore when refactor
+        intervals_ << intervalItem;
+
+        //qDebug()<<"interval:"<<interval.name<<interval.start<<interval.stop<<"f:"<<begin->secs<<end->secs;
+    }
+
+    // DISCOVERY
+
+    //qDebug() << "SEARCH PEAK POWERS"
+
+    // what we looking for ?
+    static int durations[] = { 1, 5, 10, 15, 20, 30, 60, 300, 600, 1200, 1800, 2700, 3600, 0 };
+    static const char *names[] = { "1 second", "5 seconds", "10 seconds", "15 seconds", "20 seconds", "30 seconds", 
+                            "1 minute", "5 minutes", "10 minutes", "20 minutes", "30 minutes", "45 minutes",
+                            "1 hour" };
+
+    for(int i=0; durations[i] != 0; i++) {
+
+        // go hunting for best peak
+        QList<BestIntervalDialog::BestInterval> results;
+        BestIntervalDialog::findBests(f, durations[i], 1, results);
+
+        // did we get one ?
+        if (results.count() > 0) {
+            // qDebug()<<"found"<<names[i]<<"peak power"<<results[0].start<<"-"<<results[0].stop<<"of"<<results[0].avg<<"watts";
+            IntervalItem *intervalItem = new IntervalItem(f, QString(tr("%1 (%2 watts)")).arg(names[i]).arg(int(results[0].avg)),
+                                                        results[0].start, results[0].stop, 
+                                                        f->timeToDistance(results[0].start),
+                                                        f->timeToDistance(results[0].stop),
+                                                        count++,
+                                                        QColor(Qt::gray),
+                                                        RideFileInterval::PEAKPOWER);
+            intervalItem->rideItem_ = this; // XXX will go when we refactor and be passed instead of ridefile
+            intervalItem->refresh();        // XXX will get called in constructore when refactor
+            intervals_ << intervalItem;
+        }
+    }
+
+    //qDebug() << "SEARCH HILLS";
+
+    int hills = 0;
+    double start = 0.0;
+    double startKm = 0.0;
+    double stop = 0.0;
+    double minAlt = -1000.0;
+    double maxAlt = -1000.0;
+    double lastAlt = -1000.0;
+
+    foreach(RideFilePoint *p, f->dataPoints()) {
+        if (minAlt == -1000.0 || minAlt > p->alt) {
+            minAlt = p->alt;
+            start = p->secs;
+            startKm = p->km;
+        }
+
+        if (maxAlt == -1000.0 || maxAlt < p->alt) {
+            maxAlt = p->alt;
+        } else if (maxAlt > p->alt+0.1*(maxAlt-minAlt)) {
+            if ((p->km - startKm >= 0.5 && (maxAlt-minAlt)/(p->km - startKm) >= 60) ||
+                (p->km - startKm >= 2.0 && (maxAlt-minAlt)/(p->km - startKm) >= 40) ||
+                (p->km - startKm >= 4.0 && (maxAlt-minAlt)/(p->km - startKm) >= 20)) {
+                //qDebug() << "NEW HILL " << start/60.0 << stop/60.0 << (p->km - startKm) << "km" << (maxAlt-minAlt)/(p->km - startKm)/10.0 << "%";
+
+                // create a new interval item
+                IntervalItem *intervalItem = new IntervalItem(f, QString("Climb %1").arg(++hills),
+                                                              start, stop,
+                                                              f->timeToDistance(start),
+                                                              f->timeToDistance(stop),
+                                                              count++,
+                                                              QColor(Qt::green),
+                                                              RideFileInterval::CLIMB);
+                intervalItem->rideItem_ = this; // XXX will go when we refactor and be passed instead of ridefile
+                intervalItem->refresh();        // XXX will get called in constructore when refactor
+                intervals_ << intervalItem;
+            } else {
+                if ((p->km - startKm) > 0.5) {
+                    //qDebug() << "NOT HILL " << start/60.0 << stop/60.0 << (p->km - startKm) << "km" << (maxAlt-minAlt)/(p->km - startKm)/10.0 << "%";
+                    //f->addInterval(RideFileInterval::HILL, start, stop, QString("Not Hill %1").arg(++nothills));
+                }
+            }
+            minAlt = -1000.0;
+            maxAlt = -1000.0;
+            lastAlt = p->alt;
+            start = p->secs;
+            startKm = p->km;
+        } else if (lastAlt < p->alt) {
+               lastAlt = p->alt;
+               stop = p->secs;
+        }
+    }
+
+
     // TODO Search ROUTE, PEAK, HILL, ...
-
-
     //Search routes
     /*context->athlete->routes->searchRoutesInRide(this->ride());
 
@@ -537,10 +714,10 @@ RideItem::updateAutoInterval()
                     qDebug() << "find ride "<< fileName <<" for " <<rideSegmentName;
 
                     // Verify interval in db
-                    // type, groupName, filename, start,
+                    // type, name, filename, start,
                     //IntervalItem* interval = new IntervalItem(ride(), route->getName(), _ride.start, _ride.stop, 0, 0, j, IntervalItem::Route);
 
-                    //interval->groupName = route->getName();
+                    //interval->name = route->getName();
                     //interval->color = color;
 
                     ride()->addInterval(RideFileInterval::ROUTE, _ride.start, _ride.stop, route->getName());
@@ -550,3 +727,11 @@ RideItem::updateAutoInterval()
     }*/
 }
 
+QList<IntervalItem*> RideItem::intervalsSelected()
+{
+    QList<IntervalItem*> returning;
+    foreach(IntervalItem *p, intervals_) {
+        if (p->selected) returning << p;
+    }
+    return returning;
+}

@@ -91,7 +91,7 @@ ScatterWindow::addrStandardChannels(QxtStringSpinBox *box)
 }
 
 ScatterWindow::ScatterWindow(Context *context) :
-    GcChartWindow(context), context(context), ride(NULL), current(NULL), stale(false)
+    GcChartWindow(context), context(context), ride(NULL), stale(false), current(NULL)
 {
     //
     // reveal controls widget
@@ -425,12 +425,9 @@ ScatterWindow::setData()
     */
 
     // any intervals to plot?
-    settings.intervals.clear();
-    for (int i=0; i<context->athlete->allIntervalItems()->childCount(); i++) {
-        IntervalItem *current = dynamic_cast<IntervalItem *>(context->athlete->allIntervalItems()->child(i));
-        if (current != NULL && current->isSelected() == true)
-                settings.intervals.append(current);
-    }
+    if (ride) settings.intervals = ride->intervalsSelected();
+    else settings.intervals.clear();
+
     scatterPlot->setData(&settings);
 }
 

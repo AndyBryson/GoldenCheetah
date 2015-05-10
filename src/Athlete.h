@@ -56,6 +56,8 @@ class RideCache;
 class IntervalCache;
 class Context;
 class ColorEngine;
+class AnalysisSidebar;
+class Tab;
 
 class Athlete : public QObject
 {
@@ -135,14 +137,7 @@ class Athlete : public QObject
         void addRide(QString name, bool bSelect=true, bool useTempActivities=false);
         void removeCurrentRide();
 
-        // interval selection
-        QTreeWidgetItem *allIntervals;
-        IntervalTreeView *intervalWidget;
-        const QTreeWidgetItem *allIntervalItems() { return allIntervals; }
-        IntervalTreeView *intervalTreeWidget() { return intervalWidget; }
-        QTreeWidgetItem *mutableIntervalItems() { return allIntervals; }
-
-        // xones etc
+        // zones etc
         void notifyZonesChanged() { zonesChanged(); }
         void notifySeasonsChanged() { seasonsChanged(); }
         void notifyNamedSearchesChanged() { namedSearchesChanged(); }
@@ -156,11 +151,8 @@ class Athlete : public QObject
         void namedSearchesChanged();
 
     public slots:
-        void intervalTreeWidgetSelectionChanged();
         void checkCPX(RideItem*ride);
-        void updateRideFileIntervals();
         void configChanged(qint32);
-
 
 };
 

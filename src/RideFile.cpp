@@ -367,11 +367,32 @@ struct ComparePointSecs {
     }
 };
 
+QString RideFileInterval::typeDescription(intervaltype x)
+{
+    switch (x) {
+    case ALL : return tr("ALL"); break;
+    case DEVICE : return tr("DEVICE"); break;
+    case USER : return tr("USER"); break;
+    case PEAKPOWER : return tr("PEAK POWER"); break;
+    case ROUTE : return tr("SEGMENTS"); break;
+    case PEAKHR : return tr("PEAK HR"); break;
+    case CLIMB : return tr("CLIMBING"); break;
+    case EFFORT : return tr("EFFORTS"); break;
+    case MATCH : return tr("MATCHES"); break;
+    }
+}
+
 int
 RideFile::intervalBegin(const RideFileInterval &interval) const
 {
+    return intervalBeginSecs(interval.start);
+}
+
+int
+RideFile::intervalBeginSecs(const double secs) const
+{
     RideFilePoint p;
-    p.secs = interval.start;
+    p.secs = secs;
     QVector<RideFilePoint*>::const_iterator i = std::lower_bound(
         dataPoints_.begin(), dataPoints_.end(), &p, ComparePointSecs());
     if (i == dataPoints_.end())

@@ -36,6 +36,7 @@ class CPPlot;
 class QwtPlotCurve;
 class Context;
 class RideItem;
+class IntervalItem;
 class QwtPlotPicker;
 class MUPlot;
 
@@ -64,7 +65,6 @@ class CriticalPowerWindow : public GcChartWindow
     Q_PROPERTY(int sani1 READ sanI1 WRITE setSanI1 USER true)
     Q_PROPERTY(int sani2 READ sanI2 WRITE setSanI2 USER true)
     Q_PROPERTY(int laei1 READ laeI1 WRITE setLaeI1 USER true)
-    Q_PROPERTY(int laei2 READ laeI2 WRITE setLaeI2 USER true)
     Q_PROPERTY(int laei2 READ laeI2 WRITE setLaeI2 USER true)
 
     Q_PROPERTY(QDate fromDate READ fromDate WRITE setFromDate USER true)
@@ -205,7 +205,7 @@ class CriticalPowerWindow : public GcChartWindow
         void configChanged(qint32);
         void intervalSelected();
         void intervalsChanged();
-        void intervalHover(RideFileInterval);
+        void intervalHover(IntervalItem*);
         void seasonSelected(int season);
         void shadingSelected(int shading);
         void showHeatChanged(int check);
